@@ -62,6 +62,10 @@ public sealed class AppConfig
     public string Theme { get; set; } = "dark";
     /// <summary>语言（"zh"=中文默认 / "en"=English）</summary>
     public string Language { get; set; } = "zh";
+
+    // ---- v0.1.61 日志 ----
+    /// <summary>日志级别（"off"/"debug"/"info"/"warn"=默认/"error"）；warn 及以上默认输出到 data/logs</summary>
+    public string LogLevel { get; set; } = "warn";
 }
 
 /// <summary>热键配置（可持久化）</summary>
@@ -94,7 +98,7 @@ public static class ConfigManager
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"配置解析失败，使用默认值: {ex.Message}");
+                Log.Warn($"配置解析失败，使用默认值: {ex.Message}");
             }
         }
         return new AppConfig();
@@ -108,7 +112,7 @@ public static class ConfigManager
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"配置保存失败: {ex.Message}");
+            Log.Error("配置保存失败", ex);
         }
     }
 }

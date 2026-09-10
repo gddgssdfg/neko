@@ -86,7 +86,7 @@ public sealed class PluginHost : IDisposable
                 var ctx = BuildContext(plugin);
                 plugin.Instance.OnLoad(ctx);
                 _plugins.Add(plugin);
-                System.Diagnostics.Debug.WriteLine($"[插件] 已加载: {plugin.Manifest.Name}");
+                Log.Info($"[插件] 已加载: {plugin.Manifest.Name}");
             }
             catch (Exception ex)
             {

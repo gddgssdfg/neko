@@ -110,7 +110,7 @@ public sealed class TrayManager : IDisposable
     private void TogglePause()
     {
         _petWindow.SetPaused(!_petWindow.IsPaused);
-        System.Diagnostics.Debug.WriteLine($"暂停状态: {_petWindow.IsPaused}");
+        Core.Log.Info($"暂停状态: {_petWindow.IsPaused}");
     }
 
     /// <summary>版本号（托盘「关于」显示用，如 0.1.39）</summary>

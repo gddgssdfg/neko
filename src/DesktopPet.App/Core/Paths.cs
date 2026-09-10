@@ -29,6 +29,9 @@ public static class Paths
     /// <summary>插件私有数据根</summary>
     public static string PluginData => Path.Combine(Data, "plugins");
 
+    /// <summary>日志目录（v0.1.61：data/logs）</summary>
+    public static string Logs => Path.Combine(Data, "logs");
+
     /// <summary>内置素材目录</summary>
     public static string Assets => Path.Combine(Root, "neko-assets");
 
@@ -39,6 +42,7 @@ public static class Paths
     {
         Directory.CreateDirectory(Data);
         Directory.CreateDirectory(PluginData);
+        Directory.CreateDirectory(Logs);
     }
 
     public static void EnsurePluginsCreated()

@@ -256,7 +256,6 @@ public sealed class NullScheduler : IScheduler
 {
     public IScheduleHandle Every(int ms, Action cb) => new NullHandle();
     public IScheduleHandle At(DateTime t, Action cb) => new NullHandle();
-    public IScheduleHandle Cron(string e, Action cb) => new NullHandle();
     private sealed class NullHandle : IScheduleHandle { public bool IsActive => true; public void Dispose() { } }
 }
 

@@ -2,6 +2,8 @@
 
 > 审计日期：2026-09-11 ｜ 方式：三人独立审计交叉验证（编排者 + 软件工程师 + QA）
 > 每一条均带**文件:行号 + 代码证据**，无推测项。已剔除经复核不成立的误报。
+>
+> **修复进度**：批次 A（P0-1 / P0-2 / P0-3 + P1-7 / P1-9）已修 → **v0.1.61**（详见各条 ✅ 标注）。
 
 ---
 
@@ -30,6 +32,9 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 **影响**：**任何一个插件的定时任务抛异常 → 整个 Neko 被杀掉**。这正面违反架构铁律第 3 条「单插件崩溃不拖垮宿主」。
 **改法**：三处回调统一包 try/catch → 记日志（配合 P0-2）→ 连续失败 N 次可考虑自动禁用该插件。
 
+> ### ✅ 已修（v0.1.61）
+> `SchedulerImpl` 回调统一异常隔离（`try/catch` + `Log.Error`）+ 失败计数熔断（连续 5 次自动停表并 `Log.Warn`）。`App.xaml.cs` 补 `TaskScheduler.UnobservedTaskException`（`SetObserved()`）+ `AppDomain.UnhandledException`。UiProbe 新增 2 项断言（抛异常不拖垮宿主 + 熔断停用），已验证通过。
+
 ---
 
 ### 2. Release 版没有日志（可观测性为零）
@@ -40,6 +45,9 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 **影响**：这是过去反复「真机偶发崩溃只能靠猜」的根因。用户装机后出问题，你手上**没有任何线索**——`errors.log` 里可能什么都没有。
 **改法**：加轻量文件日志（`data/logs/`，按天滚动、限大小），把关键路径（插件加载失败/配置解析失败/钩子安装失败/定时器异常）从 `Debug` 改为写文件。带级别与开关（默认只记 Warning+，可配置开 Debug）。
 
+> ### ✅ 已修（v0.1.61）
+> 新增 `Core/Log.cs`（`Info/Warn/Error/Debug` 四级，线程安全、失败静默、按天+5MB 滚动、保留 7 天）；`Paths.Logs` 纳入 `EnsureCreated()`；`AppConfig.LogLevel`（默认 `warn`）；全部 `Debug.WriteLine` 调用点已迁移；`Log.Error` 兼容写 `errors.log`。UiProbe 新增 4 项断言。
+
 ---
 
 ### 3. 插件权限「每次校验」未实现
@@ -49,6 +57,9 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 
 **影响**：与架构铁律第 3 条「manifest 声明 → 宿主授予 → **每次校验**」有差距。当前"加载时拦截高风险权限"是第一道防线（有效），但已加载插件可在运行时调用全部已声明能力，**能力边界不可收紧**（比如想给某插件临时降权做不到）。
 **改法**：在两个选择中明确定位 —— ①接受现状，把铁律改为「加载时授予」并写清楚；②在 API 实现层加 `EnsurePermission(scopeId, perm)` 守卫。**建议先做①**（诚实），等真有插件生态再上②。
+
+> ### ✅ 已修（v0.1.61，采用①诚实路线）
+> 按决策**改文档而非改代码**：`docs/plugin-authoring-guide.md` §4 权限模型改写为真实口径「加载时校验：manifest 声明 → 判定风险 → 高风险拒绝自动加载；加载后已授予范围内自由调用」。README 无相关表述无需改。
 
 ---
 
@@ -97,6 +108,9 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 **影响**：手册开头自称「贴给任意 AI 即可生成插件」——版本号停 60 版前 + 枚举缺项，会诱导 AI 生成过时代码。
 **改法**：头部版本改 v0.1.60，补 `Work` 状态。**并把"手册版本号"纳入发布 SOP 的检查项**。
 
+> ### ✅ 已修（v0.1.61）
+> `plugin-authoring-guide.md` 头部版本 v0.1.0 → **v0.1.61**；`enum PetState` 补第 9 值 `Work`（含说明）；「8 组雪碧图」→ 9 组。
+
 ### 8. 约 33 处空 catch 静默吞异常
 **位置**：`PetWindow.cs:347/392/580/626/656/676/686/704/1186/1193/1202/1211/1220`（其中 13 处是 `try{ConfigManager.Save}catch{}`）、`ChatScheduler.cs:72`、`ActivityTracker.cs:91`、`PluginLoader.cs:60` 等
 
@@ -110,6 +124,9 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 **问题**：实现注释坦白「v1 简化：忽略 cron 表达式，退化为每分钟一次」，但手册把 `Cron(string expression, ...)` 列为**正式 API**。
 **影响**：插件照手册写 `Cron("0 9 * * *")` 会得到「每分钟跑一次」的错误语义，**无任何警告**。
 **改法**：二选一 —— 实现最小 cron 解析，或从接口删除 `Cron` 并改手册为 `Every/At` only。**建议删除**（诚实优于半成品）。
+
+> ### ✅ 已修（v0.1.61）
+> 采用「删除」方案：移除 `IScheduler.Cron`（全仓 src/builtins/samples 零实际使用，仅接口定义 + 测试桩引用）。同步 `ICapabilityApi.cs`、`LoaderTest.NullScheduler`、`plugin-authoring-guide.md`（并加回调异常隔离/熔断说明）。
 
 ### 10. 插件热卸载可能真实泄漏 ALC
 **位置**：`PluginHost.cs:180-190` + `PluginLoader.cs:57-62`
@@ -181,7 +198,7 @@ var h = new TimerHandle(new Timer(_ => callback(), null, intervalMs, intervalMs)
 
 | 批次 | 内容 | 理由 |
 |---|---|---|
-| **批次 A** | P0-1 插件异常隔离 + P0-2 日志系统 + P0-3 权限定位 | 健壮性硬伤，且 1 依赖 2（异常要记日志） |
-| **批次 B** | P1-4 安装器统一 + P1-5 CHANGELOG 补缺 + P1-6/7 文档修正 + P1-8 空 catch | 交付链路与文档诚信，成本低见效快 |
+| **批次 A** ✅ | P0-1 插件异常隔离 + P0-2 日志系统 + P0-3 权限定位（+P1-7/P1-9 文档顺手修） | 健壮性硬伤，且 1 依赖 2（异常要记日志）→ **v0.1.61 完成** |
+| **批次 B** | P1-4 安装器统一 + P1-5 CHANGELOG 补缺 + P1-6 文档修正 + P1-8 空 catch | 交付链路与文档诚信，成本低见效快 |
 | **批次 C** | P2-12 CI + P2-11 拆文件 + P1-10 ALC 退订 | 长期工程健康 |
 | **随时** | P3 各项 | 顺手清理 |

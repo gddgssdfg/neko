@@ -1,3 +1,4 @@
+using DesktopPet.App.Core;
 using DesktopPet.Core;
 
 namespace DesktopPet.App.Services;
@@ -60,7 +61,7 @@ public sealed class EventBusImpl : IEventBus
         foreach (var h in snapshot)
         {
             try { h(payload); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"事件处理异常 {evt}: {ex.Message}"); }
+            catch (Exception ex) { Log.Error($"事件处理异常 {evt}", ex); }
         }
     }
 }

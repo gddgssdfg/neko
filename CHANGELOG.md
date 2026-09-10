@@ -4,6 +4,38 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.61] - 2026-09-11
+
+**批次 A：可观测性 + 宿主稳定性 + 文档诚实化**（源自 2026-09-11 项目健康度审计 P0 项；软件团队 SOP：工程师实现 → QA 独立验证）。
+
+### 任务 1：轻量文件日志系统（修审计 P0-2）
+- **问题**：全项目仅 `App.xaml.cs` 写 `errors.log`（且只记未处理异常），其余全是 `Debug.WriteLine`——**Release 构建下被编译器移除，用户装机后出问题无从排查**。
+- 新增 `src/DesktopPet.App/Core/Log.cs`（静态类）：`Info/Warn/Error/Debug` 四级 API。
+- 落盘 `data/logs/neko-YYYYMMDD.log`；`Paths.cs` 新增 `Logs` 属性并纳入 `EnsureCreated()`。
+- 滚动：按天分文件；单文件超 5MB 追加 `-N` 序号；启动清理 7 天前旧日志。
+- 线程安全（lock，覆盖插件线程池回调）；失败静默（所有 IO 包 try/catch，**绝不抛异常拖垮宿主**）；格式 `[ts] [LEVEL] [ThreadId] msg`。
+- 默认级别 **Warning 及以上**（避免频繁刷盘）；`AppConfig.LogLevel` 新增字段（默认 `"warn"`，可选 `info/debug/off`）。
+- `App.xaml.cs` 全局兜底改用 `Log.Error` 写日志（保留 MessageBox）；**`Log.Error` 同时写 `errors.log`（向后兼容）**。
+- 替换既有 `Debug.WriteLine` 调用点：`Config.cs`（2）、`PluginHost.cs`、`PluginContextImpl.cs`、`SystemImpl.cs`（4）、`TrayManager.cs`、`App.xaml.cs`。
+
+### 任务 2：插件后台异常隔离（修审计 P0-1）
+- **问题**：`SchedulerImpl` 三处 Timer 回调裸调无 try/catch。Timer 回调跑在线程池，**未处理异常直接终止进程**；而全局兜底只挂 `DispatcherUnhandledException`（仅 UI 线程）。任一插件定时任务抛异常 → 整个 Neko 被杀。
+- `SchedulerImpl` 回调统一异常隔离：`try { callback(); } catch (Exception ex) { Log.Error(...); }`。
+- **失败计数 + 熔断**：每个定时器记录连续失败次数，达阈值 **5 次**自动停表并 `Log.Warn` 告警。
+- `App.xaml.cs` 补 `TaskScheduler.UnobservedTaskException`（`SetObserved()` 防进程终止）+ `AppDomain.CurrentDomain.UnhandledException`（留遗言）。
+- `PluginContextImpl.EventBusImpl.Emit` 的 `Debug.WriteLine` → `Log.Error`。
+
+### 任务 3：文档诚实化（修审计 P0-3 + P1-7 + P1-9）
+- **权限模型改文档不改代码**：实际为「加载时校验」——manifest 声明 → 判定风险 → 高风险（file/process）拒绝自动加载；加载后已授予范围内自由调用。统一 `docs/plugin-authoring-guide.md` 口径（此前误写「每次调用校验」，运行时从未实现逐次守卫）。
+- `docs/plugin-authoring-guide.md`：版本标注 v0.1.0 → **v0.1.61**；`enum PetState` 补第 9 值 `Work`（v0.1.48 新增）；「8 组雪碧图」→ **9 组**。
+- **删除死接口 `IScheduler.Cron`**（审计 P1-9）：原实现忽略 cron 表达式退化为每分钟，属半成品；全仓（src/builtins/samples）零实际使用 —— 诚实优于半成品。同步 `ICapabilityApi.cs`、LoaderTest 的 `NullScheduler` 桩、手册。
+
+### 验证
+- 构建（App/tests）Release + Debug **0 警告 0 错误**。
+- LoaderTest 全过；UiProbe **33/33 全过**（新增 6 项：日志 4 项 + 调度器隔离 2 项）。
+- 新增 UiProbe 断言：日志写盘/多线程并发不抛/自动建目录/off 级别不写；调度器回调抛异常不拖垮宿主 + 记日志 + 熔断停用。
+- ⚠️ **环境修正**：App 自 v0.1.60 起为自包含，UiProbe（非自包含 exe）无法引用（NETSDK1151）。在 **UiProbe.csproj**（仅测试侧）对齐 `SelfContained=true`+`RID=win-x64`，**未改动 App 的发布配置**。
+
 ## [0.1.60] - 2026-09-11
 
 **恢复 AI 托盘图标 + 发布形态修正（回自包含，压缩关）**。本次由灯灯在真机检查中发现的**两起无留痕回退**触发——项目无 git，改动无法追溯，故记录在此作为事实基线。

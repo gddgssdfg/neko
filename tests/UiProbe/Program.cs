@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -838,6 +839,100 @@ internal static class Program
 
         win.Dispose();
         win.Close();
+
+        // ---- v0.1.61：日志系统（任务1）----
+        var logDir = Path.Combine(Path.GetTempPath(), "neko-logtest-" + Guid.NewGuid().ToString("N"));
+
+        Check("v0.1.61(日志)：Log.Error 写文件且内容含消息", () =>
+        {
+            Log.Initialize("debug", logDir);
+            Log.Error("日志探针测试消息-ABC123", new InvalidOperationException("探针内部异常-XYZ"));
+            var files = Directory.GetFiles(logDir, "neko-*.log");
+            if (files.Length == 0) throw new Exception("未生成日志文件");
+            var text = File.ReadAllText(files[0]);
+            if (!text.Contains("日志探针测试消息-ABC123")) throw new Exception("日志文件不含消息文本");
+            if (!text.Contains("[ERROR]")) throw new Exception("日志缺少级别标记");
+            if (!text.Contains("探针内部异常-XYZ")) throw new Exception("Log.Error 未记录异常内容");
+        });
+
+        Check("v0.1.61(日志)：多线程并发调用不抛异常", () =>
+        {
+            Log.Initialize("debug", logDir);
+            var errors = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+            Parallel.For(0, 200, i =>
+            {
+                try { Log.Warn($"并发日志 {i}"); }
+                catch (Exception ex) { errors.Add(ex); }
+            });
+            if (!errors.IsEmpty) throw new Exception($"并发写入抛异常 {errors.Count} 次");
+            // 至少应写入若干行
+            var total = Directory.GetFiles(logDir, "neko-*.log").Sum(f => File.ReadAllText(f).Length);
+            if (total == 0) throw new Exception("并发写入后日志为空");
+        });
+
+        Check("v0.1.61(日志)：目录不存在时自动创建", () =>
+        {
+            var freshDir = Path.Combine(Path.GetTempPath(), "neko-logtest-fresh-" + Guid.NewGuid().ToString("N"), "nested");
+            if (Directory.Exists(freshDir)) throw new Exception("前提错误：目录不应存在");
+            Log.Initialize("info", freshDir);
+            Log.Info("自动创建目录探针");
+            if (!Directory.Exists(freshDir)) throw new Exception("日志目录未被自动创建");
+            if (Directory.GetFiles(freshDir, "*.log").Length == 0) throw new Exception("未写入日志文件");
+        });
+
+        Check("v0.1.61(日志)：级别过滤（off 不写 / warn 默认）", () =>
+        {
+            var offDir = Path.Combine(Path.GetTempPath(), "neko-logtest-off-" + Guid.NewGuid().ToString("N"));
+            Log.Initialize("off", offDir);
+            Log.Error("off 级别不应落盘");
+            if (Directory.Exists(offDir) && Directory.GetFiles(offDir, "*.log").Length > 0)
+                throw new Exception("off 级别仍写入了日志");
+            Console.WriteLine("  off 级别：未写盘 OK");
+        });
+
+        // ---- v0.1.61：调度器异常隔离（任务2 — 宿主不被拖垮）----
+        Check("v0.1.61(调度器)：回调抛异常不拖垮宿主 + 记日志 + 熔断", () =>
+        {
+            var scDir = Path.Combine(Path.GetTempPath(), "neko-logtest-sched-" + Guid.NewGuid().ToString("N"));
+            Log.Initialize("error", scDir);
+
+            var sched = new SchedulerImpl();
+            int calls = 0;
+            var handle = sched.Every(20, () =>
+            {
+                Interlocked.Increment(ref calls);
+                throw new InvalidOperationException("插件定时任务故意抛异常");
+            });
+
+            // 等待足够多次 tick 以触发熔断（阈值 5 次）
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (handle.IsActive && sw.ElapsedMilliseconds < 3000)
+                Thread.Sleep(20);
+
+            if (handle.IsActive) throw new Exception("连续失败后定时器未熔断停用（宿主会一直刷异常）");
+            if (Volatile.Read(ref calls) < 5) throw new Exception($"实际仅触发 {calls} 次，未达熔断阈值");
+
+            // 异常必须被记录（证明走的是 Log 而非裸崩）
+            var logText = string.Join("\n", Directory.GetFiles(scDir, "*.log").Select(File.ReadAllText));
+            if (!logText.Contains("插件定时任务故意抛异常"))
+                throw new Exception("调度器异常未被记录到日志");
+            Console.WriteLine($"  熔断生效：失败 {calls} 次后定时器停用，异常已落盘");
+
+            handle.Dispose();
+            Console.WriteLine($"  宿主进程存活（本探针继续运行即证明）");
+        });
+
+        Check("v0.1.61(调度器)：正常回调不被熔断 + 连续失败后恢复归零", () =>
+        {
+            var sched = new SchedulerImpl();
+            int ok = 0;
+            var h = sched.Every(10, () => Interlocked.Increment(ref ok));
+            Thread.Sleep(200);
+            if (ok < 3) throw new Exception($"正常定时器仅触发 {ok} 次");
+            if (!h.IsActive) throw new Exception("正常定时器被误熔断");
+            h.Dispose();
+            if (h.IsActive) throw new Exception("Dispose 后 IsActive 应为 false");
+        });
 
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Environment.Exit(_fail == 0 ? 0 : 1);

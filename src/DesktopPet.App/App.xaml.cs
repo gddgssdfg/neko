@@ -1,4 +1,3 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using DesktopPet.App.Core;
@@ -20,20 +19,35 @@ public partial class App : Application
         // 1. 初始化目录
         Paths.EnsureCreated();
 
+        // 加载配置（先读配置拿到 LogLevel，日志才能按配置过滤）
+        var config = ConfigManager.Load(Paths.ConfigFile);
+
+        // v0.1.61：初始化文件日志（级别来自配置；默认 warn 及以上落盘 data/logs）
+        Log.Initialize(config.LogLevel);
+
         // 全局异常兜底：写入日志并提示一次，避免未处理异常导致整体崩溃
         DispatcherUnhandledException += (_, args) =>
         {
-            File.AppendAllText(
-                Path.Combine(Paths.Data, "errors.log"),
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {args.Exception}\n\n");
+            Log.Error("未处理的 UI 线程异常", args.Exception);
             MessageBox.Show(
-                $"Neko 遇到未处理异常，已记录到 data\\errors.log：\n{args.Exception.Message}",
+                $"Neko 遇到未处理异常，已记录到 data\\logs：\n{args.Exception.Message}",
                 "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true; // 保住宿主进程不退出
         };
 
-        // 2. 加载配置
-        var config = ConfigManager.Load(Paths.ConfigFile);
+        // v0.1.61：后台线程兜底——DispatcherUnhandledException 只覆盖 UI 线程，
+        // 后台 Task / 非 UI 线程异常若不拦截会静默杀死进程（见 P0-1）。
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error("未观测的 Task 异常", args.Exception);
+            args.SetObserved(); // 防止进程被 CLR 终止
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            // 此事件无法阻止进程退出，仅用于「留下遗言」
+            Log.Error("非 UI 线程未处理异常（进程即将退出）", args.ExceptionObject as Exception);
+        };
+
         Paths.EnsurePluginsCreated();
 
         // v0.1.41：首启引导（封包需求核心——首次安装时需设置「猫如何称呼自己」+「给猫取名」）
@@ -61,7 +75,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"自启同步失败: {ex.Message}");
+            Log.Warn($"自启同步失败: {ex.Message}");
         }
 
         // 3. 主宠物窗口（透明置顶）

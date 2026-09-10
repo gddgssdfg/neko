@@ -1673,4 +1673,62 @@ ChatScheduler 已有 "主人"/"Neko" 兜底，跳过不影响功能。
 - 建议每个版本交付时提交一次；`publish/` 不入库，需要时重新 publish
 - （可选）将来可加 remote 推到 Gitee，但本地版本控制已解决"追溯"这个核心诉求
 
+---
+
+## 2026-09-11（v0.1.61：批次 A —— 可观测性 + 宿主稳定性 + 文档诚实化）
+
+灯灯批准审计后的批次 A（三 P0）。三项按依赖顺序做：**先日志（异常要落地）→ 再异常隔离 → 后文档/接口诚实化**。
+
+### 1. 轻量文件日志（修 P0-2）
+
+**问题**：全项目只有 `App.xaml.cs` 写 `errors.log`（且只记未处理异常），其余 12 处全是 `Debug.WriteLine`——**Release 下被编译器整段移除，真机出问题零线索**。
+
+**新增 `Core/Log.cs`**（静态类，四级 `Debug/Info/Warn/Error`）：
+- 落盘 `data/logs/neko-YYYYMMDD.log`；`Paths.Logs` 纳入 `EnsureCreated()`；按天滚动 + 单文件超 5MB 追加 `-N`；启动清 7 天前旧日志
+- **线程安全**（`lock`）——插件线程池回调也会调它；**失败静默**（所有 IO 包 try/catch，日志设施绝不反过来搞崩宿主）
+- 每次 `File.AppendAllText` 重开文件（不常驻句柄，频率低）；格式 `[ts] [LEVEL] [ThreadId] msg`
+- 默认 **Warning 及以上**；`AppConfig.LogLevel`（默认 `"warn"`，可 `info/debug/off`）
+- `Log.Error` **同时写 `errors.log`** 保持兼容
+
+**踩坑 1（自己的 bug，被 UiProbe 抓出）**：级别过滤初版写 `if (level < _minLevel) return;`，`Off=0` 时 `Error(4) < 0` 为假 → **off 级别仍写盘**。UiProbe「off 不写」断言直接 FAIL。修法：`_minLevel == Off` 时无条件 return。**教训：枚举当阈值用要显式处理边界值，"数值最小"不等于"关闭"**。
+
+### 2. 插件后台异常隔离 + 熔断（修 P0-1）
+
+**问题**（审计 P0 第一条）：`SchedulerImpl` 三处 Timer 回调裸调无 try/catch。System.Threading.Timer 回调跑**线程池**，未处理异常**直接终止进程**；而全局兜底只挂 `DispatcherUnhandledException`（**仅 UI 线程**）→ **任一插件定时任务抛异常就杀死整个 Neko**，正面违反架构铁律 3。
+
+**实现**：
+- `SchedulerImpl` 抽取 `Add(dueMs, periodMs, cb)` + `SafeInvoke` 统一包异常 → `Log.Error`
+- **熔断**：`TimerHandle` 记连续失败次数（`Interlocked`），达 **5 次**自动 `Dispose` 停表 + `Log.Warn`
+- `App.xaml.cs` 补 `TaskScheduler.UnobservedTaskException`（`SetObserved()` 防 CLR 终止）+ `AppDomain.UnhandledException`（留遗言，无法阻止退出）
+- 注意：`TimerHandle` 是私有嵌套类，回调闭包需引用 handle 做计数——用局部捕获 + 可空抑制解决构造顺序
+
+**测试**：UiProbe 新增 2 项——①回调抛异常后宿主存活 + 异常落盘 + 连续 5 次熔断停用（`handle.IsActive` 变 false）；②正常回调不被误熔断 + Dispose 后 IsActive=false。都通过。
+
+### 3. 文档诚实化（修 P0-3 + P1-7 + P1-9）
+
+- **权限模型（P0-3）改文档不改代码**：实际是「加载时校验」（声明高风险即拒载），运行时无逐次守卫。`plugin-authoring-guide.md` §4 从"每次调用校验"改写为真实口径——**诚实优于对齐一份没实现的铁律**。
+- **手册漂移（P1-7）**：版本标注 v0.1.0 → v0.1.61；`enum PetState` 补第 9 值 `Work`；「8 组雪碧图」→ 9 组。
+- **删死接口（P1-9）**：`IScheduler.Cron` 原实现忽略表达式退化为每分钟，属半成品；全仓（src/builtins/samples）**零实际使用**（仅接口定义 + 测试桩）→ 直接删除，改手册为 `Every/At` only。同步 `ICapabilityApi.cs` + `LoaderTest.NullScheduler` 桩。
+
+### 4. 环境坑：UiProbe 无法构建（NETSDK1151）
+
+App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包含 → **`error NETSDK1151: 自包含可执行文件不能由非自包含可执行文件引用`**，测试直接构建失败。
+
+- 处置：**只在 `UiProbe.csproj`（测试侧）** 对齐 `SelfContained=true` + `RID=win-x64`，**未动 App 的发布配置**（团队约束：发布配置已定稿）
+- 附带：UiProbe 无 `using System.IO;`（WPF SDK 隐式 using 不含），新增测试用到 `Path/File/Directory` 报 CS0103 → 显式补 using
+- **只读审计时发现的配置漂移在"跑测试"这一环才真正爆出来**——印证"测试可移植性"必须包含"在当前发布配置下能构建"
+
+### 5. 验证（本会话自跑）
+
+- 构建 App/tests（Release + Debug）：**0 警告 0 错误**
+- LoaderTest 全过（4 组）
+- UiProbe **33/33 全过**（新增 6 项：日志 4 + 调度器隔离 2）
+- publish → `publish/v0.1.61`（自包含 + 压缩关，配置未改）
+
+### 6. 教训沉淀
+
+- **UiProbe 是"自己写的代码"的第一道防线**：日志 off 级别边界 bug 就是被它抓出来的——测试先行省了真机排查
+- **改接口要全仓搜实现**：Cron 删之前先 `grep` 确认零使用，避免误删；同步改测试桩
+- **发布配置变更的连锁影响**：csproj 一个 `<SelfContained>` 能卡住整个测试链路，配置类改动同样要跑测试
+
 

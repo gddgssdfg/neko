@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using DesktopPet.App.Core;
 using DesktopPet.Core;
 
 namespace DesktopPet.App.Services;
@@ -11,25 +12,25 @@ public sealed class SystemImpl : ISystem
     public void Notify(string title, string body)
     {
         // 托盘气泡通知（由 TrayManager 挂载，v1 先留占位）
-        Debug.WriteLine($"[通知] {title}: {body}");
+        Log.Info($"[通知] {title}: {body}");
     }
 
     public string? ReadClipboard()
     {
         try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
-        catch (Exception ex) { Debug.WriteLine($"剪贴板读取失败: {ex.Message}"); return null; }
+        catch (Exception ex) { Log.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
     }
 
     public void WriteClipboard(string text)
     {
         try { Clipboard.SetText(text); }
-        catch (Exception ex) { Debug.WriteLine($"剪贴板写入失败: {ex.Message}"); }
+        catch (Exception ex) { Log.Warn($"剪贴板写入失败: {ex.Message}"); }
     }
 
     public void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Debug.WriteLine($"打开链接失败: {ex.Message}"); }
+        catch (Exception ex) { Log.Warn($"打开链接失败: {ex.Message}"); }
     }
 
     public string? PickFile(string filter = "")

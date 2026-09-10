@@ -8,6 +8,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>UiProbe</AssemblyName>
     <RootNamespace>DesktopPet.Tests.UiProbe</RootNamespace>
+    <!-- v0.1.61：App 自 v0.1.60 起为自包含（SelfContained=true + RID=win-x64）。
+         非自包含 exe 不能引用自包含 exe（NETSDK1151），故测试侧对齐为自包含。
+         仅影响测试产物，不改动 App 的发布配置。 -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>

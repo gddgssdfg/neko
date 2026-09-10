@@ -15,12 +15,11 @@ public interface IScheduleHandle : IDisposable
     bool IsActive { get; }
 }
 
-/// <summary>定时任务</summary>
+/// <summary>定时任务（v0.1.61：移除未实现的 Cron —— 诚实优于半成品）</summary>
 public interface IScheduler
 {
     IScheduleHandle Every(int intervalMs, Action callback);
     IScheduleHandle At(DateTime time, Action callback);
-    IScheduleHandle Cron(string expression, Action callback);
 }
 
 /// <summary>系统能力</summary>

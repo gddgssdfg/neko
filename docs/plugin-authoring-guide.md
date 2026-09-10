@@ -3,9 +3,9 @@
 > **本手册是自包含的。** 照着它能从零写出一个可运行的 Neko 插件，**不需要读宿主源码**。
 >
 > **给 AI 用**：把本文件整个贴给任意 AI，说「按这份手册写一个 XXX 插件」，就能产出可直接编译的代码。
-> 手册里所有 API 签名、权限键、事件名均已对照 v0.1.0 源码核实，可直接使用。
+> 手册里所有 API 签名、权限键、事件名均已对照 v0.1.61 源码核实，可直接使用。
 >
-> 对应宿主版本：**v0.1.0** ｜ Core API 版本：**1**
+> 对应宿主版本：**v0.1.61** ｜ Core API 版本：**1**
 
 ---
 
@@ -116,7 +116,15 @@ maxMemoryMB = 16    # 内存上限（MB），超出被 watchdog 终止
 
 ## 4. 权限模型（**易错，仔细看**）
 
-权限是 `[Flags]` 位掩码，manifest 声明 → 宿主逐项授予 → 每次调用校验。未声明的权限调用时会被宿主拒绝并记日志。
+权限是 `[Flags]` 位掩码。**实际模型为「加载时校验」**：
+
+> manifest 声明 → 宿主解析权限键 → 判定风险等级 → **高风险权限（file/process）拒绝自动加载**；
+> 加载成功后，插件可在本次已授予的权限范围内自由调用（宿主不再逐次校验）。
+
+也就是说：**声明了哪些权限，就等于拿到了哪些能力**；高风险权限会导致插件被拒绝加载（而不是运行到一半才报错）。
+因此**只声明你真正需要的最小权限集**，既是最佳实践，也能避免被高风险规则拦截。
+
+历史注：早期设计文档曾描述「每次调用校验」，但运行时从未实现逐次守卫（v0.1.61 已统一文档口径为真实实现）。
 
 ### 4.1 三个段会自动加前缀，一个不加
 
@@ -275,9 +283,14 @@ bool Contains(string key);
 ```csharp
 IScheduleHandle Every(int intervalMs, Action callback);
 IScheduleHandle At(DateTime time, Action callback);
-IScheduleHandle Cron(string expression, Action callback);
 // IScheduleHandle : IDisposable { bool IsActive { get; } }
+// 注：v0.1.61 移除了 Cron —— 原实现忽略表达式退化为每分钟，属半成品；
+//     需要周期任务请用 Every，需要定时一次请用 At（诚实优于半成品）。
 ```
+
+> **回调异常隔离（v0.1.61）**：宿主对每个定时任务回调做了 try/catch 隔离——
+> 你的回调抛异常**不会**拖垮宿主（会写日志），但**连续失败 5 次后该定时器会被自动停用**。
+> 所以请确保回调内自行处理可预期异常，避免被熔断。
 
 **系统能力**：
 
@@ -300,14 +313,14 @@ void   Emit(string evt, object? payload = null);  // 向其他插件广播
 
 ```csharp
 enum PetMood { Idle, Happy, Sleepy, Angry, Sad }
-enum PetState { Idle, Walk, Sit, Sleep, Pet, Drag, Fall, Climb }
+enum PetState { Idle, Walk, Sit, Sleep, Pet, Drag, Fall, Climb, Work }
 
 readonly record struct Point2(double X, double Y);   // Point2.Zero
 readonly record struct Rect2(double X, double Y, double Width, double Height);  // .Right / .Bottom
 ```
 
-> `PetState` 对应 8 组雪碧图动画：`Idle` 待机 / `Walk` 走动 / `Sit` 坐下 / `Sleep` 睡觉 /
-> `Pet` 被抚摸 / `Drag` 被拖拽 / `Fall` 下落 / `Climb` 贴边悬挂。
+> `PetState` 对应 9 组雪碧图动画：`Idle` 待机 / `Walk` 走动 / `Sit` 坐下 / `Sleep` 睡觉 /
+> `Pet` 被抚摸 / `Drag` 被拖拽 / `Fall` 下落 / `Climb` 贴边悬挂 / `Work` 工作模式（v0.1.48 新增）。
 
 ---
 
@@ -559,10 +572,10 @@ copy plugin.toml                              G:\lantetn-li\neko\plugins\com.you
 2. **`entry` 的文件名和实际 dll 一致？** 区分大小写无所谓，但文件名必须完全对上
 3. **`TargetFramework` 是 `net8.0-windows`？** 写成 `net8.0` 会引用不上 Sdk
 4. **`OnLoad` 里调了 `base.OnLoad(ctx)`？** 没调的话 `Pet`/`UI`/`Capability` 全是 null
-5. **权限声明全了吗？** 只调 `Pet.Say` 却没声明 `pet.animate`，调用会被拒绝
-6. 打开设置窗口看「加载失败诊断」，或看 `data/errors.log`
+6. **权限声明全了吗？** 只调 `Pet.Say` 却没声明 `pet.animate`——加载时权限不匹配可能导致功能不可用；高风险权限（file/process）会直接拒绝加载
+7. 打开设置窗口看「加载失败诊断」，或看 `data/logs/neko-*.log`（v0.1.61 起统一日志设施；warn 及以上落盘）
 
-**调试输出**：`System.Diagnostics.Debug.WriteLine(...)` 在 VS 调试时输出到「输出」窗口。
+**调试输出**：v0.1.61 起统一走 `DesktopPet.App.Core.Log`（宿主侧）；插件自身仍可用 `Debug.WriteLine`（VS 调试时输出到「输出」窗口）。
 
 **无 UI 验证**：不想启动桌面时，可用 `tests/LoaderTest` 验证加载链路（它用最小宿主实现跑通加载 → OnLoad → 事件 → 卸载）。
 
