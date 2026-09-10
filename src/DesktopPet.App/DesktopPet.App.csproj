@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.App</RootNamespace>
+    <AssemblyName>Neko</AssemblyName>
+
+    <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
+    <Version>0.1.60</Version>
+    <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
+
+    <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
+         ⚠️ EnableCompressionInSingleFile 必须为 false：v0.1.60 实测对照——
+            压缩 on  → 体积 80MB / 稳态内存 276MB（启动解压运行时，映射常驻内存）
+            压缩 off → 体积 174MB / 稳态内存 177MB
+         桌宠是常驻程序，内存优先 → 关压缩（灯灯 2026-09-11 拍板）
+         若改回框架依赖需同步：MSI 加 .NET 8 Desktop Runtime 前置检测 + neko.iss 注释 -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <DebugType>embedded</DebugType>
+
+    <!-- 性能：工作站负载，关并发回收 -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <!-- 引用 Sdk：确保宿主进程加载 DesktopPet.Sdk.dll，插件 ALC 才能把 Sdk 路由回宿主侧（类型分裂修复的关键） -->
+    <ProjectReference Include="..\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\neko-assets\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\**\anim.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+  </ItemGroup>
+
+  <!-- v0.1.42 修复：target 改挂到 Build+Publish，之前的 AfterTargets="Build" 让 `dotnet publish` 不会触发，
+       导致 publish/plugins/ 一直空——真机 Release 跑其实没装任何插件。
+       PublishSingleFile=true 不会自动 copy 其他项目产物，必须显式复制。
+       注意：Build 后复制到 $(OutDir)（F5 开发用）；Publish 后复制到 $(PublishDir)（发布产物用）——
+       OutDir 与 PublishDir 是不同目录，只挂 Build 的话发布产物永远没插件。 -->
+  <Target Name="DeployPluginsToOutput" AfterTargets="Build">
+    <ItemGroup>
+      <_PluginFiles Include="..\..\plugins\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginFiles)"
+          DestinationFiles="@(_PluginFiles->'$(OutDir)plugins\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="DeployPluginsToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PluginFiles Include="..\..\plugins\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PluginFiles)"
+          DestinationFiles="@(_PluginFiles->'$(PublishDir)plugins\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

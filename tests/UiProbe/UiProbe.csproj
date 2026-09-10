@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>UiProbe</AssemblyName>
+    <RootNamespace>DesktopPet.Tests.UiProbe</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
+    <!-- 素材是 <None> 项，不会随项目引用传递，需显式复制到本测试输出目录 -->
+    <None Include="..\..\neko-assets\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <!-- v0.1.46：插件目录同样复制到测试输出（Plugins.LoadCore 依赖 BaseDirectory/plugins/） -->
+    <None Include="..\..\plugins\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="plugins" />
+  </ItemGroup>
+
+</Project>

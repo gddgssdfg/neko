@@ -1,0 +1,19 @@
+[plugin]
+id = "com.lantern.quote"
+name = "每日一句"
+version = "0.1.0"
+api = 1
+entry = "Quote.dll"
+author = "lantern"
+description = "每天一句中文句子，猫用气泡告诉你"
+
+[permissions]
+pet = ["animate"]
+ui = ["register"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

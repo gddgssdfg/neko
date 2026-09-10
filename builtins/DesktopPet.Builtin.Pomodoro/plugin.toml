@@ -1,0 +1,20 @@
+[plugin]
+id = "com.lantern.pomodoro"
+name = "番茄钟"
+version = "0.1.0"
+api = 1
+entry = "Pomodoro.dll"
+author = "lantern"
+description = "25 分钟专注计时：开始后猫会提醒你休息"
+
+[permissions]
+pet = ["animate"]
+ui = ["register"]
+other = ["scheduler", "notify"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

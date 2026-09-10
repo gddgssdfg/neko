@@ -1,0 +1,38 @@
+# ===== 构建产物（不入库；bin/obj 是递归匹配，builtins/ 下的产物也覆盖）=====
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# ===== 发布与安装包（体积巨大，可重新生成）=====
+# publish/ 累积 4.1G（含历史自包含 Neko.exe 单文件 170MB × N 版本）
+publish/
+# installer/ 累积 375M（历史 MSI 各 54MB）
+installer/*.msi
+installer/*.wixpdb
+installer/*.exe
+installer/tmp_*.wixpdb
+
+# ===== 运行时数据（用户配置/插件数据，不入库）=====
+data/
+
+# ===== 素材备份与中间产物 =====
+neko-assets.bak-*/
+*.bak-*
+*_preview*.png
+neko-assets/soft/preview.png
+# 托盘图标制作的中间产物（原始素材与抠图草稿）
+neko-assets/_icon_*
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.workbuddy/
+Thumbs.db
+Desktop.ini
+*.log
+
+# ===== 密钥（⚠️ 绝不入库）=====
+.env
+*.key
+!*.pub

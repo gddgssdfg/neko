@@ -1,0 +1,17 @@
+[plugin]
+id = "com.lantern.sample"
+name = "示例插件"
+version = "0.1.0"
+api = 1
+entry = "SamplePlugin.dll"
+author = "哥们"
+description = "验证插件加载链路：径向菜单 + 定时 Say"
+
+[permissions]
+pet = ["animate", "read"]
+ui = ["register"]
+storage = ["local"]
+
+[ui]
+radial = true
+settings = false

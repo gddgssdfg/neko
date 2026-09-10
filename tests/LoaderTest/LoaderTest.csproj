@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <ProjectReference Include="..\..\samples\SamplePlugin\SamplePlugin.csproj" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Affection\DesktopPet.Builtin.Affection.csproj" />
+  </ItemGroup>
+
+</Project>

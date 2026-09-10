@@ -1,0 +1,55 @@
+# Neko 插件清单模板
+# 复制到 plugins/<your-id>/plugin.toml 后修改
+# 文件夹名必须与 id 一致
+
+[plugin]
+# 唯一标识，反向域名写法，全局不可重复
+id = "com.lantern.myplugin"
+
+# 显示名（中文 OK）
+name = "我的插件"
+
+# 语义化版本
+version = "0.1.0"
+
+# 依赖的 Core API 版本，宿主据此做兼容判断
+api = 1
+
+# 入口 dll 文件名（相对本目录）
+entry = "MyPlugin.dll"
+
+author = "你的名字"
+description = "一句话说明这个插件做什么"
+
+# 可选：主页 / 仓库地址
+# homepage = "https://..."
+
+[permissions]
+# 权限声明，宿主在安装时展示给用户，运行时逐项校验
+# 未声明的权限，调用时会被宿主拒绝并记日志
+#
+# 可选值（可多选）：
+#   pet.animate    播放动画
+#   pet.move       移动宠物
+#   pet.read       读取宠物位置和状态
+#   ui.register    注册径向菜单 / 托盘项 / 设置页
+#   storage        插件私有存储
+#   scheduler      定时任务
+#   notify         系统通知
+#   clipboard      剪贴板读写（中风险）
+#   network        网络请求（中风险，受域名白名单限制）
+#   file           文件系统（高风险，需二次确认）
+#   process        启动进程（高风险，需二次确认）
+pet = ["read", "animate"]
+ui = ["register"]
+storage = ["local"]
+
+[ui]
+# 是否占用一个径向菜单槽位
+radial = true
+# 是否在设置窗口提供配置页
+settings = false
+
+[resources]
+# 内存上限（MB），超出会被 watchdog 终止
+maxMemoryMB = 16

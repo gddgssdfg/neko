@@ -1,0 +1,859 @@
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
+using DesktopPet.App.Core;
+using DesktopPet.App.Renderer;
+using DesktopPet.App.Services;
+using DesktopPet.App.Windows;
+
+namespace DesktopPet.Tests.UiProbe;
+
+/// <summary>
+/// UI 层防回归探针（需真实窗口，跑在 STA 线程，运行时会短暂弹出宠物窗口）。
+/// 守护两个曾经真实踩过、且无头测试（LoaderTest）覆盖不到的坑：
+///   1. 宠物窗口尺寸 —— 曾用 SizeToContent + 无 MeasureOverride 的裸宿主，窗口被量成 12.8px，猫几乎不可见
+///   2. 径向菜单反复开关 —— 曾用 Close() 销毁，关闭期间再 Show 抛 InvalidOperationException，直接崩掉整个应用
+/// 运行：dotnet run --project tests/UiProbe
+/// </summary>
+internal static class Program
+{
+    private static int _fail;
+
+    [STAThread]
+    private static void Main()
+    {
+        Paths.EnsureCreated();
+
+        // ---- 1. 径向菜单反复开关（复现旧崩溃：Close 期间 Show） ----
+        var menu = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput());
+        Check("径向菜单 50 次 Show/Hide", () =>
+        {
+            for (int i = 0; i < 50; i++) { menu.ShowAt(300, 300); menu.HideMenu(); }
+        });
+        Check("径向菜单 连点 10 次（已显示时重复打开）", () =>
+        {
+            menu.ShowAt(300, 300);
+            for (int i = 0; i < 10; i++) menu.ShowAt(300 + i * 5, 300);
+            menu.HideMenu();
+        });
+
+        // ---- 2. 宠物窗口端到端（真实素材 + 真实渲染路径） ----
+        var config = new AppConfig();
+        var win = new PetWindow(config);
+        win.Show();
+        // 强制完成一次布局，确保 ActualWidth/Height 已计算
+        win.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+        // v0.1.46：触发 LoadPlugins（同步 LoadCore + 异步 LoadDeferred）—— 直接调避免等 Loaded 异步
+        // UiProbe bin/plugins/ 由 csproj None 复制保证存在
+        win.LoadPlugins();
+
+        var w = win.ActualWidth;
+        var h = win.ActualHeight;
+        var expectedW = config.Scale * SpriteAtlas.FrameW;
+        var expectedH = config.Scale * SpriteAtlas.FrameH;
+        Check($"宠物窗口尺寸 {w}x{h}（期望 {expectedW}x{expectedH}）", () =>
+        {
+            if (Math.Abs(w - expectedW) > 0.5 || Math.Abs(h - expectedH) > 0.5)
+                throw new Exception($"实际 {w}x{h}，期望 {expectedW}x{expectedH}");
+        });
+
+        // ---- 2.5 v0.1.26 位置记忆：config 记录的位置 → 启动恢复到该位置 ----
+        var config2 = new AppConfig { PosX = 200, PosY = 150 };
+        var win2 = new PetWindow(config2);
+        win2.Show();
+        win2.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+        Check($"位置记忆恢复（期望 Left=200 Top=150，实际 {win2.Left:F0}x{win2.Top:F0}）", () =>
+        {
+            if (Math.Abs(win2.Left - 200) > 1 || Math.Abs(win2.Top - 150) > 1)
+                throw new Exception($"实际 {win2.Left}x{win2.Top}（位置记忆可能回退）");
+        });
+        win2.Dispose();
+        win2.Close();
+
+        // ---- 2.6 v0.1.27 游戏模式全屏判定纯逻辑 ----
+        Check("游戏模式全屏判定：盖满 ≥98% / 普通窗口 / 最小化窗口", () =>
+        {
+            if (!PetWindow.CoversMonitor(0, 0, 1920, 1080, 0, 0, 1920, 1080))
+                throw new Exception("精确全屏未命中（判定过严）");
+            if (!PetWindow.CoversMonitor(-8, -8, 1928, 1088, 0, 0, 1920, 1080))
+                throw new Exception("略超出屏幕的全屏未命中（无边框游戏常见）");
+            if (PetWindow.CoversMonitor(0, 0, 1500, 900, 0, 0, 1920, 1080))
+                throw new Exception("普通窗口误判为全屏（判定过松）");
+            if (PetWindow.CoversMonitor(-32000, -32000, -31840, -31860, 0, 0, 1920, 1080))
+                throw new Exception("最小化窗口（-32000 偏移）误判为全屏");
+        });
+
+        // ---- 3. 经 PetWindow 的真实调用路径（右键 / 热键） ----
+        Check("PetWindow 开/关菜单 20 次", () =>
+        {
+            for (int i = 0; i < 20; i++) { win.OpenRadialMenu(); win.CloseRadialMenu(); }
+        });
+        Check("PetWindow ToggleRadialMenu 10 轮（热键路径）", () =>
+        {
+            for (int i = 0; i < 10; i++) { win.ToggleRadialMenu(); win.ToggleRadialMenu(); }
+        });
+
+        // ---- 4. 交互压力（反射调私有方法压测真实逻辑路径） ----
+        // 生产代码不动。反射调 StartFall/Pet/AttachEdge/DetachEdge 验证修复在压力下不崩。
+        var winType = typeof(PetWindow);
+        var bf = BindingFlags.NonPublic | BindingFlags.Instance;
+        var startFall = winType.GetMethod("StartFall", bf) ?? throw new MissingMethodException("StartFall 不存在");
+        var petMethod = winType.GetMethod("Pet", bf) ?? throw new MissingMethodException("Pet 不存在");
+        var attachEdge = winType.GetMethod("AttachEdge", bf) ?? throw new MissingMethodException("AttachEdge 不存在");
+        var detachEdge = winType.GetMethod("DetachEdge", bf) ?? throw new MissingMethodException("DetachEdge 不存在");
+        var fallTimerField = winType.GetField("_fallTimer", bf) ?? throw new MissingFieldException("_fallTimer 字段不存在");
+
+        Check("拖拽甩动压测：StartFall 连续 30 次（验证落体定时器不再叠加）", () =>
+        {
+            for (int i = 0; i < 30; i++)
+                startFall.Invoke(win, new object[] { new Vector(20 + i % 10, 100 + i) });
+        });
+        Check("抚摸压测：Pet 连续 50 次", () =>
+        {
+            for (int i = 0; i < 50; i++) petMethod.Invoke(win, null);
+        });
+        Check("边缘吸附压测：AttachEdge/DetachEdge 各 20 次", () =>
+        {
+            for (int i = 0; i < 20; i++)
+            {
+                attachEdge.Invoke(win, new object[] { i % 4, 100.0 + i, 100.0 + i });
+                detachEdge.Invoke(win, null);
+            }
+        });
+        Check("落体定时器字段持有正确（非 null，证明 #2 修复没回退）", () =>
+        {
+            var t = fallTimerField.GetValue(win);
+            if (t is null) throw new Exception("_fallTimer 为 null（修复可能回退：StartFall 后未持有定时器）");
+        });
+
+        // ---- 5. 槽位图标 PNG 缓存（v0.1.8：PNG 化不依赖系统 emoji 字体） ----
+        Check("槽位图标 PNG 缓存加载成功（icons/ 目录 + default 回退）", () =>
+        {
+            var cacheField = typeof(RadialMenu).GetField("_iconCache", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("RadialMenu._iconCache 不存在（PNG 化可能回退）");
+            var cache = cacheField.GetValue(menu) as System.Collections.Generic.Dictionary<string, System.Windows.Media.Imaging.BitmapImage>;
+            if (cache is null) throw new Exception("_iconCache 为 null");
+            if (cache.Count == 0) throw new Exception("图标缓存为空（neko-assets/icons/ 未加载）");
+            if (!cache.ContainsKey("default")) throw new Exception("缺 default.png 回退图标");
+        });
+
+        // ---- 6. v0.1.25：22 槽位分页（每页 ≤8）+ 渲染像素验证（圆环挖洞、底盘能看清） ----
+        var probeUi = new UIApiImpl(_ => null);
+        using (probeUi.PushScope("probe"))
+        {
+            for (int i = 0; i < 22; i++)
+            {
+                var idx = i;
+                probeUi.RegisterRadialSlot(new DesktopPet.Core.RadialSlot
+                {
+                    Id = $"probe{i}",
+                    Label = $"项目{idx}",
+                    Icon = "default",
+                    Order = idx,
+                    OnInvoke = () => { },
+                });
+            }
+        }
+        var menu2 = new RadialMenu(probeUi, new GlobalInput());
+        menu2.ShowAt(500, 400, 55.2); // 模拟 3.2x 猫（半宽 51.2 + 4）
+
+        Check("径向菜单 22 槽位分页：单页 ≤ 8，翻页 5 轮不崩", () =>
+        {
+            var canvasField = typeof(RadialMenu).GetField("_canvas", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("RadialMenu._canvas 不存在");
+            var canvas = (System.Windows.Controls.Canvas)canvasField.GetValue(menu2)!;
+            var next = typeof(RadialMenu).GetMethod("NextPage", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("RadialMenu.NextPage 不存在");
+            for (int p = 0; p < 5; p++) next.Invoke(menu2, null);
+            int slotCount = 0;
+            for (int ci = 0; ci < canvas.Children.Count; ci++)
+                if (canvas.Children[ci].GetType().Name == "SlotView") slotCount++;
+            if (slotCount > 8) throw new Exception($"单页槽位 {slotCount} 个 > 8（分页失效，会再叠成一团）");
+        });
+
+        Check("径向菜单渲染像素：中心洞透明（透出猫）+ 底盘近乎不透明（能看清）", () =>
+        {
+            // v0.1.30：径向菜单加了 200ms 淡入动画——Sleep 会阻塞 STA 消息循环导致动画停摆，
+            // 必须用 DispatcherFrame 让消息循环跑起来，Timer Tick 后再断言
+            var frame = new DispatcherFrame();
+            var t = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(260),
+            };
+            t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+            t.Start();
+            Dispatcher.PushFrame(frame);
+            menu2.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            int w = (int)Math.Ceiling(menu2.ActualWidth);
+            int h = (int)Math.Ceiling(menu2.ActualHeight);
+            if (w <= 0 || h <= 0) throw new Exception($"菜单尺寸异常 {w}x{h}");
+            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            rtb.Render(menu2);
+            var pngPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-radial-v0.1.25.png");
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+            using (var fs = System.IO.File.Create(pngPath)) enc.Save(fs);
+
+            var pixels = new byte[w * h * 4];
+            rtb.CopyPixels(pixels, w * 4, 0);
+            int AlphaAt(int x, int y) => pixels[4 * (y * w + x) + 3];
+
+            // 多页时窗口顶部多一条 HeaderH=26 的胶囊条，环心 y = header + ring/2
+            var pageCountField = typeof(RadialMenu).GetField("_pageCount", BindingFlags.NonPublic | BindingFlags.Instance);
+            int pageCount = pageCountField is null ? 1 : (int)(pageCountField.GetValue(menu2) ?? 1);
+            int header = pageCount > 1 ? 26 : 0;
+            int cy = header + (h - header) / 2;
+            int holeA = AlphaAt(w / 2, cy);          // 圆心 = 挖洞区 → 应透明（透出猫）
+            int plateRow = cy - 57;                   // 洞外 12px 的底盘留白带（55.2 洞半径 + 2）→ 必为纯底盘，不落槽位
+            int plateA = AlphaAt(w / 2, plateRow);
+            int plateB = pixels[4 * (plateRow * w + w / 2) + 2];
+            if (holeA > 20) throw new Exception($"中心洞不透明 alpha={holeA}（挖洞失效，猫会被挡住）");
+            if (plateA < 220) throw new Exception($"底盘太透 alpha={plateA}（看不清，用户要求能看清）");
+            if (plateB < 200) throw new Exception($"底盘颜色异常 B={plateB}（应近白）");
+            Console.WriteLine($"      [像素] 洞 alpha={holeA}（应≈0），底盘 alpha={plateA} B={plateB}（应≈255）；截图: {pngPath}");
+        });
+
+        menu2.HideMenu();
+        menu2.Close();
+
+        // ---- v0.1.28 第 16 项：键鼠映射窗（BongoCat 核心视觉）----
+        Check("键鼠映射窗：66 键注册 + 鼠标 3 区 + 高亮/拍爪切换", () =>
+        {
+            var gi = new GlobalInput();          // 不 Install，纯 UI 测试
+            var mcfg = new AppConfig();
+            var mirror = new InputMirrorWindow(gi, mcfg, () => { });
+            mirror.Show();
+            mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            if (mirror.RegisteredKeys != 66)
+                throw new Exception($"注册键位 {mirror.RegisteredKeys} ≠ 66（vk 冲突被吞，键盘会缺键）");
+            // v0.1.36：布局不重叠不溢出（v0.1.28 Grid 列溢出 bug 的回归守护）；v0.1.44：键盘画布缩小（KbW 反射读，防数字漂移）
+            double kbw = (double)typeof(InputMirrorWindow).GetField("KbW", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            if (mirror.LayoutHasOverlaps())
+                throw new Exception("键帽矩形存在重叠（Grid 列溢出：1.5u/2.25u 宽键盖住相邻键）");
+            if (mirror.LayoutMaxRight() > kbw + 0.5)
+                throw new Exception($"最右键帽右缘 {mirror.LayoutMaxRight()} > {kbw}（超出键盘画布，会被截断）");
+            if (mirror.RegisteredMouseKeys != 3)
+                throw new Exception($"鼠标区 {mirror.RegisteredMouseKeys} ≠ 3");
+            // v0.1.29：爪子素材 + 敲键拍爪状态切换
+            if (!mirror.PawAssetsLoaded)
+                throw new Exception("爪子素材未加载（neko-assets/mirror/paw_up.png 等缺失）");
+            mirror.FlashKey(0x41, true);
+            if (!mirror.IsKeyboardPawDown)
+                throw new Exception("敲键后键盘爪未压下（130ms 回弹定时器或帧切换异常）");
+            mirror.FlashKey(0x41, false);
+            // v0.1.35：鼠标键动画不能崩（Brushes.Transparent 冻结刷 + BeginAnimation 曾崩溃的守护）
+            mirror.FlashMouse(0, true);
+            mirror.FlashMouse(0, false);
+            mirror.FlashMouse(2, true);
+            mirror.FlashMouse(2, false);
+            mirror.Close();
+            gi.Dispose();
+        });
+
+        // ---- v0.1.38 第 17 项：设置页构建 + 5 section 切换（v0.1.31 深色重写后从未被 probe 覆盖）----
+        Check("设置页：构建 + 5 个 section 切换不崩", () =>
+        {
+            var settings = new SettingsWindow(win);
+            settings.Show();
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            // v0.1.39：ShowSection 改 public（托盘「关于」要直接定位），反射 flags 必须带 Public
+            var showSection = typeof(SettingsWindow).GetMethod("ShowSection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("SettingsWindow.ShowSection 不存在");
+            foreach (var sec in new[] { "general", "pet", "input", "plugin", "about" })
+            {
+                showSection.Invoke(settings, new object[] { sec });
+                settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            }
+            settings.Close();
+        });
+
+        // ---- v0.1.39 第 18 项：双模态绑定猫位置（灯灯点名的"猫瞬移 / 轮盘不跟随猫"回归守护）----
+        Check("v0.1.39：键盘镜像 + 轮盘跟随猫 + 映射窗以猫为锚", () =>
+        {
+            // ① 键盘朝向镜像：朝我 = ScaleX 1；朝猫 = ScaleX -1（水平镜像）
+            var gi = new GlobalInput();
+            var mcfg = new AppConfig();
+            var mirror = new InputMirrorWindow(gi, mcfg, () => { });
+            mirror.Show();
+            mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var rootField = typeof(InputMirrorWindow).GetField("_rootGrid", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("InputMirrorWindow._rootGrid 不存在");
+            mirror.SetMirrored(false);
+            if (((Grid)rootField.GetValue(mirror)!).RenderTransform is not ScaleTransform st0 || st0.ScaleX != 1.0)
+                throw new Exception("键盘朝向=朝我时，内容根 ScaleX 应为 1（未镜像）");
+            mirror.SetMirrored(true);
+            if (((Grid)rootField.GetValue(mirror)!).RenderTransform is not ScaleTransform st1 || st1.ScaleX != -1.0)
+                throw new Exception("键盘朝向=朝猫时，内容根 ScaleX 应为 -1（水平镜像）");
+            mirror.Close();
+            gi.Dispose();
+
+            // ② 轮盘跟随猫：MoveTo 后圆心必须落在猫中心
+            var probe = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput());
+            probe.ShowAt(500, 400, 55);
+            probe.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            probe.MoveTo(800, 600);
+            if (Math.Abs(probe.Left - (800 - probe.Width / 2)) > 0.5 || Math.Abs(probe.Top - (600 - probe.Height / 2)) > 0.5)
+                throw new Exception($"轮盘未跟随猫：Left={probe.Left} Top={probe.Top}，期望圆心 (800,600)");
+            probe.HideMenu();
+
+            // ③ work 模式：映射窗来就猫（水平居中于猫 + 贴在猫下方），猫本身一步都不能动
+            win.Left = 400; win.Top = 300;   // 挪到屏幕中部，排除"贴边被 clamp 拉回"的干扰
+            var catLeft = win.Left;
+            win.SetAppMode("work");
+            win.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var mirrorField = typeof(PetWindow).GetField("_mirrorWindow", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetWindow._mirrorWindow 不存在");
+            if (mirrorField.GetValue(win) is not InputMirrorWindow mw || !mw.IsVisible)
+                throw new Exception("work 模式未显示键鼠映射窗");
+            if (Math.Abs(win.Left - catLeft) > 0.5)
+                throw new Exception($"切 work 模式把猫瞬移了：{catLeft} → {win.Left}（应当是映射窗来就猫）");
+            if (Math.Abs((mw.Left + mw.Width / 2) - (win.Left + win.Width / 2)) > 1.0)
+                throw new Exception("映射窗未水平居中于猫（键盘应以猫视角为主）");
+            if (Math.Abs(mw.Top - (win.Top + win.Height + 2)) > 1.5)   // v0.1.43：MirrorGap 6→2（猫几乎趴在键盘上）
+                throw new Exception($"映射窗未贴在猫下方：Top={mw.Top}，期望 {win.Top + win.Height + 2}");
+
+            // ④ slack 模式：映射窗必须收起
+            win.SetAppMode("slack");
+            win.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            if (mw.IsVisible) throw new Exception("slack 模式未收起键鼠映射窗");
+        });
+
+        // ---- v0.1.40 第 19 项：气泡对话（像素云朵渲染 + 活跃度 + 好感度档位）----
+        Check("v0.1.40：像素云朵气泡渲染 + 活跃度统计 + 好感度档位", () =>
+        {
+            // ① 像素云朵：ShowBubble 后可见、尺寸合理、云朵主体白且不透明、角落透明（穿透）
+            var bubble = new BubbleWindow();
+            bubble.ShowBubble("测试气泡", 3000);
+            var frame = new DispatcherFrame();
+            var t = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(220),   // 等 120ms 淡入完成
+            };
+            t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+            t.Start();
+            Dispatcher.PushFrame(frame);
+            bubble.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            if (!bubble.IsVisible) throw new Exception("气泡未显示");
+            if (bubble.Width < 40 || bubble.Height < 30)
+                throw new Exception($"气泡尺寸异常 {bubble.Width}x{bubble.Height}（云朵应 ≥40x30）");
+            // 断言前强制 Opacity=1 + 停动画：避免 120ms 淡入动画进行中导致半透明采样误判
+            bubble.Opacity = 1;
+            bubble.BeginAnimation(System.Windows.UIElement.OpacityProperty, null);
+            bubble.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            int bw = (int)Math.Ceiling(bubble.Width);
+            int bh = (int)Math.Ceiling(bubble.Height);
+            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(bw, bh, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            rtb.Render(bubble);
+            var pixels = new byte[bw * bh * 4];
+            rtb.CopyPixels(pixels, bw * 4, 0);
+            byte A(int x, int y) => pixels[4 * (y * bw + x) + 3];
+            // 扫云朵主体区域找一个非透明白块（避开文字 X=18..66 Y=14..30）——
+            // WPF 窗口渲染到 RTB 有 sRGB/gamma 微差（实测 B≈225，非纯 #FFF9EC 的 236），不卡死阈值
+            int foundX = -1, foundY = -1;
+            for (int y = 8; y < 35 && foundX < 0; y += 2)
+                for (int x = 1; x < bw - 1 && foundX < 0; x += 2)
+                {
+                    if (x >= 18 && x <= 66 && y >= 14 && y <= 30) continue;  // 文字区
+                    if (A(x, y) >= 200) { foundX = x; foundY = y; }
+                }
+            if (foundX < 0)
+                throw new Exception($"云朵主体找不到非透明白块（尺寸 {bw}x{bh}，扫了主体区）");
+            if (A(1, 1) > 40)
+                throw new Exception($"气泡角落不透明 alpha={A(1, 1)}（Background 应为 null 穿透）");
+            bubble.Dismiss();
+
+            // ② 活跃度：同分钟多次输入只计 1 活跃分钟（分钟级去重）
+            var actFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-act-test.json");
+            System.IO.File.Delete(actFile);
+            var act = new ActivityTracker(actFile);
+            act.NotifyInput();
+            act.NotifyInput();
+            act.NotifyInput();
+            if (act.TodayActiveMinutes != 1)
+                throw new Exception($"同分钟 3 次输入应只计 1 活跃分钟，实际 {act.TodayActiveMinutes}");
+            System.IO.File.Delete(actFile);
+
+            // ③ 好感度档位（ChatScheduler 读 score.json → 0..3，阈值对齐 AffectionPlugin）
+            var affDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-aff-test");
+            System.IO.Directory.CreateDirectory(affDir);
+            var affFile = System.IO.Path.Combine(affDir, "score.json");
+            var sched = new ChatScheduler((_, _) => { }, act, affFile, 45, "测试猫", "测试主人");   // v0.1.41：新增 catName/ownerTitle 参数
+            var lv = typeof(ChatScheduler).GetMethod("ReadAffectionLevel", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("ChatScheduler.ReadAffectionLevel 不存在");
+            System.IO.File.WriteAllText(affFile, "5");
+            if ((int)(lv.Invoke(sched, null) ?? -1) != 0) throw new Exception("好感度 5 应=0 陌生");
+            System.IO.File.WriteAllText(affFile, "60");
+            if ((int)(lv.Invoke(sched, null) ?? -1) != 2) throw new Exception("好感度 60 应=2 亲密");
+            System.IO.File.WriteAllText(affFile, "999");
+            if ((int)(lv.Invoke(sched, null) ?? -1) != 3) throw new Exception("好感度 999 应=3 挚友");
+            System.IO.Directory.Delete(affDir, true);
+        });
+
+        // ---- v0.1.41 第 20 项：首启引导（猫名/称呼 Config 字段 + ChatScheduler 模板替换 + FirstRunWindow 构建）----
+        Check("v0.1.41：首启引导窗口构建 + 称呼/猫名注入台词", () =>
+        {
+            // ① Config 字段存在（首启引导存这里）
+            if (typeof(AppConfig).GetProperty("CatName") is null)
+                throw new Exception("Config 缺 CatName 字段");
+            if (typeof(AppConfig).GetProperty("OwnerTitle") is null)
+                throw new Exception("Config 缺 OwnerTitle 字段");
+
+            // ② FirstRunWindow ctor 不崩（不 ShowDialog，只构造——ShowDialog 会要求人工输入）
+            var onboardingCfg = new AppConfig();
+            var onboarding = new FirstRunWindow(onboardingCfg);
+            onboarding.Close();
+
+            // ③ ChatScheduler 模板替换：反射 Pick + 反射 RestLines/ChatLines
+            var act = new ActivityTracker(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-u20-act.json"));
+            System.IO.File.Delete(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-u20-act.json"));
+            var sched = new ChatScheduler((_, _) => { }, act, "", 45, "奶糖", "主人");
+            var pick = typeof(ChatScheduler).GetMethod("Pick", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("ChatScheduler.Pick 不存在");
+            // 拿 L2/L3 台词表（私有 static string[][]）
+            string[][] GetLines(string name) =>
+                (string[][])(typeof(ChatScheduler).GetField(name, BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null) ?? throw new MissingFieldException(name));
+            // 分开断言：L2 Rest 含 {0}=称呼、L3 Chat 含 {1}=猫名（v0.1.41 设计：L0/L1 不融入；L2 亲昵喊称呼；L3 挚友聊猫名）
+            bool hitOwner = false;
+            for (int i = 0; i < 200 && !hitOwner; i++)
+            {
+                var s = (string)pick.Invoke(sched, new object[] { GetLines("RestLines")[2] })!;
+                if (s.Contains("主人")) hitOwner = true;
+            }
+            if (!hitOwner) throw new Exception("L2 Rest 至少一条应含 {0}→主人（亲昵档）");
+            bool hitCat = false;
+            for (int i = 0; i < 200 && !hitCat; i++)
+            {
+                var s = (string)pick.Invoke(sched, new object[] { GetLines("ChatLines")[3] })!;
+                if (s.Contains("奶糖")) hitCat = true;
+            }
+            if (!hitCat) throw new Exception("L3 Chat 至少一条应含 {1}→奶糖（挚友档）");
+            // L0 陌生档故意不融入——L0 数组不应含 {0}/{1}
+            var rest0 = GetLines("RestLines")[0];
+            if (rest0.Any(s => s.Contains("{0}") || s.Contains("{1}"))) throw new Exception("L0 陌生档不应融入称呼/猫名（生硬）");
+        });
+
+        // ---- v0.1.43 第 21 项：猫爪跟随按键（爪滑到被按的键上方，不再钉死固定位）----
+        Check("v0.1.43：猫爪跟随按键（键盘爪滑到键上 / 鼠标爪滑到按钮上）", () =>
+        {
+            var gi = new GlobalInput();
+            var mirror = new InputMirrorWindow(gi, new AppConfig(), () => { });
+            mirror.Show();
+            mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            // 反射拿内部常量与键表（避免硬编码数字漂移）
+            double pawSize = (double)typeof(InputMirrorWindow).GetField("PawSize", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            double kbw = (double)typeof(InputMirrorWindow).GetField("KbW", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            double mg = (double)typeof(InputMirrorWindow).GetField("MouseGap", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            double mw = (double)typeof(InputMirrorWindow).GetField("MouseW", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            var keys = (Dictionary<uint, System.Windows.Controls.Border>)typeof(InputMirrorWindow)
+                .GetField("_keyByVk", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(mirror)!;
+            double KeyCenter(uint vk) => Canvas.GetLeft(keys[vk]) + keys[vk].Width / 2;
+            double ClampX(double center) => Math.Clamp(center - pawSize / 2, 0, kbw - pawSize);
+
+            // 按 A → 爪悬停到 A 键中心上方
+            mirror.FlashKey(0x41, true);
+            double expA = ClampX(KeyCenter(0x41));
+            if (Math.Abs(mirror.KeyboardPawLeftPos - expA) > 2)
+                throw new Exception($"按 A 爪应滑到 {expA:F0}，实际 {mirror.KeyboardPawLeftPos:F0}");
+            // 按 Esc（左上角）→ 目标显著变化（爪跟键走，不再钉死 170）
+            mirror.FlashKey(0x1B, true);
+            double expEsc = ClampX(KeyCenter(0x1B));
+            if (Math.Abs(mirror.KeyboardPawLeftPos - expEsc) > 2)
+                throw new Exception($"按 Esc 爪应滑到 {expEsc:F0}，实际 {mirror.KeyboardPawLeftPos:F0}");
+            // 鼠标右键 → 爪滑到右键中心上方
+            mirror.FlashMouse(1, true);
+            double expR = kbw + mg + mw / 4 * 3 - pawSize / 2;
+            if (Math.Abs(mirror.MousePawLeftPos - expR) > 2)
+                throw new Exception($"按鼠标右键爪应滑到 {expR:F0}，实际 {mirror.MousePawLeftPos:F0}");
+            // 抬起后悬停位保持（不飞回固定位）
+            mirror.FlashMouse(1, false);
+            if (Math.Abs(mirror.MousePawLeftPos - expR) > 2)
+                throw new Exception($"鼠标爪抬起后应停在右键上方 {expR:F0}，实际 {mirror.MousePawLeftPos:F0}");
+
+            // v0.1.44：敲键后 130ms 爪必须举回"举手位"（键盘上方之外），不能悬停在键上挡键盘
+            var pawField = typeof(InputMirrorWindow).GetField("_kbdPaw", BindingFlags.NonPublic | BindingFlags.Instance)!
+                ?? throw new MissingFieldException("InputMirrorWindow._kbdPaw 不存在");
+            var paw = (System.Windows.Controls.Image?)pawField.GetValue(mirror);
+            double pawRaised = (double)typeof(InputMirrorWindow).GetField("PawRaisedTop", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            if (paw is null) throw new Exception("键盘爪未创建");
+            mirror.FlashKey(0x41, true);   // 敲 A
+            var frame2 = new DispatcherFrame();
+            var t2 = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(220),   // 等 130ms 回弹定时器跑完
+            };
+            t2.Tick += (_, _) => { t2.Stop(); frame2.Continue = false; };
+            t2.Start();
+            Dispatcher.PushFrame(frame2);
+            mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            double pawTop = Canvas.GetTop(paw);
+            if (pawTop < pawRaised - 1)
+                throw new Exception($"爪应举回举手位（Top={pawRaised}，键盘上方之外），实际 Top={pawTop:F0}（挡住键盘了）");
+
+            mirror.Close();
+            gi.Dispose();
+        });
+
+        // ---- v0.1.46 第 22 项：插件启用/禁用开关（运行时 Disable/Enable 即时生效）----
+        Check("v0.1.46：插件开关（Disable 卸载 + 撤销 UI + IsEnabled；Enable 重载）", () =>
+        {
+            if (win.PluginHost.Plugins.Count == 0)
+                throw new Exception("没有可用插件可测");
+
+            // 拿第一个插件做开关测试（彩蛋插件，方便数据稳定）
+            string id = win.PluginHost.Plugins[0].Manifest.Id;
+            int before = win.PluginHost.Plugins.Count;
+
+            try
+            {
+                // ① 禁用 → 立刻从 Plugins 消失 + IsEnabled=false
+                if (!win.PluginHost.DisablePlugin(id))
+                    throw new Exception($"DisablePlugin({id}) 失败");
+                if (win.PluginHost.IsEnabled(id))
+                    throw new Exception("DisablePlugin 后 IsEnabled 应=false");
+                if (win.PluginHost.Plugins.Any(p => p.Manifest.Id == id))
+                    throw new Exception("DisablePlugin 后 Plugins 列表应不含该 id");
+                if (win.PluginHost.Plugins.Count != before - 1)
+                    throw new Exception($"Plugins 数 {before} → {win.PluginHost.Plugins.Count}（应减 1）");
+
+                // ② 启用 → 重新加载 + IsEnabled=true + Plugins 含 id + 总数恢复
+                if (!win.PluginHost.EnablePlugin(id))
+                    throw new Exception($"EnablePlugin({id}) 失败（详见 PluginHost.Errors）");
+                if (!win.PluginHost.IsEnabled(id))
+                    throw new Exception("EnablePlugin 后 IsEnabled 应=true");
+                if (!win.PluginHost.Plugins.Any(p => p.Manifest.Id == id))
+                    throw new Exception("EnablePlugin 后 Plugins 列表应含该 id");
+                if (win.PluginHost.Plugins.Count != before)
+                    throw new Exception($"Plugins 数 {before} → {win.PluginHost.Plugins.Count}（应恢复）");
+            }
+            finally
+            {
+                // 收尾：恢复初始状态（避免污染后续项）
+                if (!win.PluginHost.IsEnabled(id))
+                    win.PluginHost.EnablePlugin(id);
+            }
+        });
+
+        // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----
+        Check("v0.1.48/54：皮肤（pixel/soft 素材加载 OK；v0.1.54 柔光屏蔽——SetSkin 白名单强制回 pixel）", () =>
+        {
+            // 1) SpriteAtlas 两种皮肤都加载成功 + 状态数符合（素材层不删，UI 层屏蔽）
+            var pixelAtlas = SpriteAtlas.Load(Paths.Assets, "pixel");
+            if (pixelAtlas.Skin != "pixel") throw new Exception($"pixel 模式 Skin 应='pixel' 实际='{pixelAtlas.Skin}'");
+            if (pixelAtlas.States.Count != 9) throw new Exception($"pixel 应有 9 状态，实际 {pixelAtlas.States.Count}");
+
+            var softAtlas = SpriteAtlas.Load(Paths.Assets, "soft");
+            if (softAtlas.Skin != "soft") throw new Exception($"soft 模式 Skin 应='soft' 实际='{softAtlas.Skin}'");
+            if (!softAtlas.States.ContainsKey("work")) throw new Exception("soft 缺 work 状态");
+            // 软版眼睛在身体里 → EyeLayer=null
+            if (softAtlas.States["work"].EyeLayer != null) throw new Exception("soft work EyeLayer 应=null（眼睛画在身体里）");
+
+            // 2) v0.1.54：运行时 SetSkin 白名单——非 pixel 一律强制回 pixel
+            var atlasField = typeof(PetRenderer).GetField("_atlas", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetRenderer._atlas 不存在");
+            string prevSkin = win.Config.Skin ?? "pixel";
+            try
+            {
+                win.SetSkin("soft");
+                var cur = (SpriteAtlas)atlasField.GetValue(win.GetType().GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(win))!;
+                if (cur.Skin != "pixel") throw new Exception($"v0.1.54 柔光屏蔽：SetSkin('soft') 后 _atlas.Skin 应仍='pixel'（白名单强制），实际='{cur.Skin}'");
+                if (win.Config.Skin != "pixel") throw new Exception("SetSkin('soft') 后 config.Skin 应被强制回 pixel");
+
+                win.SetSkin("pixel");
+                cur = (SpriteAtlas)atlasField.GetValue(win.GetType().GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(win))!;
+                if (cur.Skin != "pixel") throw new Exception("SetSkin('pixel') 后 _atlas.Skin 应='pixel'");
+            }
+            finally
+            {
+                // 收尾：恢复初始
+                win.SetSkin(prevSkin);
+                if (win.Config.Skin != prevSkin) { win.Config.Skin = prevSkin; DesktopPet.App.Core.ConfigManager.Save(Paths.ConfigFile, win.Config); }
+            }
+        });
+
+        // ---- v0.1.50 第 24 项：主题/语言字段 + SettingsWindow 主题色按 Theme 实例化（深/浅两套）----
+        Check("v0.1.50：Config Theme/Language 字段 + SettingsWindow 主题色按主题实例化", () =>
+        {
+            // 1) Config 字段存在
+            if (typeof(AppConfig).GetProperty("Theme") is null) throw new Exception("Config 缺 Theme 字段");
+            if (typeof(AppConfig).GetProperty("Language") is null) throw new Exception("Config 缺 Language 字段");
+
+            // 2) SettingsWindow 主题颜色字段已是实例（去掉 static，否则深浅切换不生效）
+            var swType = typeof(SettingsWindow);
+            var bgRootField = swType.GetField("BgRoot", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new Exception("SettingsWindow.BgRoot 不是实例字段（可能还是 static）");
+
+            // 3) 构造 SettingsWindow 验证主题色按 _config.Theme 选深/浅（深色默认 #1E26...，浅色 #F5F7...）
+            string prevTheme = win.Config.Theme;
+            try
+            {
+                win.Config.Theme = "dark";
+                var swDark = new SettingsWindow(win);
+                var bgDark = (Color)bgRootField.GetValue(swDark)!;
+                if (bgDark.R != 0x1E || bgDark.G != 0x26 || bgDark.B != 0x2F)
+                    throw new Exception($"深色主题 BgRoot 应=#1E262F 实际=#{bgDark.R:X2}{bgDark.G:X2}{bgDark.B:X2}");
+                swDark.Close();
+
+                win.Config.Theme = "light";
+                var swLight = new SettingsWindow(win);
+                var bgLight = (Color)bgRootField.GetValue(swLight)!;
+                if (bgLight.R != 0xF5 || bgLight.G != 0xF7 || bgLight.B != 0xFA)
+                    throw new Exception($"浅色主题 BgRoot 应=#F5F7FA 实际=#{bgLight.R:X2}{bgLight.G:X2}{bgLight.B:X2}");
+                swLight.Close();
+            }
+            finally
+            {
+                win.Config.Theme = prevTheme;
+            }
+        });
+
+        // ---- v0.1.57 第 25 项：设置页 ChoiceCard 点击后选中态实时高亮（存量 bug：onChange 后从不刷新按钮视觉）----
+        Check("设置页 ChoiceCard：点击后选中项实时高亮（150ms ColorAnimation）", () =>
+        {
+            var settings = new SettingsWindow(win);
+            settings.Show();
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var showSection = typeof(SettingsWindow).GetMethod("ShowSection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("SettingsWindow.ShowSection 不存在");
+            showSection.Invoke(settings, new object[] { "general" });
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+            {
+                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+                {
+                    var c = VisualTreeHelper.GetChild(root, i);
+                    yield return c;
+                    foreach (var d in Descendants(c)) yield return d;
+                }
+            }
+
+            // 定位游戏模式卡（3 个选项，中文文案不受语言切换影响）
+            Border? target = null;
+            foreach (var o in Descendants(settings))
+                if (o is Border b && b.Child is TextBlock tb && tb.Text == "全屏时藏猫")
+                { target = b; break; }
+            if (target is null) throw new Exception("找不到游戏模式 ChoiceCard 的『全屏时藏猫』按钮");
+            var panel = (StackPanel)target.Parent!;
+            var buttons = new List<Border>();
+            for (int i = 0; i < panel.Children.Count; i++)
+                if (panel.Children[i] is Border b) buttons.Add(b);
+            if (buttons.Count != 3) throw new Exception($"游戏模式按钮数应=3 实际={buttons.Count}");
+
+            var accent = (Color)typeof(SettingsWindow).GetField("Accent", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(settings)!;
+            var grey = Color.FromRgb(0x3A, 0x44, 0x57);
+            static int CD(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+
+            // 模拟点击第 2 项（索引 1 = 全屏时藏猫）：onChange + RefreshSelection
+            buttons[1].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.MouseLeftButtonUpEvent,
+                Source = buttons[1],
+            });
+
+            // 等 150ms ColorAnimation 完成（DispatcherFrame 驱动消息循环，动画时钟才会走）
+            var frame = new DispatcherFrame();
+            var t = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(240) };
+            t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+            t.Start();
+            Dispatcher.PushFrame(frame);
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            var sel = ((SolidColorBrush)buttons[1].Background).Color;
+            var un0 = ((SolidColorBrush)buttons[0].Background).Color;
+            var un2 = ((SolidColorBrush)buttons[2].Background).Color;
+            if (CD(sel, accent) > 24)
+                throw new Exception($"点击第2项后应高亮 Accent=#{accent.R:X2}{accent.G:X2}{accent.B:X2}，实际=#{sel.R:X2}{sel.G:X2}{sel.B:X2}");
+            if (CD(un0, grey) > 24)
+                throw new Exception($"第1项应回灰底 #3A4457，实际=#{un0.R:X2}{un0.G:X2}{un0.B:X2}");
+            if (CD(un2, grey) > 24)
+                throw new Exception($"第3项应保持灰底 #3A4457，实际=#{un2.R:X2}{un2.G:X2}{un2.B:X2}");
+
+            // 还原：点回第 1 项（关闭），避免污染游戏模式状态
+            buttons[0].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            {
+                RoutedEvent = UIElement.MouseLeftButtonUpEvent,
+                Source = buttons[0],
+            });
+            settings.Close();
+        });
+
+        // ---- v0.1.59 第 26 项：P4 渲染时钟统一 + ⑩鼠标张望 + ⑨心情驱动（行为等价内部重构 + 新交互）----
+        Check("v0.1.59(P4/⑩/⑨)：渲染时钟统一 _clockMs + 鼠标张望增益 + 好感度驱动心情", () =>
+        {
+            // --- P4：闪眼/打字截止时间改为 _clockMs 基准（字段类型应是 double，非 DateTime）---
+            var flashF = typeof(PetRenderer).GetField("_flashEyesUntilMs", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetRenderer._flashEyesUntilMs 不存在（P4 未改）");
+            if (flashF.FieldType != typeof(double))
+                throw new Exception($"P4：_flashEyesUntilMs 应为 double（_clockMs 基准），实际 {flashF.FieldType}");
+            var typingF = typeof(PetRenderer).GetField("_typingUntilMs", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetRenderer._typingUntilMs 不存在（P4 未改）");
+            if (typingF.FieldType != typeof(double))
+                throw new Exception($"P4：_typingUntilMs 应为 double（_clockMs 基准），实际 {typingF.FieldType}");
+
+            // FlashEyes 后 HasTransientVisual 应立即为真（闪眼生效）
+            var renderer = (PetRenderer)typeof(PetWindow).GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(win)!;
+            renderer.FlashEyes(500);
+            if (!renderer.HasTransientVisual)
+                throw new Exception("P4：FlashEyes(500) 后 HasTransientVisual 应为 true（闪眼未生效）");
+
+            // --- ⑩：SetEyeOffset 增益参数——张望时 |eyeOffset| 应大于基础值 ---
+            var eyeF = typeof(PetRenderer).GetField("_eyeOffset", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var dir = new Vector(1, 0);   // 归一化方向
+            renderer.SetEyeOffset(dir, 1.0);
+            var baseOffset = ((Vector)eyeF.GetValue(renderer)!).Length;
+            renderer.SetEyeOffset(dir, 1.6);
+            var peekOffset = ((Vector)eyeF.GetValue(renderer)!).Length;
+            if (Math.Abs(baseOffset - 2.0) > 0.01)
+                throw new Exception($"⑩：基础眼球偏移应=2px，实际 {baseOffset:F2}");
+            if (Math.Abs(peekOffset - 3.2) > 0.01)
+                throw new Exception($"⑩：张望增益 1.6× 应=3.2px，实际 {peekOffset:F2}");
+
+            // 边界响应：_peekActive 字段存在，进入半径内应为 true
+            var peekF = typeof(PetWindow).GetField("_peekActive", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (peekF is null) throw new MissingFieldException("PetWindow._peekActive 不存在（⑩ 未实现）");
+
+            // --- ⑨：AffectionReader 等级复用 + 心情映射（L3 挚友 → Happy 帧率 1.3×）---
+            var affDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "neko-v159-aff");
+            System.IO.Directory.CreateDirectory(affDir);
+            var affFile = System.IO.Path.Combine(affDir, "score.json");
+            System.IO.File.WriteAllText(affFile, "5");
+            if (AffectionReader.ReadLevel(affFile) != 0) throw new Exception("⑨：好感度 5 应=0 陌生");
+            System.IO.File.WriteAllText(affFile, "999");
+            if (AffectionReader.ReadLevel(affFile) != 3) throw new Exception("⑨：好感度 999 应=3 挚友");
+            System.IO.Directory.Delete(affDir, true);
+
+            // SetMood(Happy) → _moodIntensity 应=1.3
+            var moodF = typeof(PetRenderer).GetField("_moodIntensity", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            renderer.SetMood(DesktopPet.Core.PetMood.Happy);
+            if (Math.Abs((double)moodF.GetValue(renderer)! - 1.3) > 0.001)
+                throw new Exception($"⑨：SetMood(Happy) 帧率倍率应=1.3，实际 {moodF.GetValue(renderer)}");
+            renderer.SetMood(DesktopPet.Core.PetMood.Idle);   // 还原
+        });
+
+        // ---- v0.1.59 第 27 项：⑧ 抚摸爱心粒子浮层（独立窗口 + 粒子生成/飘散/自动隐藏）----
+        Check("v0.1.59(⑧)：爱心粒子浮层——Burst 生成 3~5 颗 + 淡出后自动隐藏 + 背景穿透", () =>
+        {
+            var hearts = new HeartParticleWindow();
+            hearts.Show();
+            hearts.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            if (hearts.Background is not null)
+                throw new Exception("⑧：爱心浮层 Background 应为 null（真穿透）");
+            if (hearts.IsHitTestVisible)
+                throw new Exception("⑧：爱心浮层不应拦鼠标（IsHitTestVisible 应=false）");
+
+            // Burst 后匿名粒子入 _particles（反射取私有 List）
+            hearts.Burst(new Point(300, 300));
+            var partF = typeof(HeartParticleWindow).GetField("_particles", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("HeartParticleWindow._particles 不存在");
+            var particles = (System.Collections.ICollection)partF.GetValue(hearts)!;
+            if (particles.Count < 3 || particles.Count > 5)
+                throw new Exception($"⑧：Burst 应生成 3~5 颗爱心，实际 {particles.Count}");
+
+            // 等待 >800ms 寿命 → 粒子全部消散 + 窗口自动隐藏（不常驻）
+            var tickF = typeof(HeartParticleWindow).GetField("_tickCount", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("HeartParticleWindow._tickCount 不存在");
+            int ticksBefore = (int)tickF.GetValue(hearts)!;
+
+            // 等待 >800ms 寿命 → 粒子全部消散 + 窗口自动隐藏（不常驻）。
+            // 爱心仿真已用真实 elapsed（OnTick 内 TickCount64 差），tick 疏密不影响寿命；
+            // 这里再用「反复 PushFrame + 短等」确定性驱动，双重稳妥（单 timer 等待曾在嵌套泵下提前退出）。
+            var deadline = DateTime.Now.AddMilliseconds(1300);
+            while (DateTime.Now < deadline)
+            {
+                var step = new DispatcherFrame();
+                var stepTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(20),
+                };
+                stepTimer.Tick += (_, _) => { stepTimer.Stop(); step.Continue = false; };
+                stepTimer.Start();
+                Dispatcher.PushFrame(step);
+            }
+            hearts.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            // 决定性诊断：OnTick 必须真的被调度过（否则说明 timer 没跑，而非消散逻辑错）
+            int ticksAfter = (int)tickF.GetValue(hearts)!;
+            if (ticksAfter - ticksBefore <= 0)
+                throw new Exception($"⑧：爱心 timer 未推进（tick {ticksBefore}→{ticksAfter}）——OnTick 从未被调度");
+            if (particles.Count != 0)
+                throw new Exception($"⑧：爱心寿命 800ms 后应全部消散，实际仍剩 {particles.Count} 颗（tick {ticksBefore}→{ticksAfter}）");
+            if (hearts.IsVisible)
+                throw new Exception("⑧：爱心播完应自动隐藏（不常驻）");
+            hearts.Close();
+        });
+
+        // ---- v0.1.59 第 28 项：⑦ 扔猫抛物线物理（真实时序：水平飞行 + 越界防护）----
+        Check("v0.1.59(⑦)：抛物线物理——真实时序水平飞行 + 越界防护 + 触地摩擦常量", () =>
+        {
+            // 常量存在
+            var gf = typeof(PetWindow).GetField("GroundFriction", BindingFlags.NonPublic | BindingFlags.Static);
+            if (gf is null) throw new MissingFieldException("PetWindow.GroundFriction 不存在（⑦ 未实现）");
+            var work = (DesktopPet.Core.Rect2)typeof(PetWindow)
+                .GetMethod("GetWorkArea", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(win, null)!;
+
+            // 记录初始位置，向右上方甩出（vx>0, vy<0）→ 观察是否水平位移过
+            double startLeft = win.Left;
+            double startTop = win.Top;
+            var startFall = typeof(PetWindow).GetMethod("StartFall", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("PetWindow.StartFall 不存在");
+            win.Left = work.X + work.Width * 0.5;
+            win.Top = work.Y + work.Height * 0.3;   // 抬高，保证有下落空间
+            startFall.Invoke(win, new object[] { new Vector(8.0, -4.0) });   // ×60 → vx=480, vy=-240 px/s
+
+            // 真实时序驱动 400ms（反复 PushFrame + 短等，确定性推进 dispatcher timer）
+            var deadline = DateTime.Now.AddMilliseconds(400);
+            while (DateTime.Now < deadline)
+            {
+                var step = new DispatcherFrame();
+                var stepTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(20),
+                };
+                stepTimer.Tick += (_, _) => { stepTimer.Stop(); step.Continue = false; };
+                stepTimer.Start();
+                Dispatcher.PushFrame(step);
+            }
+
+            if (Math.Abs(win.Left - (work.X + work.Width * 0.5)) < 1.0)
+                throw new Exception($"⑦：向右甩出后水平位置未变（Left={win.Left:F0}），抛物线未生效（落体 timer 未跑？）");
+            if (Math.Abs(win.Top - (work.Y + work.Height * 0.3)) < 1.0)
+                throw new Exception($"⑦：抛出后竖直位置未变（Top={win.Top:F0}），落体物理未生效");
+
+            // 水平越界防护：飞过的 Left 必须始终落在工作区内（含左右边界）
+            if (win.Left < work.X - 1 || win.Left + win.Width > work.X + work.Width + 1)
+                throw new Exception($"⑦：飞行中 Left={win.Left:F0} 越出工作区（应被反射边界拦住）");
+
+            // 收尾：停落体、复位
+            var fallF = typeof(PetWindow).GetField("_fallTimer", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (fallF.GetValue(win) is DispatcherTimer ft) ft.Stop();
+            fallF.SetValue(win, null);
+            win.Left = startLeft;
+            win.Top = startTop;
+        });
+
+        win.Dispose();
+        win.Close();
+
+        Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
+        Environment.Exit(_fail == 0 ? 0 : 1);
+    }
+
+    private static void Check(string name, Action action)
+    {
+        try
+        {
+            action();
+            Console.WriteLine($"PASS: {name}");
+        }
+        catch (Exception ex)
+        {
+            _fail++;
+            Console.WriteLine($"FAIL: {name} -> {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+}

@@ -1,0 +1,20 @@
+[plugin]
+id = "com.lantern.search"
+name = "快捷搜索"
+version = "0.1.0"
+api = 1
+entry = "QuickSearch.dll"
+author = "lantern"
+description = "复制文字后点菜单，猫帮你打开浏览器搜索"
+
+[permissions]
+pet = ["animate"]
+ui = ["register"]
+other = ["clipboard"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

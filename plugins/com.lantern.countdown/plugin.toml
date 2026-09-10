@@ -1,0 +1,20 @@
+[plugin]
+id = "com.lantern.countdown"
+name = "倒计时"
+version = "0.1.0"
+api = 1
+entry = "Countdown.dll"
+author = "lantern"
+description = "快捷倒计时：5 分钟 / 10 分钟，结束系统提醒"
+
+[permissions]
+pet = ["animate"]
+ui = ["register"]
+other = ["scheduler", "notify"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

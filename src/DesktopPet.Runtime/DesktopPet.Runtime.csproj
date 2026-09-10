@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Runtime</RootNamespace>
+    <AssemblyName>DesktopPet.Runtime</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <PackageReference Include="Tomlyn" Version="0.18.0" />
+  </ItemGroup>
+
+</Project>

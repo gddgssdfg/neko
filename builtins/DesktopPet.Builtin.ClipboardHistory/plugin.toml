@@ -1,0 +1,20 @@
+[plugin]
+id = "com.lantern.clipboard"
+name = "剪贴板历史"
+version = "0.1.0"
+api = 1
+entry = "ClipboardHistory.dll"
+author = "lantern"
+description = "自动记录最近复制文本，双击历史条目可重新复制"
+
+[permissions]
+ui = ["register"]
+storage = ["local"]
+other = ["scheduler", "clipboard"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

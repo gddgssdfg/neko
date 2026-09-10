@@ -1,0 +1,21 @@
+[plugin]
+id = "com.lantern.hourly"
+name = "整点报时"
+version = "0.1.0"
+api = 1
+entry = "HourlyChime.dll"
+author = "lantern"
+description = "每小时整点由猫播报时间（可开关）"
+
+[permissions]
+pet = ["animate"]
+ui = ["register"]
+storage = ["local"]
+other = ["scheduler"]
+
+[ui]
+radial = true
+settings = false
+
+[resources]
+maxMemoryMB = 16

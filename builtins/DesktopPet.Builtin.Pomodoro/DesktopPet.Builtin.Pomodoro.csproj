@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Builtin.Pomodoro</RootNamespace>
+    <AssemblyName>Pomodoro</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="plugin.toml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- 构建后自动部署到程序根 plugins/ 目录（插件加载器扫描位置） -->
+  <Target Name="DeployToPlugins" AfterTargets="Build">
+    <PropertyGroup>
+      <_PluginDir>$(ProjectDir)..\..\plugins\com.lantern.pomodoro</_PluginDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_PluginDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)plugin.toml" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
