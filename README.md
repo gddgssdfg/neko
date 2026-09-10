@@ -2,7 +2,7 @@
 
 > Windows 10 轻量像素桌宠，C# + WPF + .NET 8，VS 2022 开发。
 > **程序根目录：`G:\lantetn-li\neko`**（整个程序都在 G 盘，不占 C 盘）。
-> 当前版本 **v0.1.0**（定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`）。
+> 当前版本 **v0.1.60**（定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`）。
 
 ## 目录结构
 
@@ -30,6 +30,27 @@ G:\lantetn-li\neko\
 │   └── generate_sprites.py   # 素材生成脚本
 └── CHANGELOG.md              # 版本记录
 ```
+
+## 版本控制（v0.1.60 起）
+
+本项目**已启用本地 git**（此前无版本控制，导致两起无留痕回退无法追溯：托盘图标被换回、`SelfContained` 被改 false）。
+
+```bash
+# 查看改动（每次改动后先跑这个，能立刻发现非预期修改）
+git status --short
+git diff --stat
+
+# 提交（格式：<版本号>: <主题>，与 csproj 版本同步）
+git commit -m "v0.1.61: xxx"
+
+# 回滚单个文件到上次提交
+git checkout -- <文件路径>
+```
+
+**设计要点**：`.gitignore` 排除了 `publish/`(4.1G)、`bin/`+`obj/`、`installer/*.msi`(375M)、`data/`、`.env`（含 API Key）。
+仓库仅 1.1MB / 257 文件，只跟踪源码 + 素材 + 文档 + 生成脚本。
+
+⚠️ **素材改动肉眼难以分辨**（PNG/ICO 是二进制）——`git diff --stat` 会显示 `Bin N -> M bytes`，这是发现"图标被意外替换"最有效的手段。
 
 ## 常用命令
 
