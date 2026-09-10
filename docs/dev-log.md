@@ -1767,3 +1767,21 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 - **P2 UI 美化**（未开始）：SDK 加 PluginUi 统一组件库（深色主题卡片）+ 独立窗口（Todo/Notes/Clipboard）深色化。这是灯灯"改动多一点插件 UI 和平滑度"的重点，独立大任务。
 - **内存增量排查**：177→192.7MB 的 ~15MB 来源。
 - **QA 插件审计**：17 插件跑测评估（进行中，可能未完整）。
+
+---
+
+## 2026-09-11（v0.1.63：插件 UI 美化第一批 —— 独立窗口深色化 + 淡入）
+
+**承接 v0.1.62，落地 QA 插件审计指出的"剩余最大 UI 债"**：3 个独立窗口（Notes/ClipboardHistory/TodoList）从默认 WPF 白底 → 深色主题，与宿主 #1E262F 一致。
+
+### 落地
+- 3 窗口深色化 + 150ms Opacity 淡入动画；配色各窗口内联常量，未抽 SDK 共享类（避免动宿主共享程序集影响插件 ALC 路由）。
+- 顺带消除 TodoList CS8602 空引用警告（纯重排）。
+
+### 验证
+3 插件 0 警告 0 错误；LoaderTest 全过；逻辑零改动。
+
+### 备注（未做的 UI 债，下次接续）
+- **设置页旧样式**：Weather / Affection 设置页仍是旧样式（非深色），待统一。
+- **静默吞异常 3 处**：TodoWindow.cs:82 / NotesWindow.cs:56 / ClipboardWindow.cs:42 的 `try{}catch{}`，保存/复制失败无感知，待改 Log/提示。
+- **设置页小瑕疵 2 处**：Pomodoro ComboBox 边界、SleepReminder label 不实时刷。

@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace DesktopPet.Builtin.Notes;
@@ -7,6 +9,12 @@ namespace DesktopPet.Builtin.Notes;
 /// <summary>桌面便签窗口：多行输入，停顿 800ms 自动保存 + 手动保存按钮 + 关窗保存。</summary>
 public sealed class NotesWindow : Window
 {
+    private static readonly Brush Bg = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x2F));
+    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
+    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
+    private static readonly Brush CardBg = new SolidColorBrush(Color.FromRgb(0x2B, 0x36, 0x47));
+    private static readonly Brush CardBorder = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x55));
+
     private readonly Action<string> _onSave;
     private readonly TextBox _editor;
     private readonly DispatcherTimer _autoSave;
@@ -20,9 +28,20 @@ public sealed class NotesWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         MinWidth = 260;
         MinHeight = 200;
+        Background = Bg;
+        Opacity = 0;   // 淡入动画起点
 
         var dock = new DockPanel { Margin = new Thickness(12) };
-        var save = new Button { Content = "保存", Padding = new Thickness(16, 6, 16, 6), HorizontalAlignment = HorizontalAlignment.Right };
+        var save = new Button
+        {
+            Content = "保存",
+            Padding = new Thickness(16, 6, 16, 6),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground = TextMain,
+            Background = CardBg,
+            BorderBrush = CardBorder,
+            BorderThickness = new Thickness(1),
+        };
         DockPanel.SetDock(save, Dock.Bottom);
 
         _editor = new TextBox
@@ -34,6 +53,11 @@ public sealed class NotesWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             FontSize = 14,
             Margin = new Thickness(0, 0, 0, 8),
+            Foreground = TextMain,
+            Background = CardBg,
+            BorderBrush = CardBorder,
+            BorderThickness = new Thickness(1),
+            CaretBrush = TextMain,
         };
 
         // 自动保存：停顿 800ms 无输入即保存（不用点按钮）
@@ -48,7 +72,12 @@ public sealed class NotesWindow : Window
         dock.Children.Add(_editor);
         Content = dock;
 
-        Loaded += (_, _) => { _editor.Focus(); _editor.CaretIndex = _editor.Text.Length; };
+        Loaded += (_, _) =>
+        {
+            _editor.Focus();
+            _editor.CaretIndex = _editor.Text.Length;
+            BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(150)));
+        };
     }
 
     private void Save()

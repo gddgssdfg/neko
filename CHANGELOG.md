@@ -4,6 +4,22 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.63] - 2026-09-11
+
+**插件 UI 美化（第一批）：3 个独立窗口深色化 + 淡入动画**（QA 插件审计指出的"剩余最大 UI 债"）。
+
+### 改动
+- 3 个独立窗口从默认 WPF 白底 → 深色主题（与宿主设置页 #1E262F 一致）：
+  - `Notes/NotesWindow.cs`：深底 + 保存按钮/TextBox 深色化 + `CaretBrush` 浅色
+  - `ClipboardHistory/ClipboardWindow.cs`：深底 + ListBox 深色 + ListBoxItem 选中态蓝灰 #33445C
+  - `TodoList/TodoWindow.cs`：深底 + 统一按钮样式 + 输入框/ListBox 深色
+- 每个窗口加 150ms `Opacity` 淡入动画（打开时平滑显现）
+- 配色各窗口内联常量（背景 #1E262F / 主文字 #E5E7EB / 次文字 #9CA3AF / 卡片底 #2B3647 / 边框 #3A4755），未抽 SDK 共享类（避免动宿主共享程序集影响插件 ALC 路由）
+- 顺带消除 TodoList 原有 CS8602 空引用警告（纯重排，逻辑等价）
+
+### 验证
+- 3 插件构建 0 警告 0 错误；LoaderTest 全过；逻辑（自动保存/双击复制/勾选）零改动。
+
 ## [0.1.62] - 2026-09-11
 
 **插件系统升级（第一批）：Windows 通知接入 + 提醒插件时间设定**（灯灯需求：提醒类插件要能设定时间、接入 Windows 通知作为提醒）。
