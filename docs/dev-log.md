@@ -1644,4 +1644,33 @@ ChatScheduler 已有 "主人"/"Neko" 兜底，跳过不影响功能。
 - ⚠️ 体积 174MB / 内存 177MB 均略超原红线（180MB / 170MB）→ 按灯灯决策「自包含形态下红线放宽」接受
 - **MSI 打包链路**：`gen_setup_wxs.py` / `build_setup.py` 按 publish 目录遍历生成清单，**自包含/框架依赖都能直接复用**；但若将来再切框架依赖，需补 ① .NET 8 Desktop Runtime 前置检测（WiX Launch Condition / Inno `[Code]`）② `neko.iss` 的注释与 `Compression=lzma2/ultra64` 参数（按 170MB 调的）
 
+### 6. 启用本地 git（灯灯拍板「你可以做本地的git」）
+
+**动因**：上面两起无留痕回退都因「无版本控制」而无法追溯——这是本次暴露出的根因级风险。
+
+**落地**：
+- `git init` + 两级提交（`7511be1` 初始化 / `3a38a1b` README 更新）
+- `.gitignore` 设计（**先 dry-run 验证再提交**）：
+  - 排除 `publish/`（4.1G，含历史自包含 Neko.exe 170MB × N 版本）、`bin/`+`obj/`（递归，覆盖 builtins/ 下的 108 个 dll 产物）、`installer/*.msi`（375M）、`data/`、`.env`（**含 ARK API Key，必须排除**）
+  - 排除素材中间产物 `neko-assets/_icon_*`、`*.bak-*`、`*_preview*.png`
+  - **只跟踪 257 文件 / 仓库 1.1MB**
+- 提交前安全检查：确认 `.env` 与 `publish/` 均不在暂存区（`git check-ignore -v` 逐条验证）
+
+**误判修正**：`.gitignore` 初版写了全局 `*.dll`/`*.exe`——这会误伤（虽然 builtins 的 dll 都在 bin/ 下可被覆盖），但更危险的是一旦将来有非 bin 下的必要二进制就会被误排除。改为只排 `bin/`/`obj/` 更精确。
+
+**实战演练（验证 git 真能防住这类问题）**：
+1. 模拟误操作：把 `tray.ico` 换回像素版
+2. `git status --short` → 立刻报 `M neko-assets/tray.ico`
+3. `git diff --stat` → 明确显示 `Bin 82965 -> 1330 bytes`
+4. 还原后 `git status` 恢复干净
+
+→ **这正是此前查不出来的那类改动**（二进制素材在源码 diff 里不可见），现在一眼可见。
+
+**后续约定**：
+- 提交格式 `<版本号>: <主题>`（与 csproj 版本同步）
+- **每次改动后先跑 `git status --short` + `git diff --stat`**——防范非预期修改的第一道防线
+- 素材类改动（PNG/ICO）靠 `git diff --stat` 的 `Bin N -> M bytes` 发现
+- 建议每个版本交付时提交一次；`publish/` 不入库，需要时重新 publish
+- （可选）将来可加 remote 推到 Gitee，但本地版本控制已解决"追溯"这个核心诉求
+
 
