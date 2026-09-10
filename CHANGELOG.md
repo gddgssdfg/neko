@@ -4,6 +4,30 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.62] - 2026-09-11
+
+**插件系统升级（第一批）：Windows 通知接入 + 提醒插件时间设定**（灯灯需求：提醒类插件要能设定时间、接入 Windows 通知作为提醒）。
+
+### 任务 1：Windows 通知接入（修 `ISystem.Notify` 空壳）
+- **问题**：`ISystem.Notify` 自 v0.1.0 起一直是占位符（只写 `Log.Info`），插件调 `Capability.System.Notify` 实际不弹任何通知——"假功能"比没有更糟（误导插件作者以为弹了）。
+- `SystemImpl` 加 `public static Action<string,string>? NotifySink` 静态字段（因 SystemImpl 在多处 `new`，静态字段零改动构造点）；`Notify` 改为日志 + 调 sink。
+- `TrayManager` 加 `ShowBalloon(title, body)` → `TaskbarIcon.ShowBalloonTip`（Hardcodet 内置，0 新依赖）；带跨线程 `Dispatcher` 兜底（插件 Timer 线程池回调触发）+ `try/catch` 记 `Log.Warn`。
+- `App.xaml.cs` 启动时绑定 `SystemImpl.NotifySink = ... → tray.ShowBalloon`。
+
+### 任务 2：提醒插件时间设定（4 个插件加设置页）
+- **问题**：提醒类插件时间全部硬编码、无设置页，用户无法自定义。
+- **SleepReminder**：固定 23:00 → 可设定时+分（Storage `remindHour`/`remindMinute`，默认 23:00，clamp 边界）；径向菜单文案动态显示当前设定。
+- **Pomodoro**：固定 25 分 → 可设定（ComboBox 5/15/25/45 分，Storage `workMinutes`，clamp 1-120）。
+- **Countdown**：新增第 3 槽位「倒计时 N 分」（N=Storage `customMinutes` 默认 15，clamp 1-180），保留 5/10 快捷槽位。
+- **HourlyChime**：新增提醒时段（Storage `startHour`/`endHour` 默认 9-18，支持跨天如 22-6），`CheckHour` 加时段窗口判定；设置页 CheckBox 开关 + 起止小时步进。
+- 每个插件新增 `XxxSettingsPage.cs`（实现 `ISettingsPage`），主插件加 `Storage` 权限。
+
+### 关键修复
+- **4 个插件 csproj 补 `<UseWPF>true</UseWPF>`**：这 4 个插件原本没有 UseWPF（只有 Affection 有），设置页返回 WPF 控件编译不过。属必要改动。
+
+### 验证
+- 4 个插件 + App 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 33/33 全过。
+
 ## [0.1.61] - 2026-09-11
 
 **批次 A：可观测性 + 宿主稳定性 + 文档诚实化**（源自 2026-09-11 项目健康度审计 P0 项；软件团队 SOP：工程师实现 → QA 独立验证）。

@@ -85,6 +85,9 @@ public partial class App : Application
         _tray = new TrayManager(_petWindow);
         _tray.Initialize();
 
+        // v0.1.62：绑定插件通知落地——Capability.System.Notify → 托盘气泡
+        SystemImpl.NotifySink = (title, body) => _tray.ShowBalloon(title, body);
+
         // 5. 主窗口加载完成后再加载插件（避免渲染阻塞启动），随后刷新托盘菜单以展示插件托盘项
         _petWindow.Loaded += (_, _) =>
         {

@@ -33,6 +33,29 @@ public sealed class TrayManager : IDisposable
         _tray.ContextMenu = BuildMenu();
     }
 
+    /// <summary>
+    /// v0.1.62：插件通知入口。SystemImpl.NotifySink 绑定到此处，把插件 Capability.System.Notify
+    /// 变成真正的托盘气泡。用 Dispatcher 兜底跨线程（插件定时器跑线程池，托盘对象属 UI 线程）。
+    /// </summary>
+    public void ShowBalloon(string title, string body)
+    {
+        try
+        {
+            if (_tray.Dispatcher.CheckAccess())
+            {
+                _tray.ShowBalloonTip(title, body, BalloonIcon.Info);
+            }
+            else
+            {
+                _tray.Dispatcher.Invoke(() => _tray.ShowBalloonTip(title, body, BalloonIcon.Info));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"托盘气泡弹出失败: {ex.Message}");
+        }
+    }
+
     /// <summary>插件加载后调用：基于最新插件状态重建托盘菜单（托盘项来自插件注册）。</summary>
     public void RefreshMenu()
     {

@@ -4,11 +4,14 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.Countdown;
 
 /// <summary>
-/// 倒计时插件：快捷 5/10 分钟倒计时，结束用系统通知 + 气泡提醒。
-/// 与番茄钟的区别：更短的时间段（煮面/泡茶/眼保健操等场景）。
+/// 倒计时插件：快捷 5/10 分钟 + 自定义默认时长（设置页可改，默认 15 分），
+/// 结束用系统通知 + 气泡提醒。与番茄钟区别：更短的时间段（煮面/泡茶/眼保健操等）。
 /// </summary>
 public sealed class CountdownPlugin : PluginBase
 {
+    private const string CustomKey = "customMinutes";
+    private const int DefaultCustomMinutes = 15;
+
     private IScheduleHandle? _timer;
     private DateTime _endTime;
 
@@ -17,12 +20,13 @@ public sealed class CountdownPlugin : PluginBase
 
     public override PluginPermissions RequiredPermissions =>
         PluginPermissions.PetAnimate | PluginPermissions.UIRegister
-        | PluginPermissions.Scheduler | PluginPermissions.Notify;
+        | PluginPermissions.Scheduler | PluginPermissions.Notify | PluginPermissions.Storage;
 
     public override void OnLoad(IPluginContext ctx)
     {
         base.OnLoad(ctx);
 
+        var custom = ReadCustom();
         UI.RegisterRadialSlot(new RadialSlot
         {
             Id = "cd-5",
@@ -41,12 +45,28 @@ public sealed class CountdownPlugin : PluginBase
         });
         UI.RegisterRadialSlot(new RadialSlot
         {
+            Id = "cd-custom",
+            Label = $"倒计时 {custom}分",
+            Icon = "clock",
+            Order = 15,
+            OnInvoke = () => Start(ReadCustom()),
+        });
+        UI.RegisterRadialSlot(new RadialSlot
+        {
             Id = "cd-stop",
             Label = "停止倒计时",
             Icon = "close",
-            Order = 15,
+            Order = 16,
             OnInvoke = Stop,
         });
+
+        UI.RegisterSettingsPage(new CountdownSettingsPage(Capability.Storage));
+    }
+
+    private int ReadCustom()
+    {
+        var v = Capability.Storage.Contains(CustomKey) ? Capability.Storage.Get<int>(CustomKey) : DefaultCustomMinutes;
+        return Math.Clamp(v, 1, 180);
     }
 
     private void Start(int minutes)

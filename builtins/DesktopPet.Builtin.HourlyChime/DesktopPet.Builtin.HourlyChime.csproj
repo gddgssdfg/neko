@@ -7,6 +7,7 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>DesktopPet.Builtin.HourlyChime</RootNamespace>
     <AssemblyName>HourlyChime</AssemblyName>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>

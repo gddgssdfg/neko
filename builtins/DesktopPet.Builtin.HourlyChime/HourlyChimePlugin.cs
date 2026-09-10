@@ -4,13 +4,17 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.HourlyChime;
 
 /// <summary>
-/// 整点报时插件（dogfooding：插件手册里的完整示例原样落地为真实内置插件，
-/// 验证手册示例可编译可运行）。每分钟检查一次，跨整点播报；槽位可开关。
+/// 整点报时插件（dogfooding：插件手册里的完整示例原样落地为真实内置插件）。
+/// 每分钟检查一次，跨整点播报；可开关 + 可设定提醒时段（默认仅 9-18 点播报）。
 /// </summary>
 public sealed class HourlyChimePlugin : PluginBase
 {
     private const string LastHourKey = "lastHour";
     private const string EnabledKey = "enabled";
+    private const string StartHourKey = "startHour";
+    private const string EndHourKey = "endHour";
+    private const int DefaultStartHour = 9;
+    private const int DefaultEndHour = 18;
 
     private IScheduleHandle? _timer;
     private bool _enabled;
@@ -30,11 +34,13 @@ public sealed class HourlyChimePlugin : PluginBase
         UI.RegisterRadialSlot(new RadialSlot
         {
             Id = "hourly-toggle",
-            Label = "整点报时（开/关）",
+            Label = $"整点报时（{(_enabled ? "开" : "关")}）",
             Icon = "clock",
             Order = 23,
             OnInvoke = Toggle,
         });
+
+        UI.RegisterSettingsPage(new HourlyChimeSettingsPage(Capability.Storage, () => _enabled, v => _enabled = v));
 
         if (_enabled) StartTimer();
     }
@@ -63,6 +69,16 @@ public sealed class HourlyChimePlugin : PluginBase
     private void CheckHour()
     {
         var now = DateTime.Now;
+        var start = Capability.Storage.Contains(StartHourKey) ? Capability.Storage.Get<int>(StartHourKey) : DefaultStartHour;
+        var end = Capability.Storage.Contains(EndHourKey) ? Capability.Storage.Get<int>(EndHourKey) : DefaultEndHour;
+        start = Math.Clamp(start, 0, 23);
+        end = Math.Clamp(end, 0, 23);
+
+        // 时段外不播报（start > end 视为跨天，如 22-6 点）
+        var inWindow = start <= end ? (now.Hour >= start && now.Hour < end)
+                                    : (now.Hour >= start || now.Hour < end);
+        if (!inWindow) return;
+
         var last = Capability.Storage.Get<int>(LastHourKey);
         if (now.Hour == last) return;
 
