@@ -112,6 +112,10 @@ public static class Program
             Console.WriteLine("=== 测试 4：加载 App 输出目录插件（发布形态）===");
             TestAppOutputPlugins();
 
+            // ============ 5. 命理插件：第三方依赖 lunar.dll 的 ALC 解析（P0 核心风险）============
+            Console.WriteLine();
+            TestBaziPlugin();
+
             // 清理
             try { Directory.Delete(root, true); } catch { }
 
@@ -174,6 +178,98 @@ public static class Program
 
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(dataDir, true); } catch { }
+    }
+
+    /// <summary>
+    /// 加载真实命理插件，验证 P0 的核心风险：<b>插件 ALC 能否解析第三方依赖 lunar.dll</b>。
+    /// <para>本测试**不引用** Bazi / lunar 项目 —— 默认加载上下文里没有 lunar，
+    /// 因此若插件 ALC 解析失败（缺 deps.json / 缺 lunar.dll），OnLoad 必抛，测试即失败，无法蒙混。</para>
+    /// </summary>
+    private static void TestBaziPlugin()
+    {
+        Console.WriteLine("=== 测试 5：命理插件（第三方依赖 lunar.dll 的 ALC 解析）===");
+
+        var root = Path.Combine(Path.GetTempPath(), "neko-bazi-" + Guid.NewGuid().ToString("N"));
+        var pluginsDir = Path.Combine(root, "plugins");
+        var dataDir = Path.Combine(root, "data");
+        var pluginDir = Path.Combine(pluginsDir, "com.lantern.bazi");
+        Directory.CreateDirectory(pluginDir);
+        Directory.CreateDirectory(dataDir);
+
+        var baziOut = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "builtins", "DesktopPet.Builtin.Bazi", "bin", "Debug", "net8.0-windows"));
+        if (!Directory.Exists(baziOut))
+        {
+            Console.WriteLine($"WARN: Bazi 输出目录不存在 {baziOut}，跳过");
+            return;
+        }
+
+        // 模拟真实部署：拷插件自身 + 第三方依赖（lunar.dll）+ deps.json；排除 ALC 白名单程序集（Core/Sdk）
+        foreach (var f in Directory.EnumerateFiles(baziOut))
+        {
+            var name = Path.GetFileName(f);
+            if (name.StartsWith("DesktopPet.Core.", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("DesktopPet.Sdk.", StringComparison.OrdinalIgnoreCase))
+                continue;
+            File.Copy(f, Path.Combine(pluginDir, name), true);
+        }
+        Console.WriteLine($"插件目录文件: {string.Join(", ", Directory.GetFiles(pluginDir).Select(Path.GetFileName).OrderBy(x => x))}");
+
+        var loader = new PluginLoader(pluginsDir);
+        var loaded = loader.LoadAll(new HashSet<string>(), out var errors);
+        foreach (var e in errors) Console.WriteLine($"[Bazi 加载失败] {e.dir}: {e.error}");
+
+        var bazi = loaded.FirstOrDefault(p => p.Manifest.Id == "com.lantern.bazi");
+        if (bazi is null)
+        {
+            Console.WriteLine("FAIL: 命理插件未加载（第三方依赖 ALC 解析可能失败）");
+            return;
+        }
+        Console.WriteLine("PASS: 命理插件加载成功（Bazi.dll 在 ALC 下实例化）");
+
+        var expected = PluginPermissions.PetAnimate | PluginPermissions.PetRead
+                     | PluginPermissions.UIRegister | PluginPermissions.Storage
+                     | PluginPermissions.Scheduler | PluginPermissions.Notify | PluginPermissions.Network;
+        Console.WriteLine(bazi.GrantedPermissions == expected
+            ? $"PASS: 权限授予正确 = {expected}"
+            : $"FAIL: 权限应为 {expected}，实际 {bazi.GrantedPermissions}");
+
+        // OnLoad 内部调用 BaziEngine（lunar）——若 lunar.dll 未被插件 ALC 解析，此处必抛
+        var uiApi = new TestUIApi();
+        var ctx = BuildContext(bazi, dataDir, new TestPetApi(), uiApi, new TestEventBus());
+        try
+        {
+            bazi.Instance.OnLoad(ctx);
+            Console.WriteLine("PASS: OnLoad 成功（lunar 计算未抛异常 → 第三方依赖在插件 ALC 下可用）");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL: OnLoad 抛异常（第三方依赖 ALC 解析失败）：{ex.GetType().Name}: {ex.Message}");
+            return;
+        }
+
+        if (uiApi.Slots.Any(s => s.Id == "bazi-ask"))
+            Console.WriteLine("PASS: 径向槽位已注册 = bazi-ask");
+        else
+            Console.WriteLine("FAIL: 未注册径向槽位 bazi-ask");
+
+        if (uiApi.Pages.Any(pg => pg.Title == "com.lantern.bazi"))
+            Console.WriteLine("PASS: 设置页已注册且 Title == Manifest.Id");
+        else
+            Console.WriteLine("FAIL: 设置页未注册或 Title 与 Manifest.Id 不一致");
+
+        // 回归自检：BaziEngine.VerifyKnownCases() 的结果（不依赖编译期引用，走反射读属性）
+        var engType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.BaziEngine");
+        var prop = engType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var selfTest = prop?.GetValue(null) as string;
+        Console.WriteLine(selfTest == "OK"
+            ? "PASS: lunar 已知用例回归通过（1981-01-29→1989-02-18 / 2020-01-06→2020-02-06 / 立春边界）"
+            : $"FAIL: lunar 回归校验未通过：{selfTest ?? "(属性未读到)"}");
+
+        foreach (var p in loaded) p.Dispose();
+        try { Directory.Delete(root, true); } catch { }
     }
 
     /// <summary>把某个项目的产物部署成标准插件目录，返回该插件的数据存储。</summary>
@@ -293,8 +389,9 @@ public sealed class TestPetApi : IPetApi
 public sealed class TestUIApi : IUIApi
 {
     public List<RadialSlot> Slots = new();
+    public List<ISettingsPage> Pages = new();
     public void RegisterRadialSlot(RadialSlot slot) => Slots.Add(slot);
     public void RegisterTrayMenuItem(TrayMenuItem item) { }
-    public void RegisterSettingsPage(ISettingsPage page) { }
+    public void RegisterSettingsPage(ISettingsPage page) => Pages.Add(page);
     public void UnregisterAll(string scopeId) { }
 }

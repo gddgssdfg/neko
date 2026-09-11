@@ -1809,3 +1809,36 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 
 ### 验证
 - build 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（0 FAIL）。
+
+---
+
+## 2026-09-12（新插件 com.lantern.bazi P0：命理助手骨架 + 第三方依赖 ALC 验证）
+
+**灯灯新需求**：命理运势插件（八字 + 星座 + 人格 → 每日播报 + AI 咨询）。规格见 `outputs/Neko命理插件-开发提示词.md`。本轮只做 **P0 骨架 + 消解第 7 节前两条风险**，不铺 P1+。
+
+### P0 落地（`builtins/DesktopPet.Builtin.Bazi/`，6 文件）
+- `DesktopPet.Builtin.Bazi.csproj`（net8.0-windows + UseWPF + `PackageReference lunar-csharp 1.6.8`）
+- `plugin.toml`（`other = scheduler/notify/network`；`pet`/`ui`/`storage` 由宿主加前缀）
+- `BaziPlugin.cs` / `BaziProfile.cs` / `BaziEngine.cs` / `BaziSettingsPage.cs`
+
+### 🔑 P0 核心风险①：插件 ALC 能否加载第三方依赖 lunar.dll → **能**
+- **根因分析（关键）**：`PluginLoadContext` 用 `AssemblyDependencyResolver(entryDll)` 解析依赖，而它**只读插件目录里的 `Bazi.deps.json`**（靠 deps.json 把程序集名 `lunar` 映射到 `lunar.dll`）。**只拷 dll、不拷 deps.json 会导致 lunar 解析失败**（resolver 返回 null → 回落默认上下文 → 找不到 → FileNotFound）。
+- **修复**：csproj 显式 `<GenerateDependencyFile>true</GenerateDependencyFile>` + `<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>`（后者让 lunar.dll 落进输出目录）；`DeployToPlugins` 改为拷 `$(OutDir)*.dll`（含 lunar.dll，**排除 ALC 白名单的 Core/Sdk**）+ `$(TargetName).deps.json` + `plugin.toml`。
+- **决定性验证**：LoaderTest 新增「测试 5」。**关键设计：LoaderTest 刻意不引用 Bazi/lunar 项目**——否则 lunar 会进测试的默认加载上下文，ALC 解析失败也能靠回落"蒙混过关"。因为不引用，默认上下文无 lunar，插件仍加载 + `OnLoad`（内跑 lunar）不抛 → **证明走的是插件 ALC 且解析成功**。
+
+### 风险②：插件能否弹独立 WPF 窗口 → **能**（已有先例，未新增验证）
+- 3 个先例：Notes / TodoList / ClipboardHistory 都是插件独立窗口。P3 的 `ChatWindow` 沿用即可。
+
+### lunar API 踩坑（实测纠正，比手册更细）
+- `EightChar.GetYun(gender, sect)` 是**两参**，sect=1 时两个回归用例均命中（1981-01-29→1989-02-18 性别0 / 2020-01-06→2020-02-06 性别1）。
+- **`Yun.StartYear/StartMonth/StartDay` 不是公历日期，而是「起运岁数差」**（如 8岁0月20天）！起运公历日期在 **`Yun.StartSolar`**（`Solar` 类型，有 `.Year/.Month/.Day/.Ymd`）。第一版误用 StartYear 当公历年，自检暴露 `8-00-20` 的荒谬值才纠正——**这就是"自检要带真实用例"的价值**。
+- 类型在子命名空间 `Lunar.EightChar`；`Solar.FromYmdHms` / `Solar.XingZuo` / `Lunar.DayYi` 等在 `Lunar` 下。
+
+### 设计取舍
+- 自检结果走 `BaziEngine.LastSelfTest` **静态属性 + 反射读取**，不写 Storage、不弹 Say —— 零生产副作用。
+- `BaziEngine.VerifyKnownCases()` 刻意**不 try/catch**：lunar 若解析失败需要抛出来当"ALC 可用"的信号（宿主已有 OnLoad try/catch 兜底，不会拖垮进程）。
+- 农历闰月用负数月份（lunar 约定）；未填时辰用正午（规避 23:00 跨日边界对日柱的干扰）。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**（新增测试 5：加载 + 权限授予 + lunar ALC 解析 + 径向槽位 + 设置页 Title==Id + lunar 回归 4 用例）；**UiProbe 33/33 全过**（0 FAIL）。
+- 真机验证（双击 exe 看径向菜单 + 设置页保存读回）留给灯灯——环境坑见上一条。

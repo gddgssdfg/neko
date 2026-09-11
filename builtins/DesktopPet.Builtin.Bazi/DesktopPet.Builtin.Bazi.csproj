@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Builtin.Bazi</RootNamespace>
+    <AssemblyName>Bazi</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <!-- 生成 Bazi.deps.json：插件 ALC 的 AssemblyDependencyResolver 靠它把 'lunar' 解析到插件目录，
+         没有 deps.json 时第三方依赖无法命中（团队 P0 验证点）。 -->
+    <GenerateDependencyFile>true</GenerateDependencyFile>
+    <!-- 让 PackageReference（lunar）的 dll 落进输出目录，供 DeployToPlugins 拷贝。 -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+    <PackageReference Include="lunar-csharp" Version="1.6.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="plugin.toml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- 构建后自动部署到程序根 plugins/ 目录（插件加载器扫描位置）。
+       这是唯一带第三方依赖的内置插件：需拷自身 dll + lunar.dll + deps.json + plugin.toml。
+       必须排除 DesktopPet.Core.dll / DesktopPet.Sdk.dll —— ALC 白名单程序集，
+       放进插件目录会造成类型分裂（手册铁律 4）。 -->
+  <Target Name="DeployToPlugins" AfterTargets="Build">
+    <PropertyGroup>
+      <_PluginDir>$(ProjectDir)..\..\plugins\com.lantern.bazi</_PluginDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_PluginDir)" />
+    <ItemGroup>
+      <_BaziDeps Include="$(OutDir)*.dll" Exclude="$(OutDir)DesktopPet.Core.dll;$(OutDir)DesktopPet.Sdk.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BaziDeps)" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutDir)$(TargetName).deps.json" DestinationFolder="$(_PluginDir)"
+          SkipUnchangedFiles="true" Condition="Exists('$(OutDir)$(TargetName).deps.json')" />
+    <Copy SourceFiles="$(ProjectDir)plugin.toml" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

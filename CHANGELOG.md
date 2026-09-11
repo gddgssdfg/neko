@@ -4,6 +4,32 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.65] - 2026-09-12
+
+**新插件 `com.lantern.bazi`（命理助手）P0：骨架 + 生日设置页 + 第三方依赖 ALC 验证**（承接灯灯"命理插件"需求；完整规格见 `outputs/Neko命理插件-开发提示词.md`）。
+
+### 新增
+- 新插件 `builtins/DesktopPet.Builtin.Bazi/`（部署到 `plugins/com.lantern.bazi/`），文件：
+  - `DesktopPet.Builtin.Bazi.csproj`：`net8.0-windows` + `UseWPF` + `PackageReference lunar-csharp 1.6.8`
+  - `plugin.toml`（`other = scheduler/notify/network`；`pet`/`ui`/`storage` 由宿主自动加前缀）
+  - `BaziPlugin.cs`（入口）/ `BaziProfile.cs`（档案模型 + Storage 持久化）
+  - `BaziEngine.cs`（lunar-csharp 薄封装）/ `BaziSettingsPage.cs`（设置页）
+- `BaziEngine.ComputeProfile`：四柱 / 日主 / 五行 / 纳音 / 十神 / 星座 / 大运起运。**历法一律本地算，绝不交给 AI**。
+- `BaziEngine.VerifyKnownCases`：lunar 官方用例自检（`LastSelfTest` 暴露给加载器测试）。
+- `BaziSettingsPage`：出生录入（历法/年/月/日/时/分/性别）+ **实时四柱预览** + API Key(PasswordBox) + 播报设置；控件统一走 SDK `PluginUi`；`Title == Manifest.Id`。
+
+### 部署链修复（P0 关键）
+- 这是首个带**第三方依赖**的内置插件。原 `DeployToPlugins` 只拷 `$(TargetPath)` 单个 dll。本次改为：拷 `$(OutDir)*.dll`（**含 `lunar.dll`**，排除 ALC 白名单的 `DesktopPet.Core.dll`/`DesktopPet.Sdk.dll`）+ **`$(TargetName).deps.json`** + `plugin.toml`。
+- **为什么要 deps.json**：`PluginLoadContext` 用 `AssemblyDependencyResolver(entryDll)` 解析依赖，它**只读 deps.json**；缺了它 `lunar` 解析不到（resolver 返回 null → 回落默认上下文 → 找不到）。csproj 显式 `<GenerateDependencyFile>true` + `<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>`。
+
+### 验证
+- 构建 0 警告 0 错误；**LoaderTest 全过**（新增「测试 5：命理插件」——验证插件加载 + 权限授予 + **lunar.dll 在插件 ALC 下解析**（OnLoad 内跑 lunar 不抛即证明）+ 径向槽位 + 设置页注册 + lunar 回归用例 `1981-01-29→1989-02-18` / `2020-01-06→2020-02-06` / 立春边界）；**UiProbe 33/33 全过**（0 FAIL）。
+- **第 7 节前两条风险消解**：①「插件 ALC 能否加载第三方依赖」→ **能**（LoaderTest 决定性命中：LoaderTest 本身不引用 Bazi/lunar，默认上下文无 lunar，仍加载成功即证明走插件 ALC）；②「插件能否弹独立 WPF 窗口」→ 已有 3 先例（Notes/TodoList/ClipboardHistory），无需额外验证。
+
+### 待办（后续阶段）
+- P1 四柱完整预览与回归补全 / P2 `DailyFortuneBuilder` + 定时播报 / P3 `DeepSeekClient` + `ChatWindow` / P4 MBTI 问卷。
+- 实测内存占用后回调 `maxMemoryMB`（当前 32）。
+
 ## [0.1.64] - 2026-09-12
 
 **插件设置页 UI 统一化：深色控件工厂下沉 SDK + 6 个设置页迁移**（灯灯要求"插件 UI 统一"，承接 v0.1.63）。
