@@ -6,8 +6,9 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.Bazi;
 
 /// <summary>
-/// 命理助手设置页（P0）：出生日期/时间/性别/历法录入 + <b>实时四柱预览</b> + API Key + 播报设置。
-/// 全部经 <see cref="IPluginStorage"/> 持久化。控件统一走 SDK 的 <see cref="PluginUi"/> 深色工厂。
+/// 命理助手设置页：出生信息 + <b>实时四柱预览</b> + API Key + 每日播报 + <b>人格测试（P4）</b>。
+/// 全部经 <see cref="IPluginStorage"/> 持久化。控件统一走 SDK 的 <see cref="PluginUi"/> 深色工厂；
+/// 内容较长，整体包在 <see cref="ScrollViewer"/> 里，避免撑爆宿主设置窗口。
 /// <para><see cref="Title"/> 必须等于 <c>Manifest.Id</c>，否则宿主设置窗口匹配不上（手册 5.4）。</para>
 /// </summary>
 public sealed class BaziSettingsPage : ISettingsPage
@@ -22,6 +23,9 @@ public sealed class BaziSettingsPage : ISettingsPage
     public object BuildContent()
     {
         var p = BaziProfile.Load(_storage);
+
+        // 页面内「当前 MBTI」的权威值：人格测试提交与主「保存」共用它，避免互相覆盖。
+        var currentMbti = p.Mbti;
 
         var root = new StackPanel { Margin = new Thickness(10) };
 
@@ -158,21 +162,81 @@ public sealed class BaziSettingsPage : ISettingsPage
         broadcastRow.Children.Add(fmtHint);
         root.Children.Add(broadcastRow);
 
+        // ---- 人格测试（P4） ----
+        root.Children.Add(PluginUi.SectionHeader("人格测试（生日性格分析）"));
+
+        var mbtiStatus = PluginUi.Text(MbtiStatusText(currentMbti));
+        mbtiStatus.FontSize = 12.5;
+        mbtiStatus.Margin = new Thickness(0, 0, 0, 4);
+        root.Children.Add(mbtiStatus);
+
+        var quizHint = PluginUi.Text($"共 {MbtiQuiz.Questions.Count} 题，每题二选一；答完点「计算并保存」。可随时重测覆盖。", sub: true);
+        quizHint.FontSize = 11;
+        quizHint.Margin = new Thickness(0, 0, 0, 8);
+        root.Children.Add(quizHint);
+
+        var answerRows = new List<(RadioButton A, RadioButton B)>();
+        var index = 0;
+        foreach (var q in MbtiQuiz.Questions)
+        {
+            index++;
+            root.Children.Add(QuizQuestionBlock(index, q, answerRows));
+        }
+
+        var quizBtn = PluginUi.Button("计算并保存");
+        quizBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        quizBtn.Margin = new Thickness(0, 6, 0, 12);
+        root.Children.Add(quizBtn);
+
         // ---- 保存 ----
         var saveBtn = PluginUi.Button("保存");
         saveBtn.HorizontalAlignment = HorizontalAlignment.Left;
         root.Children.Add(saveBtn);
 
-        // ==== 实时预览：任一输入变化即重算四柱 ====
+        // ==== 草稿组装 ====
+        // 预览只需出生字段（ComputeProfile 只读它们）
+        BaziProfile BirthDraft() => new()
+        {
+            Year = ParseInt(yearBox.Text),
+            Month = ParseInt(monthBox.Text),
+            Day = ParseInt(dayBox.Text),
+            Hour = ParseNullableInt(hourBox.Text),
+            Minute = ParseNullableInt(minuteBox.Text),
+            IsLunar = calCombo.SelectedIndex == 1,
+            LeapMonth = leapCheck.IsChecked == true,
+            Gender = genderCombo.SelectedIndex == 1 ? 1 : 0,
+        };
+
+        // 落盘：出生 + MBTI + Key + 播报，一次性写全
+        BaziProfile FullDraft() => new()
+        {
+            Year = ParseInt(yearBox.Text),
+            Month = ParseInt(monthBox.Text),
+            Day = ParseInt(dayBox.Text),
+            Hour = ParseNullableInt(hourBox.Text),
+            Minute = ParseNullableInt(minuteBox.Text),
+            IsLunar = calCombo.SelectedIndex == 1,
+            LeapMonth = leapCheck.IsChecked == true,
+            Gender = genderCombo.SelectedIndex == 1 ? 1 : 0,
+            Mbti = currentMbti,
+            ApiKey = string.IsNullOrWhiteSpace(keyBox.Password) ? null : keyBox.Password,
+            DailyBroadcastEnabled = broadcastCheck.IsChecked == true,
+            BroadcastTime = string.IsNullOrWhiteSpace(timeText.Text) ? "08:00" : timeText.Text.Trim(),
+        };
+
+        void Persist()
+        {
+            var draft = FullDraft();
+            draft.Save(_storage);
+            RefreshPreview();
+        }
+
+        // ==== 实时预览：任一出生字段变化即重算四柱 ====
         void RefreshPreview()
         {
             try
             {
-                var draft = ReadInputs(
-                    p, calCombo, leapCheck, yearBox, monthBox, dayBox,
-                    hourBox, minuteBox, genderCombo, timeText,
-                    keyBox, broadcastCheck, applyApiAndBroadcast: false);
-
+                var draft = BirthDraft();
                 if (!draft.HasBirth)
                 {
                     preview.Text = "请填写完整的年 / 月 / 日，将实时显示四柱。";
@@ -195,6 +259,21 @@ public sealed class BaziSettingsPage : ISettingsPage
             }
         }
 
+        // ==== 人格测试提交：计分 → 覆盖当前 MBTI → 落盘 ====
+        void SubmitQuiz()
+        {
+            var answers = answerRows
+                .Select(r => r.A.IsChecked == true ? 0 : r.B.IsChecked == true ? 1 : -1)
+                .ToList();
+            var type = MbtiQuiz.Score(answers);
+            currentMbti = type;
+            Persist();
+            mbtiStatus.Text = MbtiStatusText(currentMbti);
+            MessageBox.Show($"你的类型：{type}\n{MbtiQuiz.Describe(type)}", "人格测试",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        // ==== 事件接线 ====
         yearBox.TextChanged += (_, _) => RefreshPreview();
         monthBox.TextChanged += (_, _) => RefreshPreview();
         dayBox.TextChanged += (_, _) => RefreshPreview();
@@ -209,60 +288,62 @@ public sealed class BaziSettingsPage : ISettingsPage
         leapCheck.Unchecked += (_, _) => RefreshPreview();
         genderCombo.SelectionChanged += (_, _) => RefreshPreview();
 
-        // 保存：把输入写回档案并持久化
+        quizBtn.Click += (_, _) => SubmitQuiz();
         saveBtn.Click += (_, _) =>
         {
-            var draft = ReadInputs(
-                p, calCombo, leapCheck, yearBox, monthBox, dayBox,
-                hourBox, minuteBox, genderCombo, timeText,
-                keyBox, broadcastCheck, applyApiAndBroadcast: true);
-            draft.Save(_storage);
-            RefreshPreview();
+            Persist();
             MessageBox.Show("已保存", "命理助手设置", MessageBoxButton.OK, MessageBoxImage.Information);
         };
 
         RefreshPreview();
-        return root;
-    }
 
-    /// <summary>把当前输入组装成一份档案（不落盘）。<paramref name="applyApiAndBroadcast"/> 为 true 时并入 Key 与播报设置。</summary>
-    private static BaziProfile ReadInputs(
-        BaziProfile baseProfile, ComboBox calCombo, CheckBox leapCheck,
-        TextBox yearBox, TextBox monthBox, TextBox dayBox,
-        TextBox hourBox, TextBox minuteBox, ComboBox genderCombo,
-        TextBox timeText, PasswordBox keyBox, CheckBox broadcastCheck,
-        bool applyApiAndBroadcast)
-    {
-        var draft = new BaziProfile
+        // 内容较长：整体可滚动，避免撑爆宿主设置窗口
+        return new ScrollViewer
         {
-            Year = ParseInt(yearBox.Text),
-            Month = ParseInt(monthBox.Text),
-            Day = ParseInt(dayBox.Text),
-            Hour = ParseNullableInt(hourBox.Text),
-            Minute = ParseNullableInt(minuteBox.Text),
-            IsLunar = calCombo.SelectedIndex == 1,
-            LeapMonth = leapCheck.IsChecked == true,
-            Gender = genderCombo.SelectedIndex == 1 ? 1 : 0,
-            // 未在 P0 UI 编辑的字段沿用原档案
-            Mbti = baseProfile.Mbti,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = new Thickness(0),
+            Content = root,
         };
-
-        if (applyApiAndBroadcast)
-        {
-            draft.ApiKey = string.IsNullOrWhiteSpace(keyBox.Password) ? null : keyBox.Password;
-            draft.DailyBroadcastEnabled = broadcastCheck.IsChecked == true;
-            draft.BroadcastTime = string.IsNullOrWhiteSpace(timeText.Text) ? "08:00" : timeText.Text.Trim();
-        }
-        else
-        {
-            // 预览阶段保留原值，避免误清空
-            draft.ApiKey = baseProfile.ApiKey;
-            draft.DailyBroadcastEnabled = baseProfile.DailyBroadcastEnabled;
-            draft.BroadcastTime = baseProfile.BroadcastTime;
-        }
-
-        return draft;
     }
+
+    /// <summary>MBTI 状态文案。</summary>
+    private static string MbtiStatusText(string? mbti)
+        => string.IsNullOrWhiteSpace(mbti)
+            ? "当前类型：尚未测试（答完下面题目点「计算并保存」）"
+            : $"当前类型：{mbti}　{MbtiQuiz.Describe(mbti)}（可重测覆盖）";
+
+    /// <summary>一道题：题干 + 两个互斥选项（RadioButton，同题共用 GroupName）。</summary>
+    private static StackPanel QuizQuestionBlock(int index, MbtiQuestion q, List<(RadioButton A, RadioButton B)> collector)
+    {
+        var block = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+
+        var title = PluginUi.Text($"{index}. {q.Text}");
+        title.FontSize = 12.5;
+        title.Margin = new Thickness(0, 0, 0, 2);
+        block.Children.Add(title);
+
+        var group = "mbti_" + q.Id;
+        var optA = RadioOption(q.OptionA, group);
+        var optB = RadioOption(q.OptionB, group);
+        collector.Add((optA, optB));
+
+        var opts = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };
+        opts.Children.Add(optA);
+        opts.Children.Add(optB);
+        block.Children.Add(opts);
+
+        return block;
+    }
+
+    private static RadioButton RadioOption(string text, string group) => new()
+    {
+        Content = text,
+        GroupName = group,
+        Foreground = PluginUi.TextMain,
+        Margin = new Thickness(0, 0, 18, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
 
     private static TextBlock Label(string text)
     {

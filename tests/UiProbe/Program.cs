@@ -543,26 +543,7 @@ internal static class Program
         // 教训（v0.1.32）：新 UI 功能漏加 UiProbe 断言，真机 11 分钟后才崩。此处守护 ChatWindow 的构造与错误分支。
         Check("v0.1.67：命理插件 ChatWindow（构造 + 关键控件 + 失败路径可读提示）", () =>
         {
-            // 前置：等异步 LoadDeferred 把插件（含命理）加载完
-            var pump = new DispatcherFrame();
-            var pt = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
-            pt.Tick += (_, _) => { pt.Stop(); pump.Continue = false; };
-            pt.Start();
-            Dispatcher.PushFrame(pump);
-
-            // 从已加载插件拿 Bazi 程序集（验证插件 ALC 能实例化独立窗口）；拿不到则回退直接 LoadFrom 插件目录
-            var baziPlugin = win.PluginHost.Plugins.FirstOrDefault(p => p.Manifest.Id == "com.lantern.bazi");
-            Assembly asm;
-            if (baziPlugin is not null)
-            {
-                asm = baziPlugin.Instance.GetType().Assembly;
-            }
-            else
-            {
-                var dll = Path.Combine(AppContext.BaseDirectory, "plugins", "com.lantern.bazi", "Bazi.dll");
-                if (!File.Exists(dll)) throw new FileNotFoundException($"命理插件未加载，且找不到 {dll}");
-                asm = Assembly.LoadFrom(dll);
-            }
+            var asm = ResolveBaziAssembly(win);
 
             var chatWindowType = asm.GetType("DesktopPet.Builtin.Bazi.ChatWindow")
                 ?? throw new Exception("ChatWindow 类型未找到");
@@ -631,6 +612,46 @@ internal static class Program
             {
                 window.Close();
             }
+        });
+
+        // ---- v0.1.68 第 26 项：命理插件人格测试（MBTI 问卷 UI：24 题 × 2 选项 + 提交按钮；可滚动）----
+        // 只构建 + 校验结构，**不点提交**（提交会弹 MessageBox，会阻塞探针）。
+        Check("v0.1.68：命理插件人格测试（问卷 UI 构建 + 选项数 + 提交按钮 + 可滚动）", () =>
+        {
+            var asm = ResolveBaziAssembly(win);
+            var pageType = asm.GetType("DesktopPet.Builtin.Bazi.BaziSettingsPage")
+                ?? throw new Exception("BaziSettingsPage 类型未找到");
+            var quizType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuiz")
+                ?? throw new Exception("MbtiQuiz 类型未找到");
+
+            var page = pageType.GetConstructor(new[] { typeof(DesktopPet.Core.IPluginStorage) })
+                ?.Invoke(new object[] { new ProbeStorage() })
+                ?? throw new Exception("BaziSettingsPage 构造失败");
+            var content = pageType.GetMethod("BuildContent")?.Invoke(page, null)
+                ?? throw new Exception("BuildContent 返回 null");
+
+            if (content is not ScrollViewer)
+                throw new Exception($"设置页应可滚动（返回 ScrollViewer），实际 {content.GetType().Name}");
+
+            var radios = new List<RadioButton>();
+            Collect(content, radios);
+            var buttons = new List<Button>();
+            Collect(content, buttons);
+            var texts = new List<TextBlock>();
+            Collect(content, texts);
+
+            var questions = quizType.GetProperty("Questions")!.GetValue(null)!;
+            var questionCount = ((System.Collections.ICollection)questions).Count;
+            if (questionCount != 24)
+                throw new Exception($"题库应为 24 题，实际 {questionCount}");
+            if (radios.Count != questionCount * 2)
+                throw new Exception($"应有 {questionCount * 2} 个选项（每题 2 个），实际 {radios.Count}");
+            if (!buttons.Any(b => (b.Content as string) == "计算并保存"))
+                throw new Exception("缺「计算并保存」按钮");
+            if (!texts.Any(t => t.Text.Contains("人格测试")))
+                throw new Exception("缺「人格测试」小节标题");
+            if (!texts.Any(t => t.Text.Contains("当前类型")))
+                throw new Exception("缺「当前类型」状态行");
         });
 
         // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----
@@ -1058,4 +1079,52 @@ internal static class Program
         }
         return result;
     }
+
+    /// <summary>
+    /// 取命理插件程序集：先等异步 LoadDeferred，再从已加载插件（其 ALC）取；拿不到则回退直接 LoadFrom 插件目录。
+    /// </summary>
+    private static Assembly ResolveBaziAssembly(PetWindow win)
+    {
+        var pump = new DispatcherFrame();
+        var pt = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
+        pt.Tick += (_, _) => { pt.Stop(); pump.Continue = false; };
+        pt.Start();
+        Dispatcher.PushFrame(pump);
+
+        var baziPlugin = win.PluginHost.Plugins.FirstOrDefault(p => p.Manifest.Id == "com.lantern.bazi");
+        if (baziPlugin is not null) return baziPlugin.Instance.GetType().Assembly;
+
+        var dll = Path.Combine(AppContext.BaseDirectory, "plugins", "com.lantern.bazi", "Bazi.dll");
+        if (!File.Exists(dll)) throw new FileNotFoundException($"命理插件未加载，且找不到 {dll}");
+        return Assembly.LoadFrom(dll);
+    }
+
+    /// <summary>深度遍历控件树，收集所有类型为 <typeparamref name="T"/> 的节点（Panel / Decorator / ContentControl 三类容器）。</summary>
+    private static void Collect<T>(object? node, List<T> outList) where T : class
+    {
+        if (node is null) return;
+        if (node is T t) outList.Add(t);
+        switch (node)
+        {
+            case Panel p:
+                foreach (var c in p.Children) Collect(c, outList);
+                break;
+            case Decorator d when d.Child is not null:
+                Collect(d.Child, outList);
+                break;
+            case ContentControl cc when cc.Content is not null:
+                Collect(cc.Content, outList);
+                break;
+        }
+    }
+}
+
+/// <summary>探针用的内存版 <see cref="DesktopPet.Core.IPluginStorage"/>（不落盘）。</summary>
+public sealed class ProbeStorage : DesktopPet.Core.IPluginStorage
+{
+    private readonly Dictionary<string, object?> _map = new();
+    public T? Get<T>(string key) => _map.TryGetValue(key, out var v) && v is T t ? t : default;
+    public void Set<T>(string key, T value) => _map[key] = value;
+    public void Remove(string key) => _map.Remove(key);
+    public bool Contains(string key) => _map.ContainsKey(key);
 }

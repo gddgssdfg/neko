@@ -111,27 +111,32 @@ public static class DailyFortuneBuilder
     };
 
     /// <summary>
-    /// MBTI 定制建议（P4 填充 <c>profile.Mbti</c> 后即生效）。
-    /// 未填 / 未命中返回 null → 回退按日主五行的通用建议。这是**预留接口**，P2 不硬依赖 MBTI。
+    /// MBTI 定制建议（P4：16 型全覆盖）。按五行生克关系 <paramref name="kind"/> 分「受压(克)」与「其余」两支。
+    /// 未填 / 未命中返回 null → 回退按日主五行的通用建议。
     /// </summary>
     private static string? MbtiTip(string? mbti, string kind)
     {
         if (string.IsNullOrWhiteSpace(mbti)) return null;
         var t = mbti.Trim().ToUpperInvariant();
+        var pressed = kind == "克";
         return t switch
         {
-            "INTJ" or "INTP" => kind == "克"
-                ? "遇冲突先按暂停键、理性复盘再回应"
-                : "用你的分析力把机会拆成可执行步骤",
-            "ENFP" or "ESFP" => kind == "克"
-                ? "转移注意力，用社交能量对冲负面情绪"
-                : "把热情投向你最想做的那件事",
-            "ISTJ" or "ISFJ" => kind == "克"
-                ? "守住既定节奏，别被外界带偏"
-                : "按计划稳扎稳打，成果自然显现",
-            "ENTJ" or "ESTJ" => kind == "克"
-                ? "先退一步再出手，避免硬碰硬"
-                : "主动定目标、抓落地",
+            "INTJ" => pressed ? "遇冲突先按暂停键，理性复盘再回应" : "用你的分析力把机会拆成可执行步骤",
+            "INTP" => pressed ? "别急着反驳，先把自己的逻辑理清" : "顺着好奇心深挖一件感兴趣的事",
+            "ENTJ" => pressed ? "先退一步再出手，避免硬碰硬" : "主动定目标、抓落地",
+            "ENTP" => pressed ? "把争辩的能量转成一次头脑风暴" : "用新点子打开一个突破口",
+            "INFJ" => pressed ? "给自己独处空间，别硬撑情绪" : "按内心价值推进一件长期想做的事",
+            "INFP" => pressed ? "写下来梳理情绪，别内耗" : "跟随热爱做一件小事，滋养自己",
+            "ENFJ" => pressed ? "先照顾好自己，再去照顾别人" : "主动联结他人，一起推进目标",
+            "ENFP" => pressed ? "转移注意力，用社交能量对冲负面情绪" : "把热情投向你最想做的那件事",
+            "ISTJ" => pressed ? "守住既定节奏，别被外界带偏" : "按计划稳扎稳打，成果自然显现",
+            "ISFJ" => pressed ? "别过度揽责，给自己留点余地" : "照顾好身边人，也别忘了自己",
+            "ESTJ" => pressed ? "少一点强势，多听一句再决定" : "把秩序感用上，高效推进",
+            "ESFJ" => pressed ? "别太在意他人评价，先稳住自己" : "用你的热心把一件事串联起来",
+            "ISTP" => pressed ? "先动手解决一个小问题，别空想" : "用实操把想法快速验证",
+            "ISFP" => pressed ? "去接触自然或音乐，舒缓情绪" : "跟随审美做一件让自己开心的事",
+            "ESTP" => pressed ? "踩个刹车，评估风险再上" : "抓住眼前机会，果断行动",
+            "ESFP" => pressed ? "找人聊聊，用当下的快乐冲淡烦恼" : "把活力放在你最想体验的事上",
             _ => null,
         };
     }
@@ -195,6 +200,26 @@ public static class DailyFortuneBuilder
             if (!fortune.Full.Contains("宜")) failures.Add("Full 缺「宜」");
             if (!fortune.Full.Contains("忌")) failures.Add("Full 缺「忌」");
             if (!fortune.Full.Contains("方位")) failures.Add("Full 缺「方位」");
+
+            // P4：MBTI 16 型全覆盖 + 同一 kind 下各不相同（证明真按类型分支，而非恒返回 null）
+            var types16 = new[]
+            {
+                "INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP",
+                "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP",
+            };
+            foreach (var k in new[] { "同气", "生", "泄", "克", "耗" })
+            {
+                var tips = types16.Select(t => MbtiTip(t, k)).ToList();
+                if (tips.Any(string.IsNullOrWhiteSpace)) failures.Add($"kind={k} 有未覆盖类型");
+                if (tips.Distinct().Count() != types16.Length) failures.Add($"kind={k} 存在重复建议（未按类型分支）");
+            }
+            if (MbtiTip("XXXX", "克") is not null) failures.Add("未知类型应返回 null");
+            if (MbtiTip(null, "克") is not null) failures.Add("null 类型应返回 null");
+
+            // P4：同一命盘下，填 MBTI 与不填 → 播报内容应不同（类型真的影响输出）
+            var withMbti = new BaziProfile { Year = 1981, Month = 1, Day = 29, Hour = 23, Minute = 37, Gender = 0, Mbti = "INTJ" };
+            if (Build(withMbti, chart, today).Full == fortune.Full)
+                failures.Add("填 MBTI 后播报内容未变化");
         }
         catch (Exception ex)
         {

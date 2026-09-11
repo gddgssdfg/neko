@@ -4,8 +4,7 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.Bazi;
 
 /// <summary>
-/// 命理助手插件。P0：骨架 + 生日设置页 + lunar 依赖加载验证；P2：每日运势播报；P3：AI 深度咨询。
-/// <para>P4（MBTI 问卷）为后续阶段。</para>
+/// 命理助手插件。P0：骨架 + 生日设置页 + lunar 依赖加载验证；P2：每日运势播报；P3：AI 深度咨询；P4：人格测试（MBTI 问卷 + 计分）。
 /// </summary>
 public sealed class BaziPlugin : PluginBase
 {
@@ -36,6 +35,7 @@ public sealed class BaziPlugin : PluginBase
         BaziEngine.VerifyKnownCases();
         DailyFortuneBuilder.SelfCheck();
         ApiKeyProtector.SelfCheck();
+        MbtiQuiz.SelfCheck();
         FortunePrompt.SelfCheck();
         DeepSeekClient.SelfCheck();
 

@@ -1892,3 +1892,23 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 - 构建 **0 警告 0 错误**；**LoaderTest 全过**——「测试 5」P3 新增：`ApiKeyProtector` 自检（DPAPI 往返 + 明文兼容）/ `FortunePrompt` 自检（含铁律 + 四柱/日主/五行/今日干支/宜忌）/ `DeepSeekClient` 自检（空 Key 返回可读错误而非抛异常）；外加**无 Key 点「问问猫」给可读提示且不抛异常**（走 Key 前置分支，不弹窗）。
 - **UiProbe 全过（34 项 / 0 FAIL）**：新增第 25 项「命理插件 ChatWindow」——反射从**已加载的插件 ALC** 取 `ChatWindow`（拿不到则回退 `Assembly.LoadFrom` 插件目录），构造并 `Show()`（验证插件 ALC 能实例化独立窗口）；校验 `_input`/`_sendBtn`/`_messages` 三控件存在、按钮文案「发送」；**失败路径**用 `Expression` 造 `q => DeepSeekClient.ChatAsync(null, 空消息)` 委托（**不发网络请求**，必走「空 Key → 可读错误」分支）→ 反射调 `Send()` → 断言对话区出现用户气泡 + 含「API Key」的可读提示、输入框已清空、按钮已恢复；最后关窗。等异步加载用 `DispatcherFrame`（不 `Thread.Sleep`）。
 - AI 真实问答留给灯灯真机测（需在设置页填真 API Key）。
+
+## 2026-09-12（com.lantern.bazi P4：人格测试 MBTI 问卷 + 计分）
+
+**承接 P3**：本地题库问卷 + 计分纯函数 + 设置页「人格测试」节 + MbtiTip 补全 16 型。
+
+### 落地
+- `MbtiQuiz.cs`：**本地硬编码 24 题**（E/I、S/N、T/F、J/P 各 6 题），每题二选一（A→该维度第一个极、B→第二个极）。
+- `Score(answers)` **纯函数**：逐维度统计 A/B 多数 → 拼 4 字母；平局 / 整维未答 → 取该维度首极（E/S/T/J）保证确定。`Describe()` 16 型中文概称。含 `SelfCheck()`。
+- `BaziSettingsPage`：新增「人格测试」节（状态行 + 24 题 + 「计算并保存」）；**整页包 `ScrollViewer`**；`currentMbti` 为页面内权威值，人格提交与主「保存」共用 `FullDraft()` 落盘，避免互相覆盖（这是重写设置页时特意修的一个坑：老 `ReadInputs` 会用旧的 `baseProfile.Mbti` 覆盖新类型）。
+- `DailyFortuneBuilder.MbtiTip`：8 型 → **16 型全覆盖**，每型 2 支（受压 / 其余），同 kind 下 16 型建议两两不同。
+
+### 踩坑 / 取舍
+- **`Questions` 得是属性不是字段**：第一版 `public static readonly IReadOnlyList<...> Questions`（字段），UiProbe 用 `GetProperty("Questions")` 反射取 → 返回 null → NRE，探针 FAIL。改成 get-only 属性后通过。**白盒断言又一次抓到了 API 形状问题。**
+- **UiProbe 只构建不点提交**：人格测试提交会 `MessageBox.Show`（模态），探针里点它会把消息循环卡死 → 探针只构建页面 + 断言结构（选项数 / 按钮 / 状态行），不触发提交。真机才走完整交互。
+- **计分平局策略**写死为「取首极」并在自检里显式覆盖一个 3:3 用例，避免结果不确定。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**——新增 `MbtiQuiz` 自检（全选A→ESTJ / 全选B→INFP / 维度独立→ENTP / EI 平局→E / 仅答一维；题量 24、四维各 6）；`DailyFortuneBuilder` 自检扩到「16 型全覆盖 + 同 kind 两两不同 + 未知/null→null + 填 MBTI 后 `Full` 与不填不同」。
+- **UiProbe 全过（35 项 / 0 FAIL）**：新增第 26 项「人格测试」——反射构建 `BaziSettingsPage`（内存版 `IPluginStorage`）→ 断言 `BuildContent()` 返回 `ScrollViewer` + 24×2=48 个 `RadioButton` + 「计算并保存」按钮 + 「人格测试」标题 + 「当前类型」状态行。
+- 真机（答题→出类型→播报随类型变化）留给灯灯。

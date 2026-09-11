@@ -276,8 +276,17 @@ public static class Program
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var bself = bprop?.GetValue(null) as string;
         Console.WriteLine(bself == "OK"
-            ? "PASS: DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟）"
+            ? "PASS: DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟 + MBTI 16 型全覆盖/按类型分支）"
             : $"FAIL: DailyFortuneBuilder 自检未通过：{bself ?? "(属性未读到)"}");
+
+        // P4：MBTI 问卷计分自检（纯函数：全选A→ESTJ / 全选B→INFP / 维度独立 / 平局取首极 / 题量均衡）
+        var quizType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.MbtiQuiz");
+        var qprop = quizType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var qself = qprop?.GetValue(null) as string;
+        Console.WriteLine(qself == "OK"
+            ? "PASS: MbtiQuiz 计分自检通过（全选A→ESTJ / 全选B→INFP / 维度独立 / 平局取首极）"
+            : $"FAIL: MbtiQuiz 自检未通过：{qself ?? "(属性未读到)"}");
 
         // P2：手动播报全链路 —— 预置档案 → 触发「今日运势」槽位 → 断言 Say + System.Notify
         ctx.Capability.Storage.Set("profile",

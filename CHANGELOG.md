@@ -4,6 +4,21 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.68] - 2026-09-12
+
+**命理助手 `com.lantern.bazi` P4：人格测试（MBTI 问卷 + 计分）**（承接 0.1.67 的 P3 AI 咨询）。
+
+### 新增
+- `MbtiQuiz.cs`：简化版 16 型问卷 —— **本地硬编码 24 题**（E/I、S/N、T/F、J/P 各 6 题），每题二选一，**不联网**。`Score(answers)` 为**纯函数**：按维度统计 A/B 多数 → 拼 4 字母类型；平局或整维未答取该维度第一个极（E/S/T/J），结果确定。`Describe(type)` 给 16 型中文概称；含 `SelfCheck()`。
+- `BaziSettingsPage` 新增「**人格测试（生日性格分析）**」一节：当前类型状态行 + 24 题（每题两互斥 RadioButton）+「计算并保存」按钮；**已有类型可随时重测覆盖**。整页包进 `ScrollViewer`（内容变长，避免撑爆宿主设置窗口）。
+- 计分结果写入 `profile.Mbti`，与主「保存」共用同一落盘路径（避免互相覆盖）。
+
+### 改进
+- `DailyFortuneBuilder.MbtiTip`：由 8 型**补全到 16 型全覆盖**，且每型在五种五行生克关系（同气 / 生 / 泄 / 克 / 耗）下给出**各不相同**的建议 —— 「播报内容随人格类型变化」至此才真正完整。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**（新增 `MbtiQuiz` 计分自检：全选 A→ESTJ / 全选 B→INFP / 维度独立 / 平局取首极 / 题量均衡；`DailyFortuneBuilder` 自检扩到「16 型全覆盖 + 按类型分支 + 填 MBTI 后播报内容变化」）；**UiProbe 全过（35 项，0 FAIL）**——新增第 26 项：反射构建设置页 → 断言返回 `ScrollViewer` + 24 题 × 2 选项 + 「计算并保存」按钮 + 「当前类型」状态行（**不点提交**，避免 MessageBox 阻塞探针）。
+
 ## [0.1.67] - 2026-09-12
 
 **命理助手 `com.lantern.bazi` P3：AI 深度咨询**（承接 0.1.66 的 P2 每日播报）。
