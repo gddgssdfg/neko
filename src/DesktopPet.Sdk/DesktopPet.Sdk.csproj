@@ -7,6 +7,8 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>DesktopPet.Sdk</RootNamespace>
     <AssemblyName>DesktopPet.Sdk</AssemblyName>
+    <!-- v0.1.63：SDK 提供深色控件工厂（PluginUi），需引用 WPF 类型 -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>

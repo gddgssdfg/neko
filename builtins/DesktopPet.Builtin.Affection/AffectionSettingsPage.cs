@@ -1,12 +1,12 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using DesktopPet.Core;
+using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.Affection;
 
 /// <summary>
-/// 好感度插件的自定义设置页（v0.1.5 ISettingsPage 接入示范）。
+/// 好感度插件的自定义设置页（v0.1.5 ISettingsPage 接入示范；v0.1.63 改用 PluginUi 统一深色风格）。
 /// 显示当前好感度分数 + 重置按钮。
 /// Title 必须与 AffectionPlugin.Id 匹配，设置窗口按此嵌入右侧详情区。
 /// </summary>
@@ -28,15 +28,17 @@ public sealed class AffectionSettingsPage : ISettingsPage
     public object BuildContent()
     {
         var stack = new StackPanel { Margin = new Thickness(8) };
-        var scoreText = new TextBlock { FontSize = 14, Margin = new Thickness(0, 0, 0, 4) };
-        var hint = new TextBlock
-        {
-            Text = "重置后下次抚摸起从 0 重新累计",
-            FontSize = 11,
-            Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-        var resetBtn = new Button { Content = "重置好感度", Padding = new Thickness(8, 4, 8, 4) };
+
+        var scoreText = PluginUi.Text("");
+        scoreText.FontSize = 14;
+        scoreText.Margin = new Thickness(0, 0, 0, 4);
+
+        var hint = PluginUi.Text("重置后下次抚摸起从 0 重新累计", sub: true);
+        hint.FontSize = 11;
+        hint.Margin = new Thickness(0, 0, 0, 8);
+
+        var resetBtn = PluginUi.Button("重置好感度");
+        resetBtn.Padding = new Thickness(8, 4, 8, 4);
 
         void Refresh()
         {

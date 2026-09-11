@@ -4,6 +4,26 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.64] - 2026-09-12
+
+**插件设置页 UI 统一化：深色控件工厂下沉 SDK + 6 个设置页迁移**（灯灯要求"插件 UI 统一"，承接 v0.1.63）。
+
+### 背景
+6 个插件设置页 UI 参差：Affection/Weather 是旧样式（TextBlock 未设前景色，黑字在宿主深底上看不清）；4 个提醒类设置页文字色已深色但**按钮仍是 WPF 默认浅色样式**。根因是各设置页手写控件样式、无统一来源（宿主 `SettingsWindow.BuildXxxCard` 是 private，插件够不着）。
+
+### 改动
+- **SDK 加 `<UseWPF>true</UseWPF>`**（`DesktopPet.Sdk.csproj`）：让 SDK 能提供 WPF 控件工厂。**关键验证**：SDK 是宿主共享程序集（HostSharedAssemblies 白名单），加 WPF 引用后插件 ALC 路由不受影响——LoaderTest 全过 + UiProbe 第 32 项（真实 PetWindow + PluginHost 加载插件）通过证明。
+- **新增 `src/DesktopPet.Sdk/PluginUi.cs`**：深色控件工厂静态类。配色常量（`Freeze` 冻结省内存）：Bg #1E262F / CardBg #2B3647 / TextMain #E5E7EB / TextSub #9CA3AF / Border #3A4755；工厂方法 `Text(content, sub)` / `Button(text)` / `Input(text)` / `SectionHeader(title)`。
+- **6 个设置页迁移到 PluginUi**：Affection、Weather（补全深色）、SleepReminder、Pomodoro、Countdown、HourlyChime（统一按钮样式）。
+
+### 修复（QA 插件审计发现）
+- SleepReminder：步进 +/- 点击后**立即刷新顶部"提醒时间"label**（原来仅保存时更新）。
+- Pomodoro：下拉候选改为 `Presets ∪ {当前值}`，**storage 值不在 5/15/25/45 时也能预选**。
+
+### 验证
+- SDK + App + 插件构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（0 FAIL）。
+- ⚠️ **环境限制说明**：Bash 后台拉起的 GUI 进程无法加载插件（`PetWindow.Loaded` 事件在无交互桌面会话下不触发），此现象经 A/B 对照确认与本次改动无关；**真机插件加载验证需手动双击 exe**（已提醒）。
+
 ## [0.1.63] - 2026-09-11
 
 **插件 UI 美化（第一批）：3 个独立窗口深色化 + 淡入动画**（QA 插件审计指出的"剩余最大 UI 债"）。

@@ -1785,3 +1785,27 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 - **设置页旧样式**：Weather / Affection 设置页仍是旧样式（非深色），待统一。
 - **静默吞异常 3 处**：TodoWindow.cs:82 / NotesWindow.cs:56 / ClipboardWindow.cs:42 的 `try{}catch{}`，保存/复制失败无感知，待改 Log/提示。
 - **设置页小瑕疵 2 处**：Pomodoro ComboBox 边界、SleepReminder label 不实时刷。
+
+---
+
+## 2026-09-12（v0.1.64：插件设置页 UI 统一化 —— 深色控件工厂下沉 SDK）
+
+**承接 v0.1.63，收掉"插件 UI 统一"的尾巴**：6 个设置页 UI 参差（Affection/Weather 旧样式黑字看不清、4 个提醒页按钮仍是默认浅色），根因是各页手写样式、无统一来源。
+
+### 落地
+- **SDK 加 `<UseWPF>true</UseWPF>`** + 新增 `src/DesktopPet.Sdk/PluginUi.cs`（深色控件工厂：颜色常量 + Text/Button/Input/SectionHeader 工厂，`Freeze` 冻结省内存）。
+- 6 个设置页（Affection/Weather/SleepReminder/Pomodoro/Countdown/HourlyChime）迁移到 PluginUi。
+- 顺手修 QA 审计的 2 个瑕疵：SleepReminder label 不实时刷、Pomodoro 下拉边界。
+
+### 关键验证：SDK 加 WPF 引用是否破坏插件 ALC 路由
+- **结论：不破坏。** 证据：LoaderTest 全过（含真实 PluginLoader + ALC）+ UiProbe 第 32 项（真实 PetWindow + PluginHost 加载插件）通过。
+- SDK 是宿主共享程序集（HostSharedAssemblies 白名单），宿主本身是 WPF 应用，SDK 加 WPF 引用后由宿主提供 WPF 程序集，路由逻辑不变。
+
+### 🚨 环境坑（重要，必记）
+**Bash 后台 `run_in_background=true` 拉起的 GUI 进程无法加载插件**——进程能起（窗口 + 托盘初始化），但 `data/plugins/` 无任何插件数据目录、无日志。
+- **根因**：`PetWindow` 的插件加载挂在 WPF `Loaded` 事件上，无交互桌面会话下该事件不触发。
+- **A/B 对照证明与代码改动无关**：把 SDK 的 UseWPF 撤掉重建再跑，现象完全一样。
+- **教训**：**GUI 应用的真机验证不能用 Bash 后台拉起**，必须手动双击 exe（有交互桌面会话）。LoaderTest / UiProbe 这类"显式构造 + 显式调用"的测试才是沙箱内可信的验证手段。
+
+### 验证
+- build 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（0 FAIL）。

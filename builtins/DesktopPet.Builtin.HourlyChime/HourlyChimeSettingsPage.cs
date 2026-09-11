@@ -1,13 +1,14 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using DesktopPet.Core;
+using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.HourlyChime;
 
 /// <summary>
 /// 整点报时设置页：开关 + 提醒时段（开始/结束小时 0-23），持久化到 Storage。
 /// 开关通过回调同步到插件实例（_enabled），并触发计时器启停。
+/// UI 统一走 SDK 的 <see cref="PluginUi"/> 深色控件工厂（v0.1.63）。
 /// </summary>
 public sealed class HourlyChimeSettingsPage : ISettingsPage
 {
@@ -20,9 +21,6 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
     private const string EndHourKey = "endHour";
     private const int DefaultStartHour = 9;
     private const int DefaultEndHour = 18;
-
-    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
-    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
 
     public HourlyChimeSettingsPage(IPluginStorage storage, Func<bool> getEnabled, Action<bool> setEnabled)
     {
@@ -48,7 +46,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
         {
             Content = $"整点报时已{(_getEnabled() ? "开启" : "关闭")}",
             IsChecked = enabled,
-            Foreground = TextMain,
+            Foreground = PluginUi.TextMain,
             Margin = new Thickness(0, 0, 0, 12),
         };
 
@@ -59,12 +57,13 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
         {
             Text = "仅在该时段内播报（开始 > 结束视为跨天，如 22-6 点）",
             FontSize = 11,
-            Foreground = TextSub,
+            Foreground = PluginUi.TextSub,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var saveBtn = new Button { Content = "保存", Padding = new Thickness(12, 4, 12, 4) };
+        var saveBtn = PluginUi.Button("保存");
+        saveBtn.HorizontalAlignment = HorizontalAlignment.Left;
         saveBtn.Click += (_, _) =>
         {
             var newEnabled = toggle.IsChecked == true;
@@ -87,18 +86,18 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
     private FrameworkElement MakeHourRow(string caption, int value, Action<int> onChange)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        row.Children.Add(new TextBlock { Text = caption, Foreground = TextSub, Width = 40, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = caption, Foreground = PluginUi.TextSub, Width = 40, VerticalAlignment = VerticalAlignment.Center });
 
-        var minus = new Button { Content = "−", Width = 28, Height = 24, Padding = new Thickness(0) };
+        var minus = StepButton("−");
         var valueText = new TextBlock
         {
             Text = value.ToString("D2"),
-            Foreground = TextMain,
+            Foreground = PluginUi.TextMain,
             Width = 32,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var plus = new Button { Content = "+", Width = 28, Height = 24, Padding = new Thickness(0) };
+        var plus = StepButton("+");
 
         minus.Click += (_, _) => { value = Math.Max(0, value - 1); valueText.Text = value.ToString("D2"); onChange(value); };
         plus.Click += (_, _) => { value = Math.Min(23, value + 1); valueText.Text = value.ToString("D2"); onChange(value); };
@@ -107,5 +106,15 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
         row.Children.Add(valueText);
         row.Children.Add(plus);
         return row;
+    }
+
+    /// <summary>步进按钮：复用深色样式，但压小尺寸适配 +/- 行内布局。</summary>
+    private static Button StepButton(string glyph)
+    {
+        var b = PluginUi.Button(glyph);
+        b.Width = 28;
+        b.Height = 24;
+        b.Padding = new Thickness(0);
+        return b;
     }
 }

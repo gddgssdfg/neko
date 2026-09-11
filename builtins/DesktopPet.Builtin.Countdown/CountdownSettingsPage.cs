@@ -1,22 +1,20 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using DesktopPet.Core;
+using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.Countdown;
 
 /// <summary>
 /// 倒计时设置页：自定义默认倒计时时长（分钟，1-180），持久化到 Storage（customMinutes）。
 /// 保留 5/10 快捷槽位不变，本页只改「倒计时 N分」这个自定义槽位。
+/// UI 统一走 SDK 的 <see cref="PluginUi"/> 深色控件工厂（v0.1.63）。
 /// </summary>
 public sealed class CountdownSettingsPage : ISettingsPage
 {
     private readonly IPluginStorage _storage;
     private const string CustomKey = "customMinutes";
     private const int DefaultCustomMinutes = 15;
-
-    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
-    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
 
     public CountdownSettingsPage(IPluginStorage storage) => _storage = storage;
 
@@ -32,21 +30,21 @@ public sealed class CountdownSettingsPage : ISettingsPage
         {
             Text = "自定义倒计时时长（分钟）",
             FontSize = 12,
-            Foreground = TextSub,
+            Foreground = PluginUi.TextSub,
             Margin = new Thickness(0, 0, 0, 8),
         });
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        var minus = new Button { Content = "−", Width = 28, Height = 24, Padding = new Thickness(0) };
+        var minus = StepButton("−");
         var valueText = new TextBlock
         {
             Text = current.ToString(),
-            Foreground = TextMain,
+            Foreground = PluginUi.TextMain,
             Width = 40,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var plus = new Button { Content = "+", Width = 28, Height = 24, Padding = new Thickness(0) };
+        var plus = StepButton("+");
 
         int value = current;
         minus.Click += (_, _) => { value = Math.Max(1, value - 1); valueText.Text = value.ToString(); };
@@ -60,12 +58,13 @@ public sealed class CountdownSettingsPage : ISettingsPage
         {
             Text = "5/10 分快捷槽位不变；这里改的是第三个「倒计时 N分」槽位",
             FontSize = 11,
-            Foreground = TextSub,
+            Foreground = PluginUi.TextSub,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var saveBtn = new Button { Content = "保存", Padding = new Thickness(12, 4, 12, 4) };
+        var saveBtn = PluginUi.Button("保存");
+        saveBtn.HorizontalAlignment = HorizontalAlignment.Left;
         saveBtn.Click += (_, _) =>
         {
             _storage.Set(CustomKey, value);
@@ -76,5 +75,15 @@ public sealed class CountdownSettingsPage : ISettingsPage
         stack.Children.Add(hint);
         stack.Children.Add(saveBtn);
         return stack;
+    }
+
+    /// <summary>步进按钮：复用深色样式，但压小尺寸适配 +/- 行内布局。</summary>
+    private static Button StepButton(string glyph)
+    {
+        var b = PluginUi.Button(glyph);
+        b.Width = 28;
+        b.Height = 24;
+        b.Padding = new Thickness(0);
+        return b;
     }
 }

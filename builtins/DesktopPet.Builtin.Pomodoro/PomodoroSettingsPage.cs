@@ -1,22 +1,20 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using DesktopPet.Core;
+using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.Pomodoro;
 
 /// <summary>
 /// 番茄钟设置页：工作时长选择（5/15/25/45 分钟），持久化到 Storage（workMinutes）。
+/// v0.1.63：改用 PluginUi 深色按钮；修复"storage 值不在候选项时无预选"的问题。
 /// </summary>
 public sealed class PomodoroSettingsPage : ISettingsPage
 {
     private readonly IPluginStorage _storage;
     private const string WorkKey = "workMinutes";
     private const int DefaultMinutes = 25;
-    private static readonly int[] Choices = [5, 15, 25, 45];
-
-    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
-    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
+    private static readonly int[] Presets = [5, 15, 25, 45];
 
     public PomodoroSettingsPage(IPluginStorage storage) => _storage = storage;
 
@@ -28,31 +26,28 @@ public sealed class PomodoroSettingsPage : ISettingsPage
         var current = _storage.Contains(WorkKey) ? _storage.Get<int>(WorkKey) : DefaultMinutes;
 
         var stack = new StackPanel { Margin = new Thickness(8) };
-        stack.Children.Add(new TextBlock
-        {
-            Text = "工作时长（分钟）",
-            FontSize = 12,
-            Foreground = TextSub,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
+
+        var caption = PluginUi.Text("工作时长（分钟）", sub: true);
+        caption.Margin = new Thickness(0, 0, 0, 8);
+        stack.Children.Add(caption);
+
+        // v0.1.63 fix：候选项 = 预设 ∪ {当前值}（当前值不在预设里也保证有预选）
+        var options = Presets.Contains(current) ? Presets.ToArray() : Presets.Append(current).OrderBy(x => x).ToArray();
 
         var combo = new ComboBox { Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var c in Choices)
+        foreach (var c in options)
         {
             var item = new ComboBoxItem { Content = $"{c} 分钟" };
             if (c == current) item.IsSelected = true;
             combo.Items.Add(item);
         }
 
-        var hint = new TextBlock
-        {
-            Text = "下次启动番茄钟时生效（径向菜单文案会同步）",
-            FontSize = 11,
-            Foreground = TextSub,
-            Margin = new Thickness(0, 8, 0, 0),
-        };
+        var hint = PluginUi.Text("下次启动番茄钟时生效（径向菜单文案会同步）", sub: true);
+        hint.FontSize = 11;
+        hint.Margin = new Thickness(0, 8, 0, 0);
 
-        var saveBtn = new Button { Content = "保存", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 8, 0, 0) };
+        var saveBtn = PluginUi.Button("保存");
+        saveBtn.Margin = new Thickness(0, 8, 0, 0);
         saveBtn.Click += (_, _) =>
         {
             if (combo.SelectedItem is ComboBoxItem sel && sel.Content is string txt)
