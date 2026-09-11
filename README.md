@@ -47,8 +47,11 @@ git commit -m "v0.1.61: xxx"
 git checkout -- <文件路径>
 ```
 
-**设计要点**：`.gitignore` 排除了 `publish/`(4.1G)、`bin/`+`obj/`、`installer/*.msi`(375M)、`data/`、`.env`（含 API Key）。
-仓库仅 1.1MB / 257 文件，只跟踪源码 + 素材 + 文档 + 生成脚本。
+**设计要点**：`.gitignore` 排除了 `publish/`(4.1G)、`bin/`+`obj/`、`installer/*.msi`(375M)、`data/`、`.env`（含 API Key），以及 **`plugins/com.lantern.*/`（插件部署产物）**。
+只跟踪源码 + 素材 + 手写文档 + 生成脚本。
+
+⚠️ **`plugins/` 下的插件目录不入库**——它们是各内置插件 `DeployToPlugins` target 的构建产物；插件 dll 属**非确定性构建**（源码不变、重建也会内容微变），入库会持续刷 diff 噪音。
+**clone 后需先构建**才会有插件：`dotnet build src/DesktopPet.sln`（sln 含全部内置插件，构建即自动部署到 `plugins/`）。手写的 `plugins/README.md` 与 `plugins/_template/` 仍入库。
 
 ⚠️ **素材改动肉眼难以分辨**（PNG/ICO 是二进制）——`git diff --stat` 会显示 `Bin N -> M bytes`，这是发现"图标被意外替换"最有效的手段。
 

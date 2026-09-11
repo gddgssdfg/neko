@@ -36,3 +36,9 @@ Desktop.ini
 .env
 *.key
 !*.pub
+
+# ===== 插件部署产物（从 builtins/ 构建部署，不入库）=====
+# plugins/com.lantern.*/ 由各内置插件的 DeployToPlugins target 生成（dll + 从 builtins/ 拷来的 manifest）。
+# 插件 dll 属非确定性构建（源码不变、重建也会内容微变）→ 入库会持续刷 diff 噪音。
+# 手写内容（plugins/README.md、plugins/_template/）仍入库。
+/plugins/com.lantern.*/
