@@ -1912,3 +1912,25 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 - 构建 **0 警告 0 错误**；**LoaderTest 全过**——新增 `MbtiQuiz` 自检（全选A→ESTJ / 全选B→INFP / 维度独立→ENTP / EI 平局→E / 仅答一维；题量 24、四维各 6）；`DailyFortuneBuilder` 自检扩到「16 型全覆盖 + 同 kind 两两不同 + 未知/null→null + 填 MBTI 后 `Full` 与不填不同」。
 - **UiProbe 全过（35 项 / 0 FAIL）**：新增第 26 项「人格测试」——反射构建 `BaziSettingsPage`（内存版 `IPluginStorage`）→ 断言 `BuildContent()` 返回 `ScrollViewer` + 24×2=48 个 `RadioButton` + 「计算并保存」按钮 + 「人格测试」标题 + 「当前类型」状态行。
 - 真机（答题→出类型→播报随类型变化）留给灯灯。
+
+---
+
+## 2026-09-12（仓库策略修正：plugins/ 产物移出 git + sln 遗漏修正）
+
+**起因**：`plugins/*.dll` 非确定性构建导致每轮构建都刷 diff 噪音（反复手动 revert `Affection.dll` 4 次），灯灯批准移出 git。
+
+### 1. `plugins/com.lantern.*/` 移出 git（38 文件）
+- 它们是各内置插件 `DeployToPlugins` target 的产物（dll + 从 `builtins/` 拷的 manifest）。
+- 插件 dll 属**非确定性构建**：源码不变、重建也会内容微变（`Affection.dll` 9216→9216 反复 M）。
+- `.gitignore` 加 `/plugins/com.lantern.*/`；`git rm -r --cached`（**磁盘文件保留**）。
+- 手写内容 `plugins/README.md` + `plugins/_template/` 仍入库。
+- **影响：clone 后需先构建才有插件**（`dotnet build src/DesktopPet.sln` —— 各插件 csproj 的 `DeployToPlugins` 会在构建时自动部署）。
+
+### 2. ⚠️ sln 遗漏（真 bug，本轮顺带发现）
+- `DesktopPet.Builtin.Bazi` 创建时（v0.1.65）**未加入 `src/DesktopPet.sln`** → `build sln` 不会构建/部署命理插件，只有单独构建该 csproj 才行。
+- 若非本次核查 sln（起因是查 README 的构建命令），clone 后命理插件会**静默缺失**。
+- 修复：`dotnet sln add`，sln **21 → 22 项目**；整体构建验证 0 警告 0 错误。
+- **教训沉淀：新建插件项目后必须 `dotnet sln add`，否则"标准构建"不含它。**
+
+### 3. README 版本控制章节同步
+新增说明：`plugins/` 不入库的原因 + clone 后需构建。
