@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using DesktopPet.Core;
 using DesktopPet.Runtime;
 
@@ -216,6 +218,9 @@ public static class Program
         }
         Console.WriteLine($"插件目录文件: {string.Join(", ", Directory.GetFiles(pluginDir).Select(Path.GetFileName).OrderBy(x => x))}");
 
+        // P5 内存实测：加载命理插件前的 WorkingSet 基线
+        var wsBefore = SnapWorkingSetMB();
+
         var loader = new PluginLoader(pluginsDir);
         var loaded = loader.LoadAll(new HashSet<string>(), out var errors);
         foreach (var e in errors) Console.WriteLine($"[Bazi 加载失败] {e.dir}: {e.error}");
@@ -249,6 +254,10 @@ public static class Program
             Console.WriteLine($"FAIL: OnLoad 抛异常（第三方依赖 ALC 解析失败）：{ex.GetType().Name}: {ex.Message}");
             return;
         }
+
+        // P5 内存实测：OnLoad + lunar 算盘（VerifyKnownCases / 各 SelfCheck）完成后
+        var wsAfter = SnapWorkingSetMB();
+        Console.WriteLine($"  [内存] 加载前 {wsBefore:F2} MB → OnLoad+算盘后 {wsAfter:F2} MB，差值 {wsAfter - wsBefore:F2} MB");
 
         var hasAsk = uiApi.Slots.Any(s => s.Id == "bazi-ask");
         var hasToday = uiApi.Slots.Any(s => s.Id == "bazi-today");
@@ -350,6 +359,10 @@ public static class Program
             Console.WriteLine($"FAIL: 无 Key 点「问问猫」抛异常：{ex.GetType().Name}: {ex.Message}");
         }
 
+        // P5 内存实测：跑完全链路（播报 + Prompt + 客户端自检 + 无 Key 槽位）后的稳态（仍在加载态）
+        var wsEnd = SnapWorkingSetMB();
+        Console.WriteLine($"  [内存] 全链路跑完后 {wsEnd:F2} MB（较加载前 +{wsEnd - wsBefore:F2} MB）");
+
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(root, true); } catch { }
     }
@@ -398,6 +411,48 @@ public static class Program
             Pet = petApi,
             UI = uiApi,
         };
+    }
+
+    // ---- 内存实测（P5：命理插件 maxMemoryMB 回调依据） ----
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessMemoryCounters
+    {
+        public uint cb;
+        public uint PageFaultCount;
+        public UIntPtr PeakWorkingSetSize;
+        public UIntPtr WorkingSetSize;
+        public UIntPtr QuotaPeakPagedPoolUsage;
+        public UIntPtr QuotaPagedPoolUsage;
+        public UIntPtr QuotaPeakNonPagedPoolUsage;
+        public UIntPtr QuotaNonPagedPoolUsage;
+        public UIntPtr PagefileUsage;
+        public UIntPtr PeakPagefileUsage;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    private static extern bool GetProcessMemoryInfo(IntPtr hProcess, out ProcessMemoryCounters counters, uint size);
+
+    /// <summary>
+    /// 取当前进程 WorkingSet（MB），采 <paramref name="samples"/> 次取最小值以压掉 GC 抖动。
+    /// 每次采样前强制一次完整 GC，让托管堆回到稳态；WorkingSet 含 lunar 的 IL 映射与托管/原生综合占用。
+    /// </summary>
+    private static double SnapWorkingSetMB(int samples = 3)
+    {
+        var proc = Process.GetCurrentProcess();
+        var min = double.MaxValue;
+        for (var i = 0; i < samples; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            if (GetProcessMemoryInfo(proc.Handle, out var c, (uint)Marshal.SizeOf<ProcessMemoryCounters>()))
+            {
+                var mb = c.WorkingSetSize.ToUInt64() / 1048576.0;
+                if (mb < min) min = mb;
+            }
+        }
+        return min == double.MaxValue ? 0 : min;
     }
 }
 

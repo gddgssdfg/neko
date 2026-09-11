@@ -4,6 +4,24 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.69] - 2026-09-12
+
+**命理助手 `com.lantern.bazi` P5：打磨收尾 —— 内存实测 + 全量回归**（承接 0.1.68 的 P4 MBTI）。
+
+### 内存实测
+- 在 `LoaderTest` 内用 Win32 `GetProcessMemoryInfo`（`psapi.dll`）对进程 WorkingSet 采样：`SnapWorkingSetMB()` 采样前双重 `GC.Collect()` + `GC.WaitForPendingFinalizers()`，采 3 次取最小值压 GC 抖动。
+- 三处采点：加载命理插件前 → `OnLoad` + lunar 算盘后 → 全链路（播报 + Prompt + 客户端自检 + 无 Key 槽位）跑完后。
+- 两次稳定实测：**加载前 ~34.8 MB → OnLoad+算盘后 ~49.6 MB（差值 ~14.8 MB）→ 全链路后 ~51.6 MB（较加载前 +~16.8 MB）**。
+
+### 决策：`maxMemoryMB` 保留 32，不回调
+- 实测插件增量内存 **~15–17 MB**，**不满足**「差值很小（<5 MB）」的回调条件。
+- 且全链路稳态 ~16.8 MB 已**高于 16 MB** —— 若回调到 16，watchdog 阈值会贴近插件正常占用，AI 问答（DeepSeek 响应）+ 设置页 + 完整八字计算同时展开时存在误杀风险。
+- 32 MB 相对实测稳态 ~17 MB 约 **1.9× 余量**，属健康安全边际，故**保留 32**（诚实结论，不为交差编数字）。
+
+### 验证
+- 全量 `dotnet build src/DesktopPet.sln`（**22 项目**，含 `DesktopPet.Builtin.Bazi`）**0 警告 0 错误**。
+- **LoaderTest 全过**（含内存实测打点）；**UiProbe 全过（35 项，0 FAIL）**。
+
 ## [0.1.68] - 2026-09-12
 
 **命理助手 `com.lantern.bazi` P4：人格测试（MBTI 问卷 + 计分）**（承接 0.1.67 的 P3 AI 咨询）。

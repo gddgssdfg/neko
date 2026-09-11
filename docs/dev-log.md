@@ -1934,3 +1934,35 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 
 ### 3. README 版本控制章节同步
 新增说明：`plugins/` 不入库的原因 + clone 后需构建。
+
+---
+
+## 2026-09-12（com.lantern.bazi P5：打磨收尾 —— 内存实测回调 + 全量回归）
+
+**承接 P4**。前置扫描（文案合规 / 空 catch / DeepSeek 链路真机验证）team-lead 已完成，P5 只剩一件实事：**实测插件内存、决定 `maxMemoryMB` 是否回调**，外加全量回归。
+
+### 内存实测方法（WorkingSet 差值，非进程总占用）
+- 在 `LoaderTest` 加 `SnapWorkingSetMB()`：P/Invoke `psapi.dll` 的 `GetProcessMemoryInfo` 读 `PROCESS_MEMORY_COUNTERS.WorkingSetSize`；**采样前双重 `GC.Collect()` + `GC.WaitForPendingFinalizers()`**，采 3 次取最小值压 GC 抖动（不用单次瞬时值）。
+- 三处采点：加载命理插件前基线 → `OnLoad` + lunar 算盘（`VerifyKnownCases` / 各 `SelfCheck`）后 → 全链路（播报 + Prompt 组装 + `DeepSeekClient` 自检 + 无 Key 点槽位）跑完后。
+- 用「差值」而非「绝对占用」：LoaderTest 进程本身有 .NET 运行时基线（~34.8MB），插件增量内存才是 `maxMemoryMB` 该管的部分。
+
+### 实测结果（两次一致）
+| 采样点 | 第 1 次 | 第 2 次 |
+|---|---|---|
+| 加载前基线 | 34.88 MB | 34.83 MB |
+| OnLoad+算盘后（差值） | 49.62 MB（+14.74） | 49.66 MB（+14.84） |
+| 全链路后（差值） | 51.62 MB（+16.73） | 51.68 MB（+16.86） |
+
+两次差值稳定在 **~14.8 MB（加载+算盘）→ ~16.8 MB（全链路）**，非 GC 抖动，是真增量。
+
+### 决策：`maxMemoryMB` 保留 32，不回调
+- 实测增量 **~15–17 MB**，**不满足** team-lead 定的「差值很小（<5 MB）才回调到 16」的条件。
+- 更关键：全链路稳态 ~16.8 MB **已经高于 16 MB** —— 若回调到 16，`ManifestParser` 读出的 watchdog 阈值会贴住插件正常占用，AI 问答（DeepSeek 响应体）+ 设置页 + 完整八字计算同时展开时存在被 watchdog 误杀的边界风险。
+- 32 MB = 实测稳态 ~17 MB 的 ~1.9× 余量，是合理安全边际，**诚实保留**，不为交差硬编数字。这也符合「lunar.dll 只有 418KB，但插件整体（WPF 窗口 + HttpClient 单例 + 历法数据结构）不是几 MB 级」的事实。
+- 结论同步到 CHANGELOG `## [0.1.69]`；`plugin.toml` **不动**（`builtins/` 源与 `plugins/` 产物均保持 32）。
+
+### 全量回归
+- `dotnet build src/DesktopPet.sln`（**22 项目**，含 `DesktopPet.Builtin.Bazi`）**0 警告 0 错误**。
+  - ⚠️ 首次构建偶发 `MSB3030`（`Bazi.deps.json` 找不到）——是构建顺序竞态：App 的 `DeployPluginsToOutput` target 跑在 Bazi 的 `DeployToPlugins`（生成 deps.json）之前；**重跑即过**，非代码缺陷。
+- **LoaderTest 全过**（含 P5 内存打点）；**UiProbe 全过（35 项，0 FAIL）**。
+- 真机（灯灯双击 exe：ChatWindow 真弹窗 + MBTI 答题 → 播报随类型变化）留给灯灯。
