@@ -4,6 +4,31 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.66] - 2026-09-12
+
+**命理助手 `com.lantern.bazi` P2：每日运势播报**（承接 0.1.65 的 P0 骨架）。
+
+### 新增
+- `BaziEngine.ComputeToday(DateTime)` → `BaziToday`：日柱 / 日干五行 / 纳音 / 节气 / **宜 / 忌** / 吉神宜趋 / 凶煞宜忌 / 喜神·财神方位 / 冲 / 煞 / 值日天神。同步纯计算，无 IO、不在 OnTick。
+- `DailyFortuneBuilder.cs`（新）：**本地规则四段拼装，绝不调用 AI**：
+  1. 能量基调 —— 今日日干五行 与 用户日主 五行的生克关系（同气/生/泄/克/耗）→ 一句话
+  2. 宜 / 忌 —— 当日宜忌各取 2–3 条
+  3. 人格定制建议 —— **MBTI 为预留接口**（P4 填 `profile.Mbti` 即生效），未填按日主五行给通用建议
+  4. 方位提醒 —— 喜神/财神方位 + 冲煞
+  输出 `Short`（一句话 → `Pet.Say`）+ `Full`（多段 → `System.Notify`）。含 `SelfCheck()`（五行生克 5 例 + 播报冒烟）。
+- `BaziPlugin` 定时播报：`Scheduler.Every(60_000, CheckBroadcast)`（v0.1.61 起无 Cron，用 Every + 时刻判断）；判 `HH:mm == BroadcastTime` 且 Storage `lastBroadcastDate` 防当天重复；`!HasBirth` 静默跳过；tick 体 try/catch（铁律 7）；`OnUnload` Dispose 句柄（铁律 2）；每 tick 重新读 Storage 避免档案陈旧。
+- 径向槽位「**今日运势**」（Order 31，手动立即播报）；修正 P0 槽位 `bazi-ask` 的 `Icon` `star`→`book`（`star` 图标不存在会回退 default）。
+
+### 探测坑（重要）
+lunar-csharp 的 `EightChar.YearWuXing/MonthWuXing/DayWuXing/TimeWuXing` 返回**「干+支」两字**（如「土土」），**不是单字五行**；今日五行与日主比较须用 `ElementOfGan(dayGan)`（单字）。设置页四柱预览同步改用日干单字五行。
+
+### 打磨
+- Short 文案：宜/忌各自整体成句、穷尽 `Pick` 的 2–3 条（消除当日无忌时输出「忌无」的不通顺，改为「无忌」）。
+- 能量基调措辞：去掉「泄」「克」两类结尾的「宜X」（避免与 Short 里的「宜嫁娶」连出两个「宜」），改为「量力而行」「需谨慎应对」。
+
+### 验证
+- 构建 0 警告 0 错误；**LoaderTest 全过**（「测试 5」新增断言：双径向槽位、`DailyFortuneBuilder` 自检、**手动播报全链路**——预置档案 → 触发「今日运势」槽位 → 断言 `Pet.Say` 短句 + `System.Notify` 完整内容）；**UiProbe 全过**（0 FAIL）。
+
 ## [0.1.65] - 2026-09-12
 
 **新插件 `com.lantern.bazi`（命理助手）P0：骨架 + 生日设置页 + 第三方依赖 ALC 验证**（承接灯灯"命理插件"需求；完整规格见 `outputs/Neko命理插件-开发提示词.md`）。

@@ -237,7 +237,8 @@ public static class Program
 
         // OnLoad 内部调用 BaziEngine（lunar）——若 lunar.dll 未被插件 ALC 解析，此处必抛
         var uiApi = new TestUIApi();
-        var ctx = BuildContext(bazi, dataDir, new TestPetApi(), uiApi, new TestEventBus());
+        var petApi = new TestPetApi();
+        var ctx = BuildContext(bazi, dataDir, petApi, uiApi, new TestEventBus());
         try
         {
             bazi.Instance.OnLoad(ctx);
@@ -249,10 +250,11 @@ public static class Program
             return;
         }
 
-        if (uiApi.Slots.Any(s => s.Id == "bazi-ask"))
-            Console.WriteLine("PASS: 径向槽位已注册 = bazi-ask");
-        else
-            Console.WriteLine("FAIL: 未注册径向槽位 bazi-ask");
+        var hasAsk = uiApi.Slots.Any(s => s.Id == "bazi-ask");
+        var hasToday = uiApi.Slots.Any(s => s.Id == "bazi-today");
+        Console.WriteLine(hasAsk && hasToday
+            ? "PASS: 径向槽位已注册 = bazi-ask（问问猫）+ bazi-today（今日运势）"
+            : $"FAIL: 径向槽位缺失（ask={hasAsk}, today={hasToday}）");
 
         if (uiApi.Pages.Any(pg => pg.Title == "com.lantern.bazi"))
             Console.WriteLine("PASS: 设置页已注册且 Title == Manifest.Id");
@@ -267,6 +269,32 @@ public static class Program
         Console.WriteLine(selfTest == "OK"
             ? "PASS: lunar 已知用例回归通过（1981-01-29→1989-02-18 / 2020-01-06→2020-02-06 / 立春边界）"
             : $"FAIL: lunar 回归校验未通过：{selfTest ?? "(属性未读到)"}");
+
+        // P2：每日运势构建器自检（五行生克 5 例 + 播报冒烟）
+        var builderType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.DailyFortuneBuilder");
+        var bprop = builderType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var bself = bprop?.GetValue(null) as string;
+        Console.WriteLine(bself == "OK"
+            ? "PASS: DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟）"
+            : $"FAIL: DailyFortuneBuilder 自检未通过：{bself ?? "(属性未读到)"}");
+
+        // P2：手动播报全链路 —— 预置档案 → 触发「今日运势」槽位 → 断言 Say + System.Notify
+        ctx.Capability.Storage.Set("profile",
+            "{\"Year\":1981,\"Month\":1,\"Day\":29,\"Hour\":23,\"Minute\":37,\"Gender\":0," +
+            "\"DailyBroadcastEnabled\":true,\"BroadcastTime\":\"08:00\"}");
+        var todaySlot = uiApi.Slots.FirstOrDefault(s => s.Id == "bazi-today");
+        todaySlot?.OnInvoke();
+        var said = petApi.Spoken.LastOrDefault() ?? "";
+        // 宽松断言：黄历宜忌每天不同，只校验结构（含干支日 + 「宜」+「忌」），不钉死具体条目。
+        Console.WriteLine(said.Contains("今日") && said.Contains("宜") && said.Contains("忌")
+            ? $"PASS: 「今日运势」手动播报 Say = \"{said}\""
+            : $"FAIL: 手动播报未产出预期 Say，实际=\"{said}\"");
+
+        var sys = (NullSystem)ctx.Capability.System;
+        Console.WriteLine(sys.Notifications.Count > 0 && sys.Notifications[0].Body.Contains("能量基调")
+            ? $"PASS: 完整运势已走 System.Notify（首条 {sys.Notifications[0].Body.Length} 字，含「能量基调」）"
+            : $"FAIL: 未按预期调用 System.Notify（{sys.Notifications.Count} 条）");
 
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(root, true); } catch { }
@@ -357,7 +385,9 @@ public sealed class NullScheduler : IScheduler
 
 public sealed class NullSystem : ISystem
 {
-    public void Notify(string t, string b) { }
+    /// <summary>记录收到的系统通知（供命理插件播报链路验证）。</summary>
+    public List<(string Title, string Body)> Notifications { get; } = new();
+    public void Notify(string t, string b) => Notifications.Add((t, b));
     public string? ReadClipboard() => null;
     public void WriteClipboard(string t) { }
     public void OpenUrl(string u) { }

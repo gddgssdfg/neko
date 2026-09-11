@@ -176,9 +176,11 @@ public sealed class BaziSettingsPage : ISettingsPage
 
                 var chart = BaziEngine.ComputeProfile(draft);
                 var timePart = chart.HasTime ? chart.TimePillar : "—";
+                // 日主五行取日干的单字五行（chart.DayWuXing 是 lunar 的「干+支」两字，不适合展示）
+                var dayMasterElement = BaziEngine.ElementOfGan(chart.DayMaster);
                 preview.Text =
                     $"四柱：{chart.YearPillar} {chart.MonthPillar} {chart.DayPillar} {timePart}\n" +
-                    $"日主：{chart.DayMaster}（{chart.DayWuXing}）    星座：{chart.XingZuo}\n" +
+                    $"日主：{chart.DayMaster}（{dayMasterElement}）    星座：{chart.XingZuo}\n" +
                     $"纳音：{chart.DayNaYin}\n" +
                     $"起运：{chart.YunStartText}";
             }

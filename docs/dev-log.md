@@ -1842,3 +1842,29 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 ### 验证
 - 构建 **0 警告 0 错误**；**LoaderTest 全过**（新增测试 5：加载 + 权限授予 + lunar ALC 解析 + 径向槽位 + 设置页 Title==Id + lunar 回归 4 用例）；**UiProbe 33/33 全过**（0 FAIL）。
 - 真机验证（双击 exe 看径向菜单 + 设置页保存读回）留给灯灯——环境坑见上一条。
+
+---
+
+## 2026-09-12（com.lantern.bazi P2：每日运势播报）
+
+**承接 P0**：加今日运势计算 + 本地四段拼装 + 定时/手动播报。
+
+### 落地
+- `BaziEngine.ComputeToday(DateTime)` → `BaziToday`。探测到的 lunar 属性名：`DayInGanZhi` / `DayGan` / `DayNaYin` / `JieQi` / `DayYi` / `DayJi` / `DayJiShen` / `DayXiongSha` / `DayPositionXi(+Desc)` / `DayPositionCaiDesc` / `DayChong(+Desc)` / `DaySha` / `DayTianShen(+Type/Luck)`。
+- `DailyFortuneBuilder.cs`：四段（能量基调 = 今日五行 vs 用户日主生克 / 宜忌 / 人格建议 / 方位），输出 `Short` + `Full`。
+- `BaziPlugin`：`Every(60_000, CheckBroadcast)` 定时；「今日运势」手动槽位；`bazi-ask` icon `star`→`book`。
+
+### 探测坑（重要，已写进 CHANGELOG）
+- **lunar 的 `EightChar.*WuXing` 是「干+支」两字（如「土土」），不是单字五行。** 第一版直接拿 `DayWuXing` 当"日干五行"和用户日主比，relations 走空 → theme 输出「今日土土气平和」（一眼假）。改用 `ElementOfGan(DayGan)` 取单字后正确（示例：`今日己丑日：今日土当令，你的火日主需付出，宜量力而行`）。**又一次靠"带真实用例的自检 / 真跑"抓到类型语义坑。**
+- `Lunar.DayYi/DayJi/DayJiShen/DayXiongSha` 是 `List<string>` 而非 `string[]`（编译报 CS0029 才发现，`.ToArray()` 转换）。
+
+### 设计取舍
+- MBTI 只做**预留接口**（`MbtiTip` 表 + 未命中回退通用建议），P2 不硬依赖；P4 填 `profile.Mbti` 即生效。
+- 定时播报**每 tick 重新 `BaziProfile.Load`**，设置页改完无需重启；`lastBroadcastDate` 防当天重复。
+- 播报分层：`Short`→`Pet.Say`（气泡），`Full`→`System.Notify`（多段塞不进气泡）。
+- Short 文案：宜/忌**各自整体成句**、穷尽 `Pick` 出的 2–3 条（`宜嫁娶、祭祀、祈福` 而非只取第一条）；当日无忌输出「无忌」而非生硬的「忌无」。LoaderTest 播报断言改**宽松式**（含「今日」+「宜」+「忌」），不钉死具体条目——黄历宜忌每日不同，钉死必假失败。
+- `SelfCheck` 仍是**纯函数 + 静态属性反射**，无生产副作用（同 P0 的 `VerifyKnownCases`）。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**——「测试 5」新增：双槽位注册 / `DailyFortuneBuilder` 自检 / **手动播报全链路**（预置档案 → 触发槽位 → 断言 `Pet.Say` 短句 `今日己丑日：…` + `System.Notify` 完整 151 字含「能量基调」）；**UiProbe 全过**（0 FAIL）。
+- 真机（到点收气泡 + 托盘通知）留给灯灯；⚠️ 不用 Bash 后台拉 GUI（加载不了插件）。

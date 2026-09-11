@@ -54,6 +54,69 @@ public sealed record BaziChart
 }
 
 /// <summary>
+/// 某一日的黄历信息（值对象，全部只读）。P2 scope：日柱 / 五行 / 纳音 / 节气 / 宜忌 / 吉神 / 方位 / 冲煞。
+/// </summary>
+public sealed record BaziToday
+{
+    /// <summary>公历日期 yyyy-MM-dd。</summary>
+    public string DateText { get; init; } = "";
+
+    /// <summary>日柱干支（如「己卯」）。</summary>
+    public string DayPillar { get; init; } = "";
+
+    /// <summary>日干（如「己」）。</summary>
+    public string DayGan { get; init; } = "";
+
+    /// <summary>日干五行。</summary>
+    public string DayWuXing { get; init; } = "";
+
+    /// <summary>日纳音（如「剑锋金」）。</summary>
+    public string DayNaYin { get; init; } = "";
+
+    /// <summary>节气名（无节气为空串）。</summary>
+    public string JieQi { get; init; } = "";
+
+    /// <summary>宜。</summary>
+    public string[] Yi { get; init; } = [];
+
+    /// <summary>忌。</summary>
+    public string[] Ji { get; init; } = [];
+
+    /// <summary>吉神宜趋。</summary>
+    public string[] JiShen { get; init; } = [];
+
+    /// <summary>凶煞宜忌。</summary>
+    public string[] XiongSha { get; init; } = [];
+
+    /// <summary>喜神方位（汉字，如「艮」）。</summary>
+    public string XiPosition { get; init; } = "";
+
+    /// <summary>喜神方位描述（如「东北」）。</summary>
+    public string XiPositionDesc { get; init; } = "";
+
+    /// <summary>财神方位描述（如「正南」）。</summary>
+    public string CaiPositionDesc { get; init; } = "";
+
+    /// <summary>日冲（地支，如「申」）。</summary>
+    public string Chong { get; init; } = "";
+
+    /// <summary>日冲描述（如「(壬申)猴」）。</summary>
+    public string ChongDesc { get; init; } = "";
+
+    /// <summary>日煞（如「北」）。</summary>
+    public string Sha { get; init; } = "";
+
+    /// <summary>值日天神。</summary>
+    public string TianShen { get; init; } = "";
+
+    /// <summary>值日天神类型（黄道 / 黑道）。</summary>
+    public string TianShenType { get; init; } = "";
+
+    /// <summary>值日天神吉凶（吉 / 凶）。</summary>
+    public string TianShenLuck { get; init; } = "";
+}
+
+/// <summary>
 /// lunar-csharp 的薄封装：命盘计算 + 已知用例自检。
 /// 历法一律本地算，绝不交给 AI（规格铁律）。全部为同步纯计算，无 IO / 无网络。
 /// <para><b>严禁在 OnTick 里调用</b>（OnTick 约 10Hz，会拖慢宠物动画）。</para>
@@ -107,6 +170,50 @@ public static class BaziEngine
             YunStartDay = yunStart.Day,
         };
     }
+
+    /// <summary>按某一日计算黄历信息（日柱 / 五行 / 宜忌 / 吉神方位 / 冲煞 / 节气）。纯计算，无 IO。</summary>
+    public static BaziToday ComputeToday(DateTime date)
+    {
+        // 用正午，规避 23:00 日界对"日柱"的干扰。
+        var solar = Solar.FromYmdHms(date.Year, date.Month, date.Day, 12, 0, 0);
+        var lunar = solar.Lunar;
+
+        return new BaziToday
+        {
+            DateText = date.ToString("yyyy-MM-dd"),
+            DayPillar = lunar.DayInGanZhi,
+            DayGan = lunar.DayGan,
+            // 日干五行（单字）。注意：lunar 的 EightChar.*WuXing 返回「干+支」两字（如「土土」），
+            // 直接拿来和"日主五行"比会有歧义，故这里显式取日干的五行。
+            DayWuXing = ElementOfGan(lunar.DayGan),
+            DayNaYin = lunar.DayNaYin,
+            JieQi = lunar.JieQi ?? "",
+            Yi = (lunar.DayYi ?? []).ToArray(),
+            Ji = (lunar.DayJi ?? []).ToArray(),
+            JiShen = (lunar.DayJiShen ?? []).ToArray(),
+            XiongSha = (lunar.DayXiongSha ?? []).ToArray(),
+            XiPosition = lunar.DayPositionXi ?? "",
+            XiPositionDesc = lunar.DayPositionXiDesc ?? "",
+            CaiPositionDesc = lunar.DayPositionCaiDesc ?? "",
+            Chong = lunar.DayChong ?? "",
+            ChongDesc = lunar.DayChongDesc ?? "",
+            Sha = lunar.DaySha ?? "",
+            TianShen = lunar.DayTianShen ?? "",
+            TianShenType = lunar.DayTianShenType ?? "",
+            TianShenLuck = lunar.DayTianShenLuck ?? "",
+        };
+    }
+
+    /// <summary>天干 → 五行（甲乙木 / 丙丁火 / 戊己土 / 庚辛金 / 壬癸水）。</summary>
+    public static string ElementOfGan(string gan) => gan switch
+    {
+        "甲" or "乙" => "木",
+        "丙" or "丁" => "火",
+        "戊" or "己" => "土",
+        "庚" or "辛" => "金",
+        "壬" or "癸" => "水",
+        _ => "",
+    };
 
     /// <summary>档案 → 公历 Solar。农历录入时先转公历（闰月用负数月份表示）。</summary>
     private static Solar ToSolar(BaziProfile p)

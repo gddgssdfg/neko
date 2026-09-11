@@ -4,12 +4,18 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.Bazi;
 
 /// <summary>
-/// 命理助手插件（P0：骨架 + 生日录入设置页 + lunar 依赖加载验证）。
-/// <para>P0 只打通「加载 → OnLoad → 计算 → 卸载」链路，AI 咨询 / 定时播报 / MBTI 属后续阶段。</para>
+/// 命理助手插件。P0：骨架 + 生日设置页 + lunar 依赖加载验证；P2：每日运势播报。
+/// <para>P3（AI 咨询）/ P4（MBTI 问卷）为后续阶段。</para>
 /// </summary>
 public sealed class BaziPlugin : PluginBase
 {
-    private BaziProfile _profile = new();
+    /// <summary>播报轮询间隔（v0.1.61 起无 Cron，只有 Every/At，用 Every + 时刻判断）。</summary>
+    private const int BroadcastCheckIntervalMs = 60_000;
+
+    /// <summary>防重复播报的日期键（Storage 存 yyyy-MM-dd）。</summary>
+    private const string LastBroadcastKey = "lastBroadcastDate";
+
+    private IScheduleHandle? _broadcastTimer;
 
     public override string Id => "com.lantern.bazi";
     public override string Name => "命理助手";
@@ -24,35 +30,98 @@ public sealed class BaziPlugin : PluginBase
     {
         base.OnLoad(ctx);   // 铁律 1：第一行，否则 Pet / UI / Capability 全为 null
 
-        _profile = BaziProfile.Load(Capability.Storage);
+        // 无条件跑一次 lunar 自检 ——
+        //  ① 若 lunar.dll 未被插件 ALC 正确解析，这里会抛异常（加载器测试据此判定第三方依赖链）；
+        //  ② 顺带完成 lunar 已知用例 + 运势构建器的回归校验。
+        BaziEngine.VerifyKnownCases();
+        DailyFortuneBuilder.SelfCheck();
 
-        // P0 核心验证动作：无条件跑一次 lunar 自检。
-        //  ① 若 lunar.dll 未被插件 ALC 正确解析，这里会抛异常 —— 宿主捕获后会禁用本插件，
-        //     加载器测试据此判定第三方依赖加载链是否可用；
-        //  ② 顺带完成 lunar-csharp 的已知用例回归校验。
-        var selfTest = BaziEngine.VerifyKnownCases();
-
-        // 已录入完整生日时，OnLoad 再算一次真实命盘（预热 + 便于排查）。
-        var preview = BaziEngine.ComputeProfile(_profile);
-        var fourPillars = preview.HasBirth ? preview.FourPillars : "（未录入生日）";
-        _ = selfTest;   // 结果由加载器测试通过反射读取，运行时不额外提示
+        // 径向槽位「今日运势」：手动立即播报一次（便于验证 + 用户实用入口）
+        UI.RegisterRadialSlot(new RadialSlot
+        {
+            Id = "bazi-today",
+            Label = "今日运势",
+            Icon = "book",
+            Order = 31,
+            OnInvoke = () => BroadcastManual(),
+        });
 
         // 径向槽位「问问猫」：AI 深度咨询入口（P3 开放，P0 先占位）
         UI.RegisterRadialSlot(new RadialSlot
         {
             Id = "bazi-ask",
             Label = "问问猫",
-            Icon = "star",
+            Icon = "book",
             Order = 30,
-            OnInvoke = () => Pet.Say($"命盘：{fourPillars}（AI 咨询后续开放）", 4000),
+            OnInvoke = () => Pet.Say("AI 深度咨询将于后续版本开放~", 2500),
         });
 
-        // 设置页：生日录入 + 实时四柱预览
         UI.RegisterSettingsPage(new BaziSettingsPage(Capability.Storage));
+
+        // 每日定时播报：60s 轮询 + 时刻匹配（无 Cron）
+        _broadcastTimer = Capability.Scheduler.Every(BroadcastCheckIntervalMs, CheckBroadcast);
     }
 
     public override void OnUnload()
     {
-        // P0 未订阅事件、未持有定时器句柄；如后续阶段新增订阅，务必在此退订（铁律 2）。
+        // 铁律 2：必须 Dispose 定时器句柄，否则热重载会重复注册
+        _broadcastTimer?.Dispose();
+        _broadcastTimer = null;
+    }
+
+    /// <summary>定时回调（线程池线程）：到点则播报。失败静默降级，绝不拖垮宿主（铁律 7）。</summary>
+    private void CheckBroadcast()
+    {
+        try
+        {
+            // 每次重新读最新档案，避免设置页改动后缓存陈旧
+            var profile = BaziProfile.Load(Capability.Storage);
+            if (!profile.DailyBroadcastEnabled || !profile.HasBirth) return;   // 未开启 / 档案不全 → 静默跳过
+
+            var now = DateTime.Now;
+            if (now.ToString("HH:mm") != profile.BroadcastTime) return;        // 未到点
+
+            var todayKey = now.ToString("yyyy-MM-dd");
+            if (Capability.Storage.Get<string>(LastBroadcastKey) == todayKey) return;  // 当天已播报过
+
+            Capability.Storage.Set(LastBroadcastKey, todayKey);
+            Broadcast(profile, now);
+        }
+        catch
+        {
+            // 铁律 7：任何失败都静默，不影响宿主
+        }
+    }
+
+    /// <summary>手动触发（径向槽位「今日运势」点击）。</summary>
+    private void BroadcastManual()
+    {
+        try
+        {
+            var profile = BaziProfile.Load(Capability.Storage);
+            if (!profile.HasBirth)
+            {
+                Pet.Say("先在设置里填写出生日期，我才能推算运势~", 3000);
+                return;
+            }
+            Broadcast(profile, DateTime.Now);
+        }
+        catch
+        {
+            Pet.Say("运势推算出了点小状况，稍后再试~", 3000);
+        }
+    }
+
+    /// <summary>核心播报：短句走气泡，完整内容走系统通知（气泡装不下多段文本）。</summary>
+    private void Broadcast(BaziProfile profile, DateTime now)
+    {
+        var chart = BaziEngine.ComputeProfile(profile);
+        if (!chart.HasBirth) return;   // 防御：档案在两次读之间失效
+
+        var today = BaziEngine.ComputeToday(now);
+        var fortune = DailyFortuneBuilder.Build(profile, chart, today);
+
+        Pet.Say(fortune.Short, 5000);
+        Capability.System.Notify("Neko", fortune.Full);
     }
 }
