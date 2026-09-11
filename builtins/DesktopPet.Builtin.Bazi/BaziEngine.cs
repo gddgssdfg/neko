@@ -215,6 +215,17 @@ public static class BaziEngine
         _ => "",
     };
 
+    /// <summary>地支 → 五行（子亥水 / 寅卯木 / 巳午火 / 申酉金 / 辰戌丑未土）。</summary>
+    public static string ElementOfZhi(string zhi) => zhi switch
+    {
+        "子" or "亥" => "水",
+        "寅" or "卯" => "木",
+        "巳" or "午" => "火",
+        "申" or "酉" => "金",
+        "辰" or "戌" or "丑" or "未" => "土",
+        _ => "",
+    };
+
     /// <summary>档案 → 公历 Solar。农历录入时先转公历（闰月用负数月份表示）。</summary>
     private static Solar ToSolar(BaziProfile p)
     {

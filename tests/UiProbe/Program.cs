@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using Expr = System.Linq.Expressions.Expression;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -538,6 +539,100 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.67 第 25 项：命理插件 ChatWindow（纯 C# 独立窗口：构造 + 控件 + 失败路径可读提示）----
+        // 教训（v0.1.32）：新 UI 功能漏加 UiProbe 断言，真机 11 分钟后才崩。此处守护 ChatWindow 的构造与错误分支。
+        Check("v0.1.67：命理插件 ChatWindow（构造 + 关键控件 + 失败路径可读提示）", () =>
+        {
+            // 前置：等异步 LoadDeferred 把插件（含命理）加载完
+            var pump = new DispatcherFrame();
+            var pt = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
+            pt.Tick += (_, _) => { pt.Stop(); pump.Continue = false; };
+            pt.Start();
+            Dispatcher.PushFrame(pump);
+
+            // 从已加载插件拿 Bazi 程序集（验证插件 ALC 能实例化独立窗口）；拿不到则回退直接 LoadFrom 插件目录
+            var baziPlugin = win.PluginHost.Plugins.FirstOrDefault(p => p.Manifest.Id == "com.lantern.bazi");
+            Assembly asm;
+            if (baziPlugin is not null)
+            {
+                asm = baziPlugin.Instance.GetType().Assembly;
+            }
+            else
+            {
+                var dll = Path.Combine(AppContext.BaseDirectory, "plugins", "com.lantern.bazi", "Bazi.dll");
+                if (!File.Exists(dll)) throw new FileNotFoundException($"命理插件未加载，且找不到 {dll}");
+                asm = Assembly.LoadFrom(dll);
+            }
+
+            var chatWindowType = asm.GetType("DesktopPet.Builtin.Bazi.ChatWindow")
+                ?? throw new Exception("ChatWindow 类型未找到");
+            var dsType = asm.GetType("DesktopPet.Builtin.Bazi.DeepSeekClient")
+                ?? throw new Exception("DeepSeekClient 类型未找到");
+            var msgType = asm.GetType("DesktopPet.Builtin.Bazi.ChatMessage")
+                ?? throw new Exception("ChatMessage 类型未找到");
+            var resultType = asm.GetType("DesktopPet.Builtin.Bazi.ChatResult")
+                ?? throw new Exception("ChatResult 类型未找到");
+
+            // 空历史（List<ChatMessage> 实现 IReadOnlyList<ChatMessage>）
+            var emptyHistory = Activator.CreateInstance(typeof(List<>).MakeGenericType(msgType))!;
+
+            // ask 委托 = q => DeepSeekClient.ChatAsync(null, 空消息) —— 走「空 Key → 可读错误」分支，**不发网络请求**
+            var chatAsync = dsType.GetMethod("ChatAsync", BindingFlags.Public | BindingFlags.Static)
+                ?? throw new Exception("DeepSeekClient.ChatAsync 未找到");
+            var messagesParam = chatAsync.GetParameters()[1].ParameterType;   // IReadOnlyList<ChatMessage>
+            var taskResultType = typeof(Task<>).MakeGenericType(resultType);
+            var funcType = typeof(Func<,>).MakeGenericType(typeof(string), taskResultType);
+
+            var q = Expr.Parameter(typeof(string), "q");
+            var call = Expr.Call(
+                chatAsync,
+                Expr.Constant(null, typeof(string)),
+                Expr.Constant(emptyHistory, messagesParam));
+            var ask = Expr.Lambda(funcType, call, q).Compile();
+
+            // 反射构造 + 显示
+            var ctor = chatWindowType.GetConstructors().Single();
+            var window = (Window)ctor.Invoke(new object?[] { emptyHistory, ask });
+            window.Show();
+            window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);   // 触发 Loaded + 布局
+
+            try
+            {
+                // 关键控件存在
+                var input = (TextBox)(chatWindowType.GetField("_input", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(window)
+                    ?? throw new Exception("缺 _input 输入框"));
+                var send = (Button)(chatWindowType.GetField("_sendBtn", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(window)
+                    ?? throw new Exception("缺 _sendBtn 发送按钮"));
+                var messages = (StackPanel)(chatWindowType.GetField("_messages", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(window)
+                    ?? throw new Exception("缺 _messages 对话区"));
+                if ((send.Content as string) != "发送")
+                    throw new Exception($"发送按钮文案应为「发送」，实际「{send.Content}」");
+                if (messages.Children.Count == 0)
+                    throw new Exception("对话区应有初始引导气泡");
+
+                // 失败路径：填问题 → 反射调 Send() → 断言出现可读失败提示（不抛异常）
+                input.Text = "我今年适合换工作吗？";
+                var sendMi = chatWindowType.GetMethod("Send", BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new Exception("缺 Send 方法");
+                sendMi.Invoke(window, null);
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);   // 冲掉 BeginInvoke 的滚动
+
+                var texts = CollectBubbleTexts(messages);
+                if (!texts.Any(t => t.Contains("换工作")))
+                    throw new Exception($"未见用户问题气泡，现有：{string.Join(" | ", texts)}");
+                if (!texts.Any(t => t.Contains("API Key")))
+                    throw new Exception($"失败路径未见可读提示（应含「API Key」），现有：{string.Join(" | ", texts)}");
+                if (input.Text.Length != 0)
+                    throw new Exception("发送后输入框应已清空");
+                if (!send.IsEnabled)
+                    throw new Exception("发送完成后按钮应恢复可用");
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
         // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----
         Check("v0.1.48/54：皮肤（pixel/soft 素材加载 OK；v0.1.54 柔光屏蔽——SetSkin 白名单强制回 pixel）", () =>
         {
@@ -950,5 +1045,17 @@ internal static class Program
             _fail++;
             Console.WriteLine($"FAIL: {name} -> {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>取出对话区里所有气泡文本（气泡是 <c>Border { Child = TextBlock }</c>）。</summary>
+    private static List<string> CollectBubbleTexts(StackPanel panel)
+    {
+        var result = new List<string>();
+        foreach (var child in panel.Children)
+        {
+            if (child is Border { Child: TextBlock tb }) result.Add(tb.Text);
+            else if (child is TextBlock direct) result.Add(direct.Text);
+        }
+        return result;
     }
 }

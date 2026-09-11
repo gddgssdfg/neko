@@ -296,6 +296,51 @@ public static class Program
             ? $"PASS: 完整运势已走 System.Notify（首条 {sys.Notifications[0].Body.Length} 字，含「能量基调」）"
             : $"FAIL: 未按预期调用 System.Notify（{sys.Notifications.Count} 条）");
 
+        // P3：API Key 加密自检（DPAPI 往返 + 旧版明文兼容 + 损坏密文安全返回）
+        var akpType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.ApiKeyProtector");
+        var aprop = akpType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var aself = aprop?.GetValue(null) as string;
+        Console.WriteLine(aself == "OK"
+            ? "PASS: ApiKeyProtector 自检通过（DPAPI 往返 + 明文兼容）"
+            : $"FAIL: ApiKeyProtector 自检未通过：{aself ?? "(属性未读到)"}");
+
+        // P3：Prompt 组装自检（system 含铁律 + 四柱/日主/五行/今日干支/宜忌，历史带入，末条为当前问题）
+        var promptType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.FortunePrompt");
+        var pprop = promptType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var pself = pprop?.GetValue(null) as string;
+        Console.WriteLine(pself == "OK"
+            ? "PASS: FortunePrompt 自检通过（含铁律 + 四柱/日主/五行/今日干支/宜忌）"
+            : $"FAIL: FortunePrompt 自检未通过：{pself ?? "(属性未读到)"}");
+
+        // P3：DeepSeekClient 失败路径自检（空/空白 Key 返回可读错误；请求体含 model/role/content/stream）
+        var dsType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.DeepSeekClient");
+        var dprop = dsType?.GetProperty("LastSelfTest",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var dself = dprop?.GetValue(null) as string;
+        Console.WriteLine(dself == "OK"
+            ? "PASS: DeepSeekClient 自检通过（空 Key 返回可读错误而非抛异常）"
+            : $"FAIL: DeepSeekClient 自检未通过：{dself ?? "(属性未读到)"}");
+
+        // P3：无 Key 点「问问猫」→ 可读提示、不抛异常、不开窗（走 Key 校验前置分支）
+        ctx.Capability.Storage.Set("profile",
+            "{\"Year\":1981,\"Month\":1,\"Day\":29,\"Hour\":23,\"Minute\":37,\"Gender\":0}");
+        var askSlot = uiApi.Slots.FirstOrDefault(s => s.Id == "bazi-ask");
+        petApi.Spoken.Clear();
+        try
+        {
+            askSlot?.OnInvoke();
+            var hint = petApi.Spoken.LastOrDefault() ?? "";
+            Console.WriteLine(hint.Contains("API Key")
+                ? $"PASS: 无 Key 点「问问猫」给出可读提示 = \"{hint}\""
+                : $"FAIL: 无 Key 时未给出可读提示，实际=\"{hint}\"");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FAIL: 无 Key 点「问问猫」抛异常：{ex.GetType().Name}: {ex.Message}");
+        }
+
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(root, true); } catch { }
     }

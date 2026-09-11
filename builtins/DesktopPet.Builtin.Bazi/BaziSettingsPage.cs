@@ -114,7 +114,7 @@ public sealed class BaziSettingsPage : ISettingsPage
         preview.Margin = new Thickness(0, 0, 0, 10);
         root.Children.Add(preview);
 
-        // ---- API Key（P3 使用） ----
+        // ---- API Key（P3 AI 咨询用） ----
         root.Children.Add(PluginUi.SectionHeader("AI 咨询（可选）"));
 
         var keyBox = new PasswordBox
@@ -127,9 +127,14 @@ public sealed class BaziSettingsPage : ISettingsPage
             BorderBrush = PluginUi.Border,
             BorderThickness = new Thickness(1),
             Padding = new Thickness(6, 3, 6, 3),
-            Margin = new Thickness(0, 0, 0, 10),
+            Margin = new Thickness(0, 0, 0, 4),
         };
         root.Children.Add(keyBox);
+
+        var keyHint = PluginUi.Text("DeepSeek API Key：仅保存在本机（DPAPI 加密），不会上传到任何服务器。", sub: true);
+        keyHint.FontSize = 11;
+        keyHint.Margin = new Thickness(0, 0, 0, 10);
+        root.Children.Add(keyHint);
 
         // ---- 每日播报 ----
         root.Children.Add(PluginUi.SectionHeader("每日播报"));

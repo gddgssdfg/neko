@@ -41,7 +41,8 @@ public sealed class BaziProfile
     /// <summary>MBTI 类型（可空；P4 阶段改为问卷生成）。</summary>
     public string? Mbti { get; set; }
 
-    /// <summary>DeepSeek API Key（可空；P3 使用）。</summary>
+    /// <summary>DeepSeek API Key（可空；P3 使用）。<b>落盘时经 DPAPI 加密</b>（见 <see cref="EncryptedApiKeyConverter"/>），内存中为明文。</summary>
+    [JsonConverter(typeof(EncryptedApiKeyConverter))]
     public string? ApiKey { get; set; }
 
     /// <summary>是否开启每日定时播报。</summary>

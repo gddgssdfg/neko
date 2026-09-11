@@ -18,6 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
     <PackageReference Include="lunar-csharp" Version="1.6.8" />
+    <!-- DPAPI（ProtectedData）在 .NET 8 不在 BCL，需显式引入（P3：API Key 本地加密）。 -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

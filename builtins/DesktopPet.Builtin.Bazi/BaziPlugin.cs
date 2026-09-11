@@ -4,8 +4,8 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.Bazi;
 
 /// <summary>
-/// 命理助手插件。P0：骨架 + 生日设置页 + lunar 依赖加载验证；P2：每日运势播报。
-/// <para>P3（AI 咨询）/ P4（MBTI 问卷）为后续阶段。</para>
+/// 命理助手插件。P0：骨架 + 生日设置页 + lunar 依赖加载验证；P2：每日运势播报；P3：AI 深度咨询。
+/// <para>P4（MBTI 问卷）为后续阶段。</para>
 /// </summary>
 public sealed class BaziPlugin : PluginBase
 {
@@ -32,9 +32,12 @@ public sealed class BaziPlugin : PluginBase
 
         // 无条件跑一次 lunar 自检 ——
         //  ① 若 lunar.dll 未被插件 ALC 正确解析，这里会抛异常（加载器测试据此判定第三方依赖链）；
-        //  ② 顺带完成 lunar 已知用例 + 运势构建器的回归校验。
+        //  ② 顺带完成 lunar 已知用例 + 运势构建器 + Prompt/客户端 的回归校验。
         BaziEngine.VerifyKnownCases();
         DailyFortuneBuilder.SelfCheck();
+        ApiKeyProtector.SelfCheck();
+        FortunePrompt.SelfCheck();
+        DeepSeekClient.SelfCheck();
 
         // 径向槽位「今日运势」：手动立即播报一次（便于验证 + 用户实用入口）
         UI.RegisterRadialSlot(new RadialSlot
@@ -46,14 +49,14 @@ public sealed class BaziPlugin : PluginBase
             OnInvoke = () => BroadcastManual(),
         });
 
-        // 径向槽位「问问猫」：AI 深度咨询入口（P3 开放，P0 先占位）
+        // 径向槽位「问问猫」：AI 深度咨询入口（P3）
         UI.RegisterRadialSlot(new RadialSlot
         {
             Id = "bazi-ask",
             Label = "问问猫",
             Icon = "book",
             Order = 30,
-            OnInvoke = () => Pet.Say("AI 深度咨询将于后续版本开放~", 2500),
+            OnInvoke = () => OpenChat(),
         });
 
         UI.RegisterSettingsPage(new BaziSettingsPage(Capability.Storage));
@@ -123,5 +126,68 @@ public sealed class BaziPlugin : PluginBase
 
         Pet.Say(fortune.Short, 5000);
         Capability.System.Notify("Neko", fortune.Full);
+    }
+
+    // ---- P3：AI 深度咨询 ----
+
+    /// <summary>
+    /// 打开咨询窗口（径向槽位「问问猫」点击）。未填档案 / 未配 Key 时给可读提示、不弹窗。
+    /// 纯 UI 打开，不做网络调用（网络在用户每次提问时异步发生）。
+    /// </summary>
+    private void OpenChat()
+    {
+        try
+        {
+            var profile = BaziProfile.Load(Capability.Storage);
+            if (!profile.HasBirth)
+            {
+                Pet.Say("先在设置里填写出生日期，我才能结合命盘解读~", 3500);
+                return;
+            }
+            if (DeepSeekClient.ValidateApiKey(profile.ApiKey) is not null)
+            {
+                Pet.Say("先在设置页填写 DeepSeek API Key，我才能开启 AI 咨询~", 4000);
+                return;
+            }
+
+            var chart = BaziEngine.ComputeProfile(profile);
+            var today = BaziEngine.ComputeToday(DateTime.Now);
+            var history = ChatHistory.Load(Capability.Storage);
+
+            var window = new ChatWindow(history, question => AskAsync(chart, today, question));
+            window.Show();
+        }
+        catch
+        {
+            // 铁律 7：打开窗口失败也静默降级
+            Pet.Say("打开咨询窗口出了点小状况，稍后再试~", 3000);
+        }
+    }
+
+    /// <summary>
+    /// 一次提问的异步处理：重读最新档案（Key 可能刚改）→ 组装 Prompt → 调 DeepSeek → 成功则落历史。
+    /// 全程 async，不阻塞 UI；任何失败折成可读 <see cref="ChatResult"/>。
+    /// </summary>
+    private async Task<ChatResult> AskAsync(BaziChart chart, BaziToday today, string question)
+    {
+        try
+        {
+            var profile = BaziProfile.Load(Capability.Storage);
+            if (DeepSeekClient.ValidateApiKey(profile.ApiKey) is string keyError)
+                return ChatResult.Failure(keyError);
+
+            var history = ChatHistory.Load(Capability.Storage);
+            var messages = FortunePrompt.BuildMessages(profile, chart, today, history, question);
+            var result = await DeepSeekClient.ChatAsync(profile.ApiKey, messages);
+
+            if (result.Ok)
+                ChatHistory.Append(Capability.Storage, question, result.Text);
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return ChatResult.Failure($"咨询暂时不可用：{ex.Message}");
+        }
     }
 }

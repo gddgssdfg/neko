@@ -1868,3 +1868,27 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 ### 验证
 - 构建 **0 警告 0 错误**；**LoaderTest 全过**——「测试 5」新增：双槽位注册 / `DailyFortuneBuilder` 自检 / **手动播报全链路**（预置档案 → 触发槽位 → 断言 `Pet.Say` 短句 `今日己丑日：…` + `System.Notify` 完整 151 字含「能量基调」）；**UiProbe 全过**（0 FAIL）。
 - 真机（到点收气泡 + 托盘通知）留给灯灯；⚠️ 不用 Bash 后台拉 GUI（加载不了插件）。
+
+## 2026-09-12（com.lantern.bazi P3：AI 深度咨询）
+
+**承接 P2**：DeepSeek 客户端 + API Key 加密 + Prompt 组装 + 对话窗口 + 历史持久化。
+
+### 落地
+- `DeepSeekClient.cs`：`static readonly HttpClient` 单例（**不抄 weather 的每次 `new`**，那会耗尽 socket —— 规格第 7 节点名批评）；30s 超时；`ChatAsync(string? key, msgs)` 返回 `ChatResult(Ok/Text/Error)`；异常全部就近 catch 转可读文案，**不外抛**。请求体走匿名对象 + `System.Text.Json`。
+- `ApiKeyProtector.cs`：DPAPI `ProtectedData`（`CurrentUser` + 附加熵）↔ `enc:<Base64>`；`EncryptedApiKeyConverter` 挂在 `BaziProfile.ApiKey` 上（`[JsonConverter]`），使用方永远看到明文、落盘永远密文；旧版明文无前缀 → 原样读回。
+- `FortunePrompt.cs`：纯函数组装 messages = system（铁律 + 命盘 + 今日历法）+ 最近 10 轮历史 + 当前问题。铁律句「只负责解读，不做任何历法和干支计算」原样写死。
+- `ChatHistory.cs`：`chatHistory` 键，滚动保留 20 条（10 轮）。
+- `ChatWindow.cs`：纯 C# 窗口（气泡 `Border`+`TextBlock`、`ScrollViewer`、输入 + 发送）；`async void Send()` 全异步；失败就地改为红色气泡。
+- 接线：`bazi-ask` → `OpenChat()`（前置校验档案 + Key，缺则 `Pet.Say` 提示）；`AskAsync` 每次重读档案、组 Prompt、调 API、成功落历史。
+
+### 设计取舍 / 踩坑
+- **DPAPI 需要 NuGet 包**：`System.Security.Cryptography.ProtectedData` 在 .NET 8 不在 BCL，须显式 `PackageReference`。实测该包对本 TFM（net8.0-windows）**不产出需随插件部署的 dll**（输出目录只有 lunar.dll），运行时由框架默认上下文解析 —— 部署链无需额外改动。
+- **Prompt/加密/客户端的自检都不跑网络**：`DeepSeekClient.SelfCheck` 只走「空 Key → 提前返回」的同步分支（`ChatAsync` 在发请求前就 return，任务同步完成，`GetAwaiter().GetResult()` 不会死锁）；Prompt 自检只组字符串；加密自检做 DPAPI 往返。全部无副作用，供 LoaderTest 反射读 `LastSelfTest`。
+- **API Key 加密语义**：内存明文、落盘密文对使用方透明，避免设置页到处加解密。解密失败（换机器 / 数据损坏）返回 null 让用户重填；加密失败（极罕见）降级明文，宁可不加密也不丢数据。
+- **`ChatWindow` 纯 C#**：team-lead 指定，与项目 3 个窗口先例（Notes/Todo/Clipboard）一致，无 XAML 编译复杂度。
+- **不做**：没有为 AI 联网写测试（需真 Key）；`ChatWindow` 的「真弹窗」仍靠真机验证（窗口先例已成立，且 LoaderTest 是无 WPF Application 的无头宿主，构造 `Window` 会抛，不适合放那里）。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**——「测试 5」P3 新增：`ApiKeyProtector` 自检（DPAPI 往返 + 明文兼容）/ `FortunePrompt` 自检（含铁律 + 四柱/日主/五行/今日干支/宜忌）/ `DeepSeekClient` 自检（空 Key 返回可读错误而非抛异常）；外加**无 Key 点「问问猫」给可读提示且不抛异常**（走 Key 前置分支，不弹窗）。
+- **UiProbe 全过（34 项 / 0 FAIL）**：新增第 25 项「命理插件 ChatWindow」——反射从**已加载的插件 ALC** 取 `ChatWindow`（拿不到则回退 `Assembly.LoadFrom` 插件目录），构造并 `Show()`（验证插件 ALC 能实例化独立窗口）；校验 `_input`/`_sendBtn`/`_messages` 三控件存在、按钮文案「发送」；**失败路径**用 `Expression` 造 `q => DeepSeekClient.ChatAsync(null, 空消息)` 委托（**不发网络请求**，必走「空 Key → 可读错误」分支）→ 反射调 `Send()` → 断言对话区出现用户气泡 + 含「API Key」的可读提示、输入框已清空、按钮已恢复；最后关窗。等异步加载用 `DispatcherFrame`（不 `Thread.Sleep`）。
+- AI 真实问答留给灯灯真机测（需在设置页填真 API Key）。

@@ -4,6 +4,23 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.67] - 2026-09-12
+
+**命理助手 `com.lantern.bazi` P3：AI 深度咨询**（承接 0.1.66 的 P2 每日播报）。
+
+### 新增
+- `DeepSeekClient.cs`：`POST https://api.deepseek.com/chat/completions`（`deepseek-chat`，`System.Text.Json`）。**`HttpClient` 用 `static readonly` 单例**（规格第 7 节明确点名，不抄 weather 插件「每次 new」耗尽 socket 的反模式）；超时 30s；任何失败（无 Key / 断网 / 超时 / 非 2xx）一律折成 `ChatResult(Ok/Text/Error)` 可读文案，**绝不抛异常到宿主**。401/402/429/5xx 分档提示。
+- `ApiKeyProtector.cs`：API Key 经 **DPAPI**（`ProtectedData.Protect/Unprotect`，`CurrentUser` + 附加熵）加密后以 `enc:<Base64>` 存 `Capability.Storage`；`EncryptedApiKeyConverter` 透明接管 `BaziProfile.ApiKey`（内存明文、落盘密文）；**向后兼容**旧版明文（无 `enc:` 前缀原样读回）。csproj 增 `System.Security.Cryptography.ProtectedData 8.0.0`（.NET 8 不在 BCL）。
+- `FortunePrompt.cs`：Prompt 组装**抽成可测纯函数** —— ①系统提示（铁律：**只负责解读、不做任何历法和干支计算**，历法由系统提供、直接采信）②结构化命盘（四柱 / 日主 / 五行分布 / 十神 / 纳音 / 星座 / MBTI）+ 今日历法（干支 / 节气 / 宜忌 / 方位 / 冲煞）③最近 10 轮历史 ④当前问题。含 `SelfCheck()`。
+- `ChatHistory.cs`：对话历史持久化（`Storage` 键 `chatHistory`，滚动保留最近 10 轮 = 20 条）。
+- `ChatWindow.cs`：AI 问答窗口（**纯 C# 构建**，与 Notes/Todo/Clipboard 先例一致；`PluginUi` 深色化；气泡列表 + 输入框 + 发送；`async void` + `await` **全异步不阻塞 UI**；网络失败在窗口内以可读红色气泡呈现，不弹异常、不卡死）。
+- `BaziEngine.ElementOfZhi`：地支 → 五行（供五行分布统计）。
+- 接线：径向槽位「问问猫」→ 未填档案 / 未配 Key 给可读提示；否则打开 `ChatWindow`。每次提问**重读最新档案** → 组装 Prompt → 调 DeepSeek → 成功落历史。
+
+### 验证
+- 构建 **0 警告 0 错误**；**LoaderTest 全过**（测试 5 新增 4 断言：`ApiKeyProtector` DPAPI 往返自检 / `FortunePrompt` 组装自检 / `DeepSeekClient` 空 Key 失败路径自检 / 无 Key 点「问问猫」给可读提示且不抛异常）；**UiProbe 全过（34 项，0 FAIL）**——新增第 25 项：反射构造 `ChatWindow` + 校验关键控件（输入框 / 发送按钮 / 对话区）+ **失败路径**（空 Key 委托 → 断言窗口内出现可读提示、不抛异常），关窗释放；**不联网**。
+- AI 真实调用需真 API Key，**留灯灯真机测**（不为联网写测试）。
+
 ## [0.1.66] - 2026-09-12
 
 **命理助手 `com.lantern.bazi` P2：每日运势播报**（承接 0.1.65 的 P0 骨架）。
