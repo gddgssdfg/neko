@@ -4,6 +4,72 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.73] - 2026-09-12
+
+**命理插件人格定制改造：默认关闭 + 完整 93 题 + 弹窗做题 + 直接选型**（灯灯需求）。
+
+### 改动
+- **人格定制默认关闭**：`BaziProfile` 新增 `MbtiEnabled`（默认 false）。关闭时忽略 `Mbti` 残留值，播报走日主通用建议。
+- **题库 24 → 93 题**：按官方 MBTI 四维度结构（E/I 23、S/N 26、T/F 24、J/P 20）用自己中文表述重写（非逐字照抄，规避版权）。`MbtiQuiz` 接口不变，`SelfCheck` 题量断言更新为 93 + 四维精确分布。
+- **弹窗做题**：新增 `MbtiQuizWindow`（独立窗口，纯 C# + PluginUi 深色）——连续 93 题 + 顶部进度条 + 维度标签，可回退改答案，最后一题「提交」→ 计分回调。
+- **直接选型**：设置页下拉框列出 16 型（含中文概称），用户已知类型可直接选。
+- 设置页人格区改为「开关 + 状态行 + 开始测试按钮 + 直接选择下拉」，移除旧的 24 题平铺。
+- **双保险联动**：读侧 `DailyFortuneBuilder.Advice()` 加 `MbtiEnabled` 判断；写侧关闭开关时强制 `Mbti = null` 落盘，杜绝残留。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（重写第 26 项为人格定制断言）。
+
+## [0.1.72] - 2026-09-12
+
+**键盘映射窗 UI 调整：鼠标圆头朝下 + 猫手从底部上抬**（灯灯："圆头应该向下，猫手应该从下面往上按"）。
+
+### 改动
+- **鼠标外形**：`CornerRadius(MouseW/2, MouseW/2, 12, 12)` → `(12, 12, MouseW/2, MouseW/2)`——大半圆移到底边，符合"猫坐在对面"心智模型。
+- **爪子举手位**：`PawRaisedTop` 从 `-PawSize-3`（顶部外）→ `KbH + 5`（键盘底边外）。`TapKeyboardPaw` / `LiftMousePaw` / `OnKbdPawTimerTick` 全部用 `PawRaisedTop`，一行常量改动覆盖两个爪子——从底部"伸上来"按。
+- **窗体高度**：+ `PawRaisedExtra` (36px) 给底部爪子预留空间。
+- 鼠标/键盘两个爪子的初值位置都改用 `PawRaisedTop`。
+
+### 调试经验（重要）
+- 第一次实现把 `PawRaisedTop` 从 const 改成实例字段 → UiProbe 回归 NRE（layout pass 触发 null 访问）。
+- 根因：`KbH + 5` 是 const 表达式，`PawRaisedTop` 保持 const 即可。WPF 实例字段访问 vs const 访问在 layout 阶段有微妙差异。
+- 二分定位：git stash revert → 测试 PASS → 逐项回退定位。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全部通过（含 v0.1.43 猫爪跟随按键回归确认）。
+
+## [0.1.71] - 2026-09-12
+
+**径向菜单插件顺序 + 显隐 + 数量上限可配置**（灯灯需求：客户自由选择右键界面显示多少插件、以及插件顺序）。
+
+### 功能
+- 设置页新增「径向菜单」栏（第 6 个 sidebar 项），可：
+  - **显示数量上限**：`MaxVisible`（0=不限），排序后只显示前 N 个槽位，超出隐藏
+  - **插件顺序**：▲▼ 上移/下移按钮调整，改动即存
+  - **显隐开关**：每个槽位独立 ToggleSwitch，隐藏项置灰
+  - **恢复默认**：清空所有覆盖，回到插件默认顺序 + 全显示
+- 架构：宿主侧「覆盖层」方案，不改 Core API（18 插件 `RegisterRadialSlot` 不受影响）。插件声明的 `Order` 是默认基准。
+
+### 新增/修改
+- 新增 `Core/RadialMenuConfig.cs`、`Services/RadialMenuResolver.cs`（纯静态解析器）
+- 修改 `Core/Config.cs`（`AppConfig.RadialMenu`）、`Windows/RadialMenu.cs`（ctor 注入 + Resolve）、`Windows/PetWindow.cs`（传 `_config`）、`Windows/SettingsWindow.cs`（「径向菜单」栏）
+- 新增架构设计文档 `docs/system_design.md` + 类图/时序图
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增 RadialMenuResolver 六场景纯函数单测）。
+
+## [0.1.70] - 2026-09-12
+
+**径向菜单槽位修复：Order 冲突 + 重名 + 乱序**（为"插件顺序可配置"清障）。
+
+### 修复
+- **Order 16 冲突**：MusicControl「上一曲/播放暂停/下一曲」从 [16,17,18] 挪到 [2,3,4]，Countdown 独占 13–16。
+- **两个「今日运势」重名**：Fortune 槽位 Label「今日运势」→「抽个签」；Bazi 保留「今日运势」。
+- **Bazi 槽位乱序**：「今日运势」31→30、「问问猫」30→31。
+
+### 验证
+- 最终 Order 1–31 各至多占用一次，无冲突、无重名。
+- build sln（22 项目）0 警告 0 错误；LoaderTest 全过。
+
 ## [0.1.69] - 2026-09-12
 
 **命理助手 `com.lantern.bazi` P5：打磨收尾 —— 内存实测 + 全量回归**（承接 0.1.68 的 P4 MBTI）。
@@ -1477,80 +1543,3 @@ v0.1.5 设置窗口闭环 + 插件自定义设置页 dogfooding 示范。
 - 素材 PNG 存在 `libpng warning: iCCP: known incorrect sRGB profile`（无害，来自内嵌色彩配置，不影响显示）
 - 径向菜单打开时会覆盖宠物区域（透明区域仍接收点击），关闭后方可与宠物交互
 
-## [0.1.70] - 2026-09-12
-
-**径向菜单槽位修复：Order 冲突 + 重名 + 乱序**（为"插件顺序可配置"清障）。
-
-### 修复
-- **Order 16 冲突**：MusicControl「上一曲/播放暂停/下一曲」从 [16,17,18] 挪到 **[2,3,4]**（连续且空闲，音乐控制是高频操作放靠前），Countdown 独占 13–16。
-- **两个「今日运势」重名**：Fortune（轻量娱乐随机一句）槽位 Label「今日运势」→ **「抽个签」**；Bazi（真·基于八字）保留「今日运势」。两槽位不再混淆。
-- **Bazi 槽位乱序**：「今日运势」31→30、「问问猫」30→31（先看播报结果，再深入问，语义通顺）。
-
-### 验证
-- 最终 Order 1–31 各至多占用一次（17/18/29 空闲），无冲突、无重名。
-- build sln（22 项目）0 警告 0 错误；LoaderTest 全过。
-
-## [0.1.69] - 2026-09-12
-
-## [0.1.71] - 2026-09-12
-
-**径向菜单插件顺序 + 显隐 + 数量上限可配置**（灯灯需求：客户自由选择右键界面显示多少插件、以及插件顺序）。
-
-### 功能
-- 设置页新增「径向菜单」栏（第 6 个 sidebar 项），可：
-  - **显示数量上限**：`MaxVisible`（0=不限），排序后只显示前 N 个槽位，超出隐藏
-  - **插件顺序**：▲▼ 上移/下移按钮调整，改动即存
-  - **显隐开关**：每个槽位独立 ToggleSwitch，隐藏项置灰
-  - **恢复默认**：清空所有覆盖，回到插件默认顺序 + 全显示
-- 架构：宿主侧「覆盖层」方案，**不改 Core API**（`RadialSlot`/`IUIApi`/`AllRadialSlots` 原样，18 插件 `RegisterRadialSlot` 不受影响）。插件声明的 `Order` 是默认基准，用户在设置页覆盖。
-
-### 新增/修改
-- 新增 `Core/RadialMenuConfig.cs`（配置模型：MaxVisible + Order + Visible 字典）
-- 新增 `Services/RadialMenuResolver.cs`（纯静态解析器：EffectiveOrder / IsVisible / Resolve / FreezeOrder / Prune）
-- 修改 `Core/Config.cs`（`AppConfig.RadialMenu` 属性）
-- 修改 `Windows/RadialMenu.cs`（ctor 注入 AppConfig，RebuildSlots 改消费 Resolve 结果）
-- 修改 `Windows/PetWindow.cs`（传 `_config`）
-- 修改 `Windows/SettingsWindow.cs`（新增「径向菜单」栏 + BuildRadialMenuPage + BuildSlotRow）
-- 新增架构设计文档 `docs/system_design.md` + 类图/时序图
-
-### 验证
-- 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增 1 项：RadialMenuResolver 六种场景纯函数单测——隐藏/覆盖/截断/缺省/冻结/清理）。
-
-## [0.1.70] - 2026-09-12
-
-## [0.1.72] - 2026-09-12
-
-**键盘映射窗 UI 调整：鼠标圆头朝下 + 猫手从底部上抬**（灯灯："圆头应该向下，猫手应该从下面往上按"）。
-
-### 改动
-- **鼠标外形**：`CornerRadius(MouseW/2, MouseW/2, 12, 12)` → `(12, 12, MouseW/2, MouseW/2)`——大半圆移到**底边**，符合"猫坐在对面"心智模型，用户视觉上鼠标头指向自己。
-- **爪子举手位**：`PawRaisedTop` 从 `-PawSize-3`（窗体顶部外）→ **`KbH + 5` ≈ 101**（键盘底边外，窗体底部外）。`TapKeyboardPaw` / `LiftMousePaw` / `OnKbdPawTimerTick` 全部用 `PawRaisedTop`，**一行常量改动覆盖两个爪子**——它们现在都从底部"伸上来"按。
-- **窗体高度**：+ `PawRaisedExtra` (36px) 给底部爪子预留空间。
-- 鼠标/键盘两个爪子的初值位置都改用 `PawRaisedTop`（之前鼠标用 `MousePawTop`=-2 是错的，初始就在按落点）。
-
-### 调试经验（重要）
-- 第一次实现把 `PawRaisedTop` 从 `const` 改成实例字段（想在 ctor 里 `= KbH+5` 赋值）→ **UiProbe 回归 NRE**（layout pass 在 `Show()` 时触发 null 访问）。
-- **根因**：`KbH + 5` 是 const 表达式，`PawRaisedTop` 保持 const 即可（之前不知道 `KbH` 也是 const，走了实例字段弯路）。**WPF 实例字段访问 vs const 访问在 layout 阶段有微妙差异**。
-- 二分定位：先 `git stash` 整个 revert → 测试 PASS → 确认是我改的；然后逐项回退定位。
-
-### 验证
-构建 0 警告 0 错误；LoaderTest 全过；**UiProbe 全部通过**（含 v0.1.43 猫爪跟随按键用例回归确认）。
-
-## [0.1.71] - 2026-09-12
-
-## [0.1.73] - 2026-09-12
-
-**命理插件人格定制改造：默认关闭 + 完整 93 题 + 弹窗做题 + 直接选型**（灯灯需求）。
-
-### 改动
-- **人格定制默认关闭**：`BaziProfile` 新增 `MbtiEnabled`（默认 false）。关闭时忽略 `Mbti` 残留值，播报走日主通用建议。
-- **题库 24 → 93 题**：按官方 MBTI 四维度结构（E/I 23、S/N 26、T/F 24、J/P 20）用自己中文表述重写（非逐字照抄，规避版权）。`MbtiQuiz` 接口（Questions/Score/Describe/SelfCheck）不变，`SelfCheck` 题量断言更新为 93 + 四维精确分布。
-- **弹窗做题**：新增 `MbtiQuizWindow`（独立窗口，纯 C# + PluginUi 深色）——连续 93 题 + 顶部进度条 + 维度标签，可回退改答案，最后一题「提交」→ 计分回调。
-- **直接选型**：设置页下拉框列出 16 型（含中文概称），用户已知类型可直接选。
-- 设置页人格区改为「开关 + 状态行 + 开始测试按钮 + 直接选择下拉」，移除旧的 24 题平铺。
-- **双保险联动**：读侧 `DailyFortuneBuilder.Advice()` 加 `MbtiEnabled` 判断；写侧关闭开关时强制 `Mbti = null` 落盘，杜绝残留。
-
-### 验证
-构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（重写第 26 项为人格定制断言：默认关 + 93 题 + 开关/开始测试/下拉入口 + MbtiQuizWindow 构造）。
-
-## [0.1.72] - 2026-09-12
