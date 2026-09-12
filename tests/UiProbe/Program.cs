@@ -272,6 +272,33 @@ internal static class Program
             settings.Close();
         });
 
+        // ---- v0.1.71 第 17b 项：设置页「径向菜单」构建 + 关键控件 ----
+        Check("v0.1.71(径向菜单)：设置页构建 + 关键控件（数量上限 / 顺序显隐列表 / 恢复默认）", () =>
+        {
+            var settings = new SettingsWindow(win);
+            settings.Show();
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var showSection = typeof(SettingsWindow).GetMethod("ShowSection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("SettingsWindow.ShowSection 不存在");
+            showSection.Invoke(settings, new object[] { "radial" });
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            var mainContent = (ContentControl)typeof(SettingsWindow).GetField("_mainContent", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(settings)!;
+            if (mainContent.Content is not ScrollViewer)
+                throw new Exception($"径向菜单页应可滚动（ScrollViewer），实际 {mainContent.Content?.GetType().Name}");
+
+            var texts = new List<TextBlock>();
+            Collect(mainContent.Content, texts);
+            if (!texts.Any(t => t.Text.Contains("最多显示槽位数")))
+                throw new Exception("缺「最多显示槽位数」数量上限 stepper");
+            if (!texts.Any(t => t.Text.Contains("插件顺序与显隐")))
+                throw new Exception("缺「插件顺序与显隐」小节标题");
+            if (!texts.Any(t => t.Text.Contains("恢复默认")))
+                throw new Exception("缺「恢复默认」按钮");
+            settings.Close();
+        });
+
         // ---- v0.1.39 第 18 项：双模态绑定猫位置（灯灯点名的"猫瞬移 / 轮盘不跟随猫"回归守护）----
         Check("v0.1.39：键盘镜像 + 轮盘跟随猫 + 映射窗以猫为锚", () =>
         {
