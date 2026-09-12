@@ -6,6 +6,8 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using DesktopPet.App.Core;
+using DesktopPet.App.Services;
+using DesktopPet.Core;
 
 namespace DesktopPet.App.Windows;
 
@@ -132,9 +134,9 @@ public sealed class SettingsWindow : Window
     private Border BuildSidebar()
     {
         var panel = new StackPanel { Background = new SolidColorBrush(BgSide) };
-        string[] sections = { "general", "pet", "input", "plugin", "about" };
-        string[] labels = { T("通用", "General"), T("猫咪", "Cat"), T("输入", "Input"), T("插件", "Plugins"), T("关于", "About") };   // v0.1.50：双语
-        string[] icons = { "⚙", "🐱", "⌨", "🔌", "ℹ" };   // Segoe UI Symbol / Emoji
+        string[] sections = { "general", "pet", "input", "radial", "plugin", "about" };
+        string[] labels = { T("通用", "General"), T("猫咪", "Cat"), T("输入", "Input"), T("径向菜单", "Radial Menu"), T("插件", "Plugins"), T("关于", "About") };   // v0.1.50：双语
+        string[] icons = { "⚙", "🐱", "⌨", "◎", "🔌", "ℹ" };   // Segoe UI Symbol / Emoji
 
         for (int i = 0; i < sections.Length; i++)
         {
@@ -177,7 +179,7 @@ public sealed class SettingsWindow : Window
         // 刷新 sidebar 选中态（v0.1.47：ColorAnimation 过渡 150ms，文字色 / 背景 / 蓝条一起动）
         for (int i = 0; i < _sideItems.Count; i++)
         {
-            bool selected = (sec == "general" && i == 0) || (sec == "pet" && i == 1) || (sec == "input" && i == 2) || (sec == "plugin" && i == 3) || (sec == "about" && i == 4);
+            bool selected = (sec == "general" && i == 0) || (sec == "pet" && i == 1) || (sec == "input" && i == 2) || (sec == "radial" && i == 3) || (sec == "plugin" && i == 4) || (sec == "about" && i == 5);
             var item = _sideItems[i];
             var bgBrush = (SolidColorBrush)item.Background;
             var borderBrush = (SolidColorBrush)item.BorderBrush;
@@ -200,6 +202,7 @@ public sealed class SettingsWindow : Window
             "general" => BuildGeneralPage(),
             "pet" => BuildPetPage(),
             "input" => BuildInputPage(),
+            "radial" => BuildRadialMenuPage(),
             "plugin" => BuildPluginPage(),
             "about" => BuildAboutPage(),
             _ => new TextBlock { Text = "未知栏" },
@@ -367,6 +370,184 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(BuildHotKeySet("回到默认位置", _config.ResetPosHotKey, "reset_pos"));
 
         return WrapPage(stack, "输入");
+    }
+
+    // ============================ 径向菜单 ============================
+    /// <summary>v0.1.71：径向菜单顺序/显隐/数量上限设置页。让用户自由调整右键菜单里显示哪些插件、顺序如何。</summary>
+    private UIElement BuildRadialMenuPage()
+    {
+        var cfg = _config.RadialMenu;
+        var allSlots = _pet.UIApi.AllRadialSlots;
+
+        var stack = new StackPanel();
+
+        // 1) 显示数量上限
+        int total = allSlots.Count;
+        stack.Children.Add(MakeSectionHeader("显示数量"));
+        stack.Children.Add(BuildStepperCard(
+            "最多显示槽位数",
+            "排序后只显示前 N 个槽位，超出隐藏；0 = 不限（全部显示）",
+            cfg.MaxVisible, 0, total, 1,
+            v => { cfg.MaxVisible = (int)v; SaveRadialMenu(allSlots); },
+            val => val == 0 ? "不限" : $"{val:F0} 个"));
+
+        // 2) 槽位顺序 + 显隐
+        stack.Children.Add(MakeSectionHeader("插件顺序与显隐"));
+        var hint = new TextBlock
+        {
+            Text = "用 ▲▼ 调整顺序，开关控制显隐。灰色 = 已隐藏；标注「超出上限」的槽位不会显示。",
+            FontSize = 11.5,
+            Foreground = new SolidColorBrush(TextSub),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 12),
+        };
+        stack.Children.Add(hint);
+
+        // 可见槽位（按当前 Resolve 顺序）+ 隐藏槽位（置灰）
+        var visibleList = RadialMenuResolver.Resolve(allSlots, cfg);
+        var hiddenList = allSlots.Where(s => !RadialMenuResolver.IsVisible(s, cfg)).ToList();
+        // 把「可见但被 MaxVisible 截断」的槽位也归入隐藏展示区（标「超出上限」）
+        var visibleIds = new HashSet<string>(visibleList.Select(s => s.Id));
+        var overLimit = allSlots.Where(s => RadialMenuResolver.IsVisible(s, cfg) && !visibleIds.Contains(s.Id)).ToList();
+
+        // 上移/下移/显隐的操作落点：操作后重建整个页面（简单可靠，槽位数 ≤32 性能无虞）
+        void MoveAndSave(int fromIdx, int toIdx)
+        {
+            var list = RadialMenuResolver.Resolve(_pet.UIApi.AllRadialSlots, cfg);
+            if (fromIdx < 0 || fromIdx >= list.Count || toIdx < 0 || toIdx >= list.Count) return;
+            var tmp = list[fromIdx];
+            list[fromIdx] = list[toIdx];
+            list[toIdx] = tmp;
+            RadialMenuResolver.FreezeOrder(list, cfg);
+            SaveRadialMenu(_pet.UIApi.AllRadialSlots);
+            ShowSection("radial");
+        }
+
+        // 可见槽位列表（可上移/下移/隐藏）
+        for (int i = 0; i < visibleList.Count; i++)
+        {
+            var slot = visibleList[i];
+            int idx = i;
+            bool first = i == 0;
+            bool last = i == visibleList.Count - 1;
+            stack.Children.Add(BuildSlotRow(slot, idx + 1,
+                upEnabled: !first, downEnabled: !last,
+                onUp: () => MoveAndSave(idx, idx - 1),
+                onDown: () => MoveAndSave(idx, idx + 1),
+                isVisible: true,
+                onToggleVisible: () =>
+                {
+                    cfg.Visible[slot.Id] = false;
+                    SaveRadialMenu(allSlots);
+                    ShowSection("radial");
+                },
+                extraNote: null));
+        }
+
+        // 超出上限的槽位（可见但被 MaxVisible 截断）
+        foreach (var slot in overLimit)
+        {
+            stack.Children.Add(BuildSlotRow(slot, -1,
+                upEnabled: false, downEnabled: false, onUp: () => { }, onDown: () => { },
+                isVisible: true,
+                onToggleVisible: () =>
+                {
+                    cfg.Visible[slot.Id] = false;
+                    SaveRadialMenu(allSlots);
+                    ShowSection("radial");
+                },
+                extraNote: "超出上限（提高上限或调顺序可显示）"));
+        }
+
+        // 隐藏槽位（置灰，仅可恢复显示）
+        foreach (var slot in hiddenList)
+        {
+            stack.Children.Add(BuildSlotRow(slot, -1,
+                upEnabled: false, downEnabled: false, onUp: () => { }, onDown: () => { },
+                isVisible: false,
+                onToggleVisible: () =>
+                {
+                    cfg.Visible[slot.Id] = true;
+                    SaveRadialMenu(allSlots);
+                    ShowSection("radial");
+                },
+                extraNote: "已隐藏"));
+        }
+
+        // 3) 恢复默认
+        stack.Children.Add(MakeSectionHeader("重置"));
+        stack.Children.Add(BuildButtonCard("恢复默认", "清空顺序/显隐/数量上限，回到插件默认顺序并全部显示", "恢复默认", () =>
+        {
+            _config.RadialMenu = new RadialMenuConfig();
+            SaveRadialMenu(_pet.UIApi.AllRadialSlots);
+            ShowSection("radial");
+        }));
+
+        return WrapPage(stack, T("径向菜单", "Radial Menu"));
+    }
+
+    /// <summary>径向菜单页统一保存：先 Prune 清残留，再持久化。</summary>
+    private void SaveRadialMenu(IReadOnlyList<RadialSlot> allSlots)
+    {
+        RadialMenuResolver.Prune(allSlots, _config.RadialMenu);
+        Save();
+    }
+
+    /// <summary>单条槽位卡片：序号 + 标签 + 图标名 + ▲▼ + 显隐开关。</summary>
+    private Border BuildSlotRow(RadialSlot slot, int orderNo, bool upEnabled, bool downEnabled,
+        Action onUp, Action onDown, bool isVisible, Action onToggleVisible, string? extraNote)
+    {
+        var dim = !isVisible;
+        var labelColor = dim ? new SolidColorBrush(TextSub) : new SolidColorBrush(TextMain);
+        var labelOpacity = dim ? 0.55 : 1.0;
+
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (orderNo > 0)
+            left.Children.Add(new TextBlock { Text = $"{orderNo}.", FontSize = 13, Foreground = new SolidColorBrush(TextSub), Width = 28, VerticalAlignment = VerticalAlignment.Center });
+        var label = new TextBlock { Text = slot.Label, FontSize = 13, Foreground = labelColor, Opacity = labelOpacity, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(label);
+        if (!string.IsNullOrEmpty(extraNote))
+        {
+            var note = new TextBlock { Text = $"  · {extraNote}", FontSize = 11, Foreground = new SolidColorBrush(Accent), VerticalAlignment = VerticalAlignment.Center, Opacity = 0.9 };
+            left.Children.Add(note);
+        }
+
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+        var upBtn = MakeStepperButton("▲", onUp);
+        upBtn.IsEnabled = upEnabled;
+        upBtn.Opacity = upEnabled ? 1.0 : 0.3;
+        var downBtn = MakeStepperButton("▼", onDown);
+        downBtn.IsEnabled = downEnabled;
+        downBtn.Opacity = downEnabled ? 1.0 : 0.3;
+
+        var sw = new ToggleSwitch(ToggleOff) { IsOn = isVisible };
+        sw.Toggled += on => onToggleVisible();
+
+        right.Children.Add(upBtn);
+        right.Children.Add(downBtn);
+        right.Children.Add(new Border { Width = 12 });
+        right.Children.Add(sw);
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(left);
+        Grid.SetColumn(left, 0);
+        grid.Children.Add(right);
+        Grid.SetColumn(right, 1);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(BgCard),
+            BorderBrush = new SolidColorBrush(BorderC),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(16, 10, 16, 10),
+            Margin = new Thickness(0, 0, 0, 8),
+            Opacity = dim ? 0.85 : 1.0,
+            Child = grid,
+        };
     }
 
     // ============================ 插件 ============================

@@ -30,7 +30,7 @@ internal static class Program
         Paths.EnsureCreated();
 
         // ---- 1. 径向菜单反复开关（复现旧崩溃：Close 期间 Show） ----
-        var menu = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput());
+        var menu = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput(), new AppConfig());
         Check("径向菜单 50 次 Show/Hide", () =>
         {
             for (int i = 0; i < 50; i++) { menu.ShowAt(300, 300); menu.HideMenu(); }
@@ -159,7 +159,7 @@ internal static class Program
                 });
             }
         }
-        var menu2 = new RadialMenu(probeUi, new GlobalInput());
+        var menu2 = new RadialMenu(probeUi, new GlobalInput(), new AppConfig());
         menu2.ShowAt(500, 400, 55.2); // 模拟 3.2x 猫（半宽 51.2 + 4）
 
         Check("径向菜单 22 槽位分页：单页 ≤ 8，翻页 5 轮不崩", () =>
@@ -293,7 +293,7 @@ internal static class Program
             gi.Dispose();
 
             // ② 轮盘跟随猫：MoveTo 后圆心必须落在猫中心
-            var probe = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput());
+            var probe = new RadialMenu(new UIApiImpl(_ => null), new GlobalInput(), new AppConfig());
             probe.ShowAt(500, 400, 55);
             probe.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
             probe.MoveTo(800, 600);
@@ -1048,6 +1048,53 @@ internal static class Program
             if (!h.IsActive) throw new Exception("正常定时器被误熔断");
             h.Dispose();
             if (h.IsActive) throw new Exception("Dispose 后 IsActive 应为 false");
+        });
+
+        // ---- v0.1.71：径向菜单顺序/显隐/数量上限（RadialMenuResolver 纯函数单测）----
+        Check("v0.1.71(径向菜单)：RadialMenuResolver 隐藏过滤 + Order 覆盖 + 数量上限截断 + 缺省回退", () =>
+        {
+            static DesktopPet.Core.RadialSlot S(string id, int order) => new() { Id = id, Label = id, Order = order, OnInvoke = () => { } };
+
+            var slots = new[] { S("a", 1), S("b", 2), S("c", 3), S("d", 4) };
+
+            // 1) 缺省：全显示，按插件 Order 升序
+            var cfg0 = new RadialMenuConfig();
+            var r0 = RadialMenuResolver.Resolve(slots, cfg0);
+            if (r0.Select(s => s.Id).SequenceEqual(new[] { "a", "b", "c", "d" }) == false)
+                throw new Exception($"缺省顺序错误: {string.Join(",", r0.Select(s => s.Id))}");
+
+            // 2) 显隐：隐藏 b
+            var cfg1 = new RadialMenuConfig { Visible = { ["b"] = false } };
+            var r1 = RadialMenuResolver.Resolve(slots, cfg1);
+            if (r1.Select(s => s.Id).SequenceEqual(new[] { "a", "c", "d" }) == false)
+                throw new Exception($"隐藏过滤错误: {string.Join(",", r1.Select(s => s.Id))}");
+
+            // 3) Order 覆盖：把 c 提到最前（覆盖值 0 < 插件 Order 3）
+            var cfg2 = new RadialMenuConfig { Order = { ["c"] = 0 } };
+            var r2 = RadialMenuResolver.Resolve(slots, cfg2);
+            if (r2[0].Id != "c") throw new Exception($"Order 覆盖未生效，首项={r2[0].Id}");
+
+            // 4) 数量上限：MaxVisible=2 只保留前 2 个
+            var cfg3 = new RadialMenuConfig { MaxVisible = 2 };
+            var r3 = RadialMenuResolver.Resolve(slots, cfg3);
+            if (r3.Count != 2 || r3[0].Id != "a" || r3[1].Id != "b")
+                throw new Exception($"上限截断错误: {string.Join(",", r3.Select(s => s.Id))}");
+
+            // 5) FreezeOrder：固化顺序为 index
+            var cfg4 = new RadialMenuConfig();
+            RadialMenuResolver.FreezeOrder(new[] { slots[2], slots[0], slots[1], slots[3] }, cfg4);
+            if (cfg4.Order["c"] != 0 || cfg4.Order["a"] != 1 || cfg4.Order["b"] != 2 || cfg4.Order["d"] != 3)
+                throw new Exception("FreezeOrder 固化顺序错误");
+
+            // 6) Prune：清掉不存在的 slotId 残留
+            var cfg5 = new RadialMenuConfig { Order = { ["ghost"] = 0, ["a"] = 1 }, Visible = { ["ghost"] = false, ["b"] = false } };
+            RadialMenuResolver.Prune(slots, cfg5);
+            if (cfg5.Order.ContainsKey("ghost") || cfg5.Visible.ContainsKey("ghost"))
+                throw new Exception("Prune 未清理残留 slotId");
+            if (!cfg5.Order.ContainsKey("a") || !cfg5.Visible.ContainsKey("b"))
+                throw new Exception("Prune 误删了合法 key");
+
+            Console.WriteLine("  隐藏/覆盖/截断/缺省/冻结/清理 六项全通过");
         });
 
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");

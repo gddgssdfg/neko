@@ -1,0 +1,42 @@
+classDiagram
+    class AppConfig {
+        +RadialMenuConfig RadialMenu
+    }
+    class RadialMenuConfig {
+        +int MaxVisible
+        +Dictionary~string,int~ Order
+        +Dictionary~string,bool~ Visible
+    }
+    class RadialMenuResolver {
+        +static int EffectiveOrder(RadialSlot, RadialMenuConfig)
+        +static bool IsVisible(RadialSlot, RadialMenuConfig)
+        +static List~RadialSlot~ Resolve(IEnumerable~RadialSlot~, RadialMenuConfig)
+        +static void FreezeOrder(IReadOnlyList~RadialSlot~, RadialMenuConfig)
+        +static void Prune(IEnumerable~RadialSlot~, RadialMenuConfig)
+    }
+    class UIApiImpl {
+        +IReadOnlyList~RadialSlot~ AllRadialSlots
+    }
+    class RadialMenu {
+        -AppConfig _config
+        +RadialMenu(UIApiImpl, GlobalInput, AppConfig, Action?)
+        -void RebuildSlots()
+    }
+    class PetWindow {
+        +AppConfig Config
+        +UIApiImpl UIApi
+        -RadialMenu _radialMenu
+    }
+    class SettingsWindow {
+        -AppConfig _config
+        -UIElement BuildRadialMenuPage()
+        -void Save()
+    }
+
+    AppConfig *-- RadialMenuConfig : 组合
+    RadialMenu --> RadialMenuResolver : 调用 Resolve
+    RadialMenu --> UIApiImpl : 读取 AllRadialSlots
+    RadialMenu --> AppConfig : 读 RadialMenu
+    PetWindow --> RadialMenu : 构造
+    SettingsWindow --> AppConfig : 读写 + Save
+    SettingsWindow --> RadialMenuResolver : Resolve/FreezeOrder/Prune

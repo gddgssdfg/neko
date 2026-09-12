@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DesktopPet.App.Services;
 using DesktopPet.Core;
+using DesktopPet.App.Core;
 
 namespace DesktopPet.App.Windows;
 
@@ -27,6 +28,7 @@ public sealed class RadialMenu : Window
 {
     private readonly UIApiImpl _uiApi;
     private readonly GlobalInput _input;
+    private readonly AppConfig _config;          // v0.1.71：径向菜单配置（顺序/显隐/数量上限）
     private readonly Action? _onToggleMirror;   // v0.1.30：键盘 toggle 按钮回调（开/关键鼠映射）
     private readonly Canvas _canvas;
     // v0.1.7：槽位图标 PNG 缓存（用 Pillow 预渲染 emoji → icons/*.png，运行时不再依赖系统 emoji 字体）
@@ -98,10 +100,11 @@ public sealed class RadialMenu : Window
     private double SlotRadius => _holeR + HoleGap + SlotSize / 2;      // 槽位中心到圆心
     private double OuterRadius => SlotRadius + SlotSize / 2 + OuterMargin; // 底盘外缘半径
 
-    public RadialMenu(UIApiImpl uiApi, GlobalInput input, Action? onToggleMirror = null)
+    public RadialMenu(UIApiImpl uiApi, GlobalInput input, AppConfig config, Action? onToggleMirror = null)
     {
         _uiApi = uiApi;
         _input = input;
+        _config = config;
         _onToggleMirror = onToggleMirror;
 
         WindowStyle = WindowStyle.None;
@@ -249,7 +252,7 @@ public sealed class RadialMenu : Window
     {
         _canvas.Children.Clear();
 
-        var all = _uiApi.AllRadialSlots; // 已按 Order 升序
+        var all = RadialMenuResolver.Resolve(_uiApi.AllRadialSlots, _config.RadialMenu); // v0.1.71：过滤隐藏 + 用户排序 + 截断上限
         _pageCount = Math.Max(1, (int)Math.Ceiling(all.Count / (double)MaxPerPage));
         if (_page >= _pageCount) _page = 0;
 

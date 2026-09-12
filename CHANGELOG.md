@@ -1491,3 +1491,29 @@ v0.1.5 设置窗口闭环 + 插件自定义设置页 dogfooding 示范。
 - build sln（22 项目）0 警告 0 错误；LoaderTest 全过。
 
 ## [0.1.69] - 2026-09-12
+
+## [0.1.71] - 2026-09-12
+
+**径向菜单插件顺序 + 显隐 + 数量上限可配置**（灯灯需求：客户自由选择右键界面显示多少插件、以及插件顺序）。
+
+### 功能
+- 设置页新增「径向菜单」栏（第 6 个 sidebar 项），可：
+  - **显示数量上限**：`MaxVisible`（0=不限），排序后只显示前 N 个槽位，超出隐藏
+  - **插件顺序**：▲▼ 上移/下移按钮调整，改动即存
+  - **显隐开关**：每个槽位独立 ToggleSwitch，隐藏项置灰
+  - **恢复默认**：清空所有覆盖，回到插件默认顺序 + 全显示
+- 架构：宿主侧「覆盖层」方案，**不改 Core API**（`RadialSlot`/`IUIApi`/`AllRadialSlots` 原样，18 插件 `RegisterRadialSlot` 不受影响）。插件声明的 `Order` 是默认基准，用户在设置页覆盖。
+
+### 新增/修改
+- 新增 `Core/RadialMenuConfig.cs`（配置模型：MaxVisible + Order + Visible 字典）
+- 新增 `Services/RadialMenuResolver.cs`（纯静态解析器：EffectiveOrder / IsVisible / Resolve / FreezeOrder / Prune）
+- 修改 `Core/Config.cs`（`AppConfig.RadialMenu` 属性）
+- 修改 `Windows/RadialMenu.cs`（ctor 注入 AppConfig，RebuildSlots 改消费 Resolve 结果）
+- 修改 `Windows/PetWindow.cs`（传 `_config`）
+- 修改 `Windows/SettingsWindow.cs`（新增「径向菜单」栏 + BuildRadialMenuPage + BuildSlotRow）
+- 新增架构设计文档 `docs/system_design.md` + 类图/时序图
+
+### 验证
+- 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增 1 项：RadialMenuResolver 六种场景纯函数单测——隐藏/覆盖/截断/缺省/冻结/清理）。
+
+## [0.1.70] - 2026-09-12

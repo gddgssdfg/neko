@@ -66,6 +66,10 @@ public sealed class AppConfig
     // ---- v0.1.61 日志 ----
     /// <summary>日志级别（"off"/"debug"/"info"/"warn"=默认/"error"）；warn 及以上默认输出到 data/logs</summary>
     public string LogLevel { get; set; } = "warn";
+
+    // ---- v0.1.71 径向菜单配置（顺序覆盖 + 显隐 + 全局可见数量上限）----
+    /// <summary>径向菜单用户配置。缺失时保持默认（不限 / 不覆盖 / 全显示）。</summary>
+    public RadialMenuConfig RadialMenu { get; set; } = new();
 }
 
 /// <summary>热键配置（可持久化）</summary>

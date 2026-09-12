@@ -1147,7 +1147,7 @@ public sealed class PetWindow : Window
     public void OpenRadialMenu()
     {
         // 单例复用 + Hide() 关闭：反复 Show/Hide 不会触发"窗口关闭期间 Show"异常
-        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
+        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, _config, onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
         // v0.1.25：撤销 v0.1.9 的「旁边定位」（用户要求改回围绕猫一圈）。
         // 菜单圆心 = 猫中心，中心挖空（洞半径 = 猫半宽 + 余量）透出猫，
         // 猫可见、可直接抚摸/拖拽，槽位在猫外围一圈不再盖猫。
@@ -1325,10 +1325,28 @@ public sealed class PetWindow : Window
         {
             _pluginHost.LoadDeferred();
             DeferredPluginsLoaded?.Invoke();   // 通知 App/TrayManager 等刷新
+            PruneRadialMenuConfig();           // v0.1.71：插件全加载完后清一次径向菜单配置残留 slotId
         }), DispatcherPriority.Background);
         _eventBus.Emit(DesktopPet.Core.PetEvents.AppReady, null); // v0.1.0+：插件初始化完成，订阅 AppReady 可替代 OnLoad 做延迟初始化
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);
         _loopTimer.Start(); // v0.1.1 fix：之前忘了 Start()，主循环从未跑（动画、眼神追踪、边缘吸附全部失效 → 用户只看到冻住的死图猫）
+    }
+
+    /// <summary>
+    /// v0.1.71：插件全加载完后清一次径向菜单配置里的残留 slotId（卸载/改名插件后不留垃圾 key）。
+    /// 必须在 LoadDeferred 之后调用（否则 AllRadialSlots 未注册完，会误删合法 key）。仅在确有残留时才落盘，避免每次启动重写 config.json。
+    /// </summary>
+    private void PruneRadialMenuConfig()
+    {
+        try
+        {
+            var before = _config.RadialMenu.Order.Count + _config.RadialMenu.Visible.Count;
+            RadialMenuResolver.Prune(_uiApi.AllRadialSlots, _config.RadialMenu);
+            var after = _config.RadialMenu.Order.Count + _config.RadialMenu.Visible.Count;
+            if (before != after)
+                ConfigManager.Save(Paths.ConfigFile, _config);
+        }
+        catch { }
     }
 
     // ---- 多显示器工作区（v0.1.26，BongoCat 借鉴）----
