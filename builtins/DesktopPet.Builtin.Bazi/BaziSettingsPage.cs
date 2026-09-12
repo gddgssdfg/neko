@@ -162,31 +162,69 @@ public sealed class BaziSettingsPage : ISettingsPage
         broadcastRow.Children.Add(fmtHint);
         root.Children.Add(broadcastRow);
 
-        // ---- 人格测试（P4） ----
-        root.Children.Add(PluginUi.SectionHeader("人格测试（生日性格分析）"));
+        // ---- 人格定制（v0.1.73：默认关闭，开启后弹窗做题或直接选型） ----
+        root.Children.Add(PluginUi.SectionHeader("人格定制（生日性格分析）"));
 
-        var mbtiStatus = PluginUi.Text(MbtiStatusText(currentMbti));
+        // 开关：默认关闭
+        var mbtiCheck = new CheckBox
+        {
+            Content = "启用人格定制",
+            IsChecked = p.MbtiEnabled,
+            Foreground = PluginUi.TextMain,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+        root.Children.Add(mbtiCheck);
+
+        var mbtiStatus = PluginUi.Text(MbtiStatusText(p.MbtiEnabled, currentMbti));
         mbtiStatus.FontSize = 12.5;
-        mbtiStatus.Margin = new Thickness(0, 0, 0, 4);
+        mbtiStatus.Margin = new Thickness(0, 0, 0, 8);
         root.Children.Add(mbtiStatus);
 
-        var quizHint = PluginUi.Text($"共 {MbtiQuiz.Questions.Count} 题，每题二选一；答完点「计算并保存」。可随时重测覆盖。", sub: true);
+        // 直接选择下拉（16 型）
+        var typeCombo = new ComboBox
+        {
+            Width = 220,
+            Foreground = PluginUi.TextMain,
+            Background = PluginUi.CardBg,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+        foreach (var t in MbtiQuiz.AllTypes)
+            typeCombo.Items.Add(new ComboBoxItem { Content = $"{t}　{MbtiQuiz.Describe(t)}", Tag = t });
+        typeCombo.SelectionChanged += (_, _) =>
+        {
+            if (typeCombo.SelectedItem is ComboBoxItem { Tag: string t })
+            {
+                currentMbti = t;
+                mbtiStatus.Text = MbtiStatusText(mbtiCheck.IsChecked == true, currentMbti);
+            }
+        };
+        root.Children.Add(typeCombo);
+
+        // 开始测试按钮（弹独立窗口）—— 默认关闭时隐藏，开启后才显示
+        var quizBtn = PluginUi.Button("开始测试");
+        quizBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        quizBtn.Margin = new Thickness(0, 0, 0, 4);
+        quizBtn.Visibility = p.MbtiEnabled ? Visibility.Visible : Visibility.Collapsed;
+        quizBtn.Click += (_, _) =>
+        {
+            new MbtiQuizWindow(type =>
+            {
+                currentMbti = type;
+                mbtiStatus.Text = MbtiStatusText(mbtiCheck.IsChecked == true, currentMbti);
+            }).Show();
+        };
+        root.Children.Add(quizBtn);
+
+        var quizHint = PluginUi.Text($"共 {MbtiQuiz.Questions.Count} 题，或直接在上方下拉选择你的类型。关闭开关则播报走通用建议。", sub: true);
         quizHint.FontSize = 11;
-        quizHint.Margin = new Thickness(0, 0, 0, 8);
+        quizHint.Margin = new Thickness(0, 0, 0, 12);
         root.Children.Add(quizHint);
 
-        var answerRows = new List<(RadioButton A, RadioButton B)>();
-        var index = 0;
-        foreach (var q in MbtiQuiz.Questions)
-        {
-            index++;
-            root.Children.Add(QuizQuestionBlock(index, q, answerRows));
-        }
-
-        var quizBtn = PluginUi.Button("计算并保存");
-        quizBtn.HorizontalAlignment = HorizontalAlignment.Left;
-        quizBtn.Margin = new Thickness(0, 6, 0, 12);
-        root.Children.Add(quizBtn);
+        // 开关联动：开启/关闭时刷新状态；关闭清空类型
+        mbtiCheck.Checked += (_, _) => { mbtiStatus.Text = MbtiStatusText(true, currentMbti); };
+        mbtiCheck.Unchecked += (_, _) => { currentMbti = null; typeCombo.SelectedItem = null; mbtiStatus.Text = MbtiStatusText(false, null); };
 
         // ---- 保存 ----
         var saveBtn = PluginUi.Button("保存");
@@ -218,7 +256,8 @@ public sealed class BaziSettingsPage : ISettingsPage
             IsLunar = calCombo.SelectedIndex == 1,
             LeapMonth = leapCheck.IsChecked == true,
             Gender = genderCombo.SelectedIndex == 1 ? 1 : 0,
-            Mbti = currentMbti,
+            MbtiEnabled = mbtiCheck.IsChecked == true,
+            Mbti = mbtiCheck.IsChecked == true ? currentMbti : null,   // v0.1.73：关闭时强制 null，杜绝残留
             ApiKey = string.IsNullOrWhiteSpace(keyBox.Password) ? null : keyBox.Password,
             DailyBroadcastEnabled = broadcastCheck.IsChecked == true,
             BroadcastTime = string.IsNullOrWhiteSpace(timeText.Text) ? "08:00" : timeText.Text.Trim(),
@@ -259,20 +298,6 @@ public sealed class BaziSettingsPage : ISettingsPage
             }
         }
 
-        // ==== 人格测试提交：计分 → 覆盖当前 MBTI → 落盘 ====
-        void SubmitQuiz()
-        {
-            var answers = answerRows
-                .Select(r => r.A.IsChecked == true ? 0 : r.B.IsChecked == true ? 1 : -1)
-                .ToList();
-            var type = MbtiQuiz.Score(answers);
-            currentMbti = type;
-            Persist();
-            mbtiStatus.Text = MbtiStatusText(currentMbti);
-            MessageBox.Show($"你的类型：{type}\n{MbtiQuiz.Describe(type)}", "人格测试",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
         // ==== 事件接线 ====
         yearBox.TextChanged += (_, _) => RefreshPreview();
         monthBox.TextChanged += (_, _) => RefreshPreview();
@@ -288,7 +313,6 @@ public sealed class BaziSettingsPage : ISettingsPage
         leapCheck.Unchecked += (_, _) => RefreshPreview();
         genderCombo.SelectionChanged += (_, _) => RefreshPreview();
 
-        quizBtn.Click += (_, _) => SubmitQuiz();
         saveBtn.Click += (_, _) =>
         {
             Persist();
@@ -308,42 +332,12 @@ public sealed class BaziSettingsPage : ISettingsPage
     }
 
     /// <summary>MBTI 状态文案。</summary>
-    private static string MbtiStatusText(string? mbti)
-        => string.IsNullOrWhiteSpace(mbti)
-            ? "当前类型：尚未测试（答完下面题目点「计算并保存」）"
-            : $"当前类型：{mbti}　{MbtiQuiz.Describe(mbti)}（可重测覆盖）";
-
-    /// <summary>一道题：题干 + 两个互斥选项（RadioButton，同题共用 GroupName）。</summary>
-    private static StackPanel QuizQuestionBlock(int index, MbtiQuestion q, List<(RadioButton A, RadioButton B)> collector)
-    {
-        var block = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-
-        var title = PluginUi.Text($"{index}. {q.Text}");
-        title.FontSize = 12.5;
-        title.Margin = new Thickness(0, 0, 0, 2);
-        block.Children.Add(title);
-
-        var group = "mbti_" + q.Id;
-        var optA = RadioOption(q.OptionA, group);
-        var optB = RadioOption(q.OptionB, group);
-        collector.Add((optA, optB));
-
-        var opts = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0) };
-        opts.Children.Add(optA);
-        opts.Children.Add(optB);
-        block.Children.Add(opts);
-
-        return block;
-    }
-
-    private static RadioButton RadioOption(string text, string group) => new()
-    {
-        Content = text,
-        GroupName = group,
-        Foreground = PluginUi.TextMain,
-        Margin = new Thickness(0, 0, 18, 0),
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+    private static string MbtiStatusText(bool enabled, string? mbti)
+        => !enabled
+            ? "未开启（播报走日主通用建议）"
+            : string.IsNullOrWhiteSpace(mbti)
+                ? "已开启，但尚未选择类型（点「开始测试」或从上方下拉选择）"
+                : $"当前类型：{mbti}　{MbtiQuiz.Describe(mbti)}";
 
     private static TextBlock Label(string text)
     {

@@ -38,8 +38,11 @@ public sealed class BaziProfile
     /// <summary>性别：0 = 女，1 = 男（与 lunar-csharp <c>GetYun(gender, sect)</c> 约定一致）。</summary>
     public int Gender { get; set; } = 1;
 
-    /// <summary>MBTI 类型（可空；P4 阶段改为问卷生成）。</summary>
+    /// <summary>MBTI 类型（可空；人格定制关闭时为 null，播报走日主通用建议）。</summary>
     public string? Mbti { get; set; }
+
+    /// <summary>是否启用人格定制（v0.1.73，默认 false）。关闭时忽略 <see cref="Mbti"/> 残留值。</summary>
+    public bool MbtiEnabled { get; set; }
 
     /// <summary>DeepSeek API Key（可空；P3 使用）。<b>落盘时经 DPAPI 加密</b>（见 <see cref="EncryptedApiKeyConverter"/>），内存中为明文。</summary>
     [JsonConverter(typeof(EncryptedApiKeyConverter))]

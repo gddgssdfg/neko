@@ -96,7 +96,8 @@ public static class DailyFortuneBuilder
     private static string Advice(BaziProfile profile, string userElement, string kind)
     {
         var baseAdvice = ElementAdvice(userElement);
-        var tip = MbtiTip(profile.Mbti, kind);
+        // v0.1.73：人格定制需显式开启（MbtiEnabled）。关闭时即使 Mbti 有残留值也不走人格建议。
+        var tip = profile.MbtiEnabled ? MbtiTip(profile.Mbti, kind) : null;
         return tip is null ? baseAdvice : $"{tip}（{baseAdvice}）";
     }
 
@@ -217,9 +218,14 @@ public static class DailyFortuneBuilder
             if (MbtiTip(null, "克") is not null) failures.Add("null 类型应返回 null");
 
             // P4：同一命盘下，填 MBTI 与不填 → 播报内容应不同（类型真的影响输出）
-            var withMbti = new BaziProfile { Year = 1981, Month = 1, Day = 29, Hour = 23, Minute = 37, Gender = 0, Mbti = "INTJ" };
+            var withMbti = new BaziProfile { Year = 1981, Month = 1, Day = 29, Hour = 23, Minute = 37, Gender = 0, Mbti = "INTJ", MbtiEnabled = true };
             if (Build(withMbti, chart, today).Full == fortune.Full)
                 failures.Add("填 MBTI 后播报内容未变化");
+
+            // v0.1.73：人格定制关闭时，即使 Mbti 有残留值也不走人格建议 → 播报与未启用一致
+            var disabledMbti = new BaziProfile { Year = 1981, Month = 1, Day = 29, Hour = 23, Minute = 37, Gender = 0, Mbti = "INTJ", MbtiEnabled = false };
+            if (Build(disabledMbti, chart, today).Full != fortune.Full)
+                failures.Add("关闭人格定制但残留 MBTI 时，播报内容应回退为通用建议");
         }
         catch (Exception ex)
         {

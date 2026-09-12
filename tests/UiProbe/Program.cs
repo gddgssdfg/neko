@@ -643,7 +643,7 @@ internal static class Program
 
         // ---- v0.1.68 第 26 项：命理插件人格测试（MBTI 问卷 UI：24 题 × 2 选项 + 提交按钮；可滚动）----
         // 只构建 + 校验结构，**不点提交**（提交会弹 MessageBox，会阻塞探针）。
-        Check("v0.1.68：命理插件人格测试（问卷 UI 构建 + 选项数 + 提交按钮 + 可滚动）", () =>
+        Check("v0.1.73：命理插件人格定制（默认关闭 + 93 题 + 开关/开始测试/直接选择入口）", () =>
         {
             var asm = ResolveBaziAssembly(win);
             var pageType = asm.GetType("DesktopPet.Builtin.Bazi.BaziSettingsPage")
@@ -660,25 +660,44 @@ internal static class Program
             if (content is not ScrollViewer)
                 throw new Exception($"设置页应可滚动（返回 ScrollViewer），实际 {content.GetType().Name}");
 
-            var radios = new List<RadioButton>();
-            Collect(content, radios);
             var buttons = new List<Button>();
             Collect(content, buttons);
             var texts = new List<TextBlock>();
             Collect(content, texts);
+            var checkboxes = new List<CheckBox>();
+            Collect(content, checkboxes);
+            var combos = new List<ComboBox>();
+            Collect(content, combos);
 
+            // 题库应为 93 题
             var questions = quizType.GetProperty("Questions")!.GetValue(null)!;
             var questionCount = ((System.Collections.ICollection)questions).Count;
-            if (questionCount != 24)
-                throw new Exception($"题库应为 24 题，实际 {questionCount}");
-            if (radios.Count != questionCount * 2)
-                throw new Exception($"应有 {questionCount * 2} 个选项（每题 2 个），实际 {radios.Count}");
-            if (!buttons.Any(b => (b.Content as string) == "计算并保存"))
-                throw new Exception("缺「计算并保存」按钮");
-            if (!texts.Any(t => t.Text.Contains("人格测试")))
-                throw new Exception("缺「人格测试」小节标题");
-            if (!texts.Any(t => t.Text.Contains("当前类型")))
-                throw new Exception("缺「当前类型」状态行");
+            if (questionCount != 93)
+                throw new Exception($"题库应为 93 题，实际 {questionCount}");
+
+            // 开关默认关
+            var mbtiCheck = checkboxes.FirstOrDefault(c => (c.Content as string)?.Contains("启用人格定制") == true)
+                ?? throw new Exception("缺「启用人格定制」开关");
+            if (mbtiCheck.IsChecked == true)
+                throw new Exception("人格定制开关应默认关闭");
+
+            // 入口：开始测试按钮 + 直接选择下拉
+            if (!buttons.Any(b => (b.Content as string) == "开始测试"))
+                throw new Exception("缺「开始测试」按钮");
+            if (combos.Count == 0)
+                throw new Exception("缺「直接选择」下拉框");
+
+            // 状态行
+            if (!texts.Any(t => t.Text.Contains("未开启")))
+                throw new Exception("默认关闭时状态行应含「未开启」");
+
+            // MbtiQuizWindow 能构造（独立弹窗做题）
+            var winType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuizWindow")
+                ?? throw new Exception("MbtiQuizWindow 类型未找到");
+            var w = winType.GetConstructor(new[] { typeof(Action<string>) })
+                ?.Invoke(new object[] { new Action<string>(_ => { }) })
+                ?? throw new Exception("MbtiQuizWindow 构造失败");
+            (w as System.Windows.Window)?.Close();
         });
 
         // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----
