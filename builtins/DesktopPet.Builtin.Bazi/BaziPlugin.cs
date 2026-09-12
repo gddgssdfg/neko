@@ -45,7 +45,7 @@ public sealed class BaziPlugin : PluginBase
             Id = "bazi-today",
             Label = "今日运势",
             Icon = "book",
-            Order = 31,
+            Order = 30,
             OnInvoke = () => BroadcastManual(),
         });
 
@@ -55,7 +55,7 @@ public sealed class BaziPlugin : PluginBase
             Id = "bazi-ask",
             Label = "问问猫",
             Icon = "book",
-            Order = 30,
+            Order = 31,
             OnInvoke = () => OpenChat(),
         });
 

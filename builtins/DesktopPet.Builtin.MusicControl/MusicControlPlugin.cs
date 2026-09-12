@@ -28,9 +28,9 @@ public sealed class MusicControlPlugin : PluginBase
     {
         base.OnLoad(ctx);
 
-        UI.RegisterRadialSlot(new RadialSlot { Id = "music-prev", Label = "上一曲", Icon = "prev", Order = 16, OnInvoke = () => PressMediaKey(VK_MEDIA_PREV_TRACK) });
-        UI.RegisterRadialSlot(new RadialSlot { Id = "music-play", Label = "播放暂停", Icon = "play", Order = 17, OnInvoke = () => PressMediaKey(VK_MEDIA_PLAY_PAUSE) });
-        UI.RegisterRadialSlot(new RadialSlot { Id = "music-next", Label = "下一曲", Icon = "next", Order = 18, OnInvoke = () => PressMediaKey(VK_MEDIA_NEXT_TRACK) });
+        UI.RegisterRadialSlot(new RadialSlot { Id = "music-prev", Label = "上一曲", Icon = "prev", Order = 2, OnInvoke = () => PressMediaKey(VK_MEDIA_PREV_TRACK) });
+        UI.RegisterRadialSlot(new RadialSlot { Id = "music-play", Label = "播放暂停", Icon = "play", Order = 3, OnInvoke = () => PressMediaKey(VK_MEDIA_PLAY_PAUSE) });
+        UI.RegisterRadialSlot(new RadialSlot { Id = "music-next", Label = "下一曲", Icon = "next", Order = 4, OnInvoke = () => PressMediaKey(VK_MEDIA_NEXT_TRACK) });
     }
 
     private static void PressMediaKey(byte vk)

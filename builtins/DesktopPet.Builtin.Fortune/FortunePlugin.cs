@@ -40,7 +40,7 @@ public sealed class FortunePlugin : PluginBase
         UI.RegisterRadialSlot(new RadialSlot
         {
             Id = "fortune-today",
-            Label = "今日运势",
+            Label = "抽个签",
             Icon = "star",
             Order = 22,
             OnInvoke = () => Pet.Say(Text(), 5000),
