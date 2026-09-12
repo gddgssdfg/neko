@@ -63,8 +63,12 @@ public sealed class InputMirrorWindow : Window
     private const double KeyboardPawLeft = 140; // 初始悬停 x（键盘 291 中段偏左，G/H 区）
     private const double MousePawTop = -2;
     private const double MousePawLeft = 322;    // 键盘 291 + 间距 8 + 鼠标居中 23
-    // v0.1.44：爪子"举手"位置——完全在键盘/鼠标上方之外，不挡任何键（灯灯：不用键盘时爪子别盖住键盘）
-    private const double PawRaisedTop = -PawSize - 3;
+    // v0.1.72：猫坐在对面——爪子从"窗体底边之外"伸上来。
+    // 举手位 = 键盘底边外（KbH=96 + 几像素缓冲 ≈ 101）→ 抬到 KeyboardPawTop/-2（键面）。
+    // v0.1.44 的"不挡键"原则保留——只是从"顶"挪到"底"。
+    // ⚠️ 必须是 const（保持编译期常量）。之前改成实例字段导致 UiProbe 回归 NRE（layout pass 触发 null 访问）。
+    private const double PawRaisedTop = KbH + 5;  // = 101：键盘底边外 5px，窗体外
+    private const double PawRaisedExtra = 36.0;  // 底部为爪子预留的额外高度（爪子完全在窗体底外）
 
     // ---- v0.1.44：按键"按着才亮、松开就白"兜底——真实键盘观感 ----
     // GlobalInput 的 UP 事件链路是好的，但连打/热键路径下偶发 UP 丢失会导致键一直亮。
@@ -260,7 +264,7 @@ public sealed class InputMirrorWindow : Window
         SetMirrored(_config.KeyboardMirrorFlipped);   // v0.1.39：应用持久化的朝向设置
 
         Width = KbW + MouseW + MouseGap + PlatePad * 2 + 4;
-        Height = KbH + LedH + PlatePad * 2 + 4;
+        Height = KbH + LedH + PlatePad * 2 + 4 + PawRaisedExtra;  // v0.1.72：底部多预留 PawRaisedExtra 容纳爪子
         Content = plate;
     }
 
@@ -313,7 +317,8 @@ public sealed class InputMirrorWindow : Window
     {
         var canvas = new Canvas { Width = MouseW, Height = MouseH };
 
-        // 鼠标外形（上半圆、下方圆角，模仿真实鼠标俯视）
+        // 鼠标外形（下半圆、上方小圆角）——v0.1.72：圆头朝下（灯灯"猫坐在对面"心智模型，
+        // 用户视觉上鼠标头指向自己），把大半圆放在底边。
         var body = new Border
         {
             Width = MouseW,
@@ -321,7 +326,7 @@ public sealed class InputMirrorWindow : Window
             Background = new SolidColorBrush(KeyFillC),
             BorderBrush = new SolidColorBrush(KeyEdgeC),
             BorderThickness = new Thickness(1.5),
-            CornerRadius = new CornerRadius(MouseW / 2, MouseW / 2, 12, 12),
+            CornerRadius = new CornerRadius(12, 12, MouseW / 2, MouseW / 2),
         };
         Canvas.SetLeft(body, 0);
         Canvas.SetTop(body, 0);
@@ -512,14 +517,16 @@ public sealed class InputMirrorWindow : Window
         _pawDown = LoadPng("mirror", "paw_down.png");
         if (_pawUp is null || _pawDown is null) return;   // 素材缺失静默降级：只剩键位高亮
 
+        // v0.1.72：猫坐在对面——爪子从"窗体下方"伸上来（举手位在底部），按完落回下方。
+        // 不是从窗体顶部按下来。举手位常量 PawRaisedTop 重新定义为"键盘底边之外"。
         _kbdPaw = MakePawImage();
         Canvas.SetLeft(_kbdPaw, KeyboardPawLeft);
-        Canvas.SetTop(_kbdPaw, PawRaisedTop);   // v0.1.44：初始举爪（完全在键盘上方之外，不挡键）
+        Canvas.SetTop(_kbdPaw, PawRaisedTop);   // 初始举爪（在窗体底部之外）
         layer.Children.Add(_kbdPaw);
 
         _mousePaw = MakePawImage();
         Canvas.SetLeft(_mousePaw, MousePawLeft);
-        Canvas.SetTop(_mousePaw, MousePawTop);
+        Canvas.SetTop(_mousePaw, PawRaisedTop);   // v0.1.72：鼠标爪也从底部伸上来（猫统一从下方伸过来）
         layer.Children.Add(_mousePaw);
     }
 

@@ -1517,3 +1517,23 @@ v0.1.5 设置窗口闭环 + 插件自定义设置页 dogfooding 示范。
 - 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增 1 项：RadialMenuResolver 六种场景纯函数单测——隐藏/覆盖/截断/缺省/冻结/清理）。
 
 ## [0.1.70] - 2026-09-12
+
+## [0.1.72] - 2026-09-12
+
+**键盘映射窗 UI 调整：鼠标圆头朝下 + 猫手从底部上抬**（灯灯："圆头应该向下，猫手应该从下面往上按"）。
+
+### 改动
+- **鼠标外形**：`CornerRadius(MouseW/2, MouseW/2, 12, 12)` → `(12, 12, MouseW/2, MouseW/2)`——大半圆移到**底边**，符合"猫坐在对面"心智模型，用户视觉上鼠标头指向自己。
+- **爪子举手位**：`PawRaisedTop` 从 `-PawSize-3`（窗体顶部外）→ **`KbH + 5` ≈ 101**（键盘底边外，窗体底部外）。`TapKeyboardPaw` / `LiftMousePaw` / `OnKbdPawTimerTick` 全部用 `PawRaisedTop`，**一行常量改动覆盖两个爪子**——它们现在都从底部"伸上来"按。
+- **窗体高度**：+ `PawRaisedExtra` (36px) 给底部爪子预留空间。
+- 鼠标/键盘两个爪子的初值位置都改用 `PawRaisedTop`（之前鼠标用 `MousePawTop`=-2 是错的，初始就在按落点）。
+
+### 调试经验（重要）
+- 第一次实现把 `PawRaisedTop` 从 `const` 改成实例字段（想在 ctor 里 `= KbH+5` 赋值）→ **UiProbe 回归 NRE**（layout pass 在 `Show()` 时触发 null 访问）。
+- **根因**：`KbH + 5` 是 const 表达式，`PawRaisedTop` 保持 const 即可（之前不知道 `KbH` 也是 const，走了实例字段弯路）。**WPF 实例字段访问 vs const 访问在 layout 阶段有微妙差异**。
+- 二分定位：先 `git stash` 整个 revert → 测试 PASS → 确认是我改的；然后逐项回退定位。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；**UiProbe 全部通过**（含 v0.1.43 猫爪跟随按键用例回归确认）。
+
+## [0.1.71] - 2026-09-12
