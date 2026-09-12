@@ -708,8 +708,9 @@ internal static class Program
             // ---- MbtiQuizWindow：独立弹窗 + 关键控件 ----
             var quizWinType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuizWindow")
                 ?? throw new Exception("MbtiQuizWindow 类型未找到");
-            var quizWin = (Window)quizWinType.GetConstructor(new[] { typeof(Action<string>) })
-                ?.Invoke(new object[] { new Action<string>(_ => { }) })
+            var quizCtor = quizWinType.GetConstructor(new[] { typeof(Action<string>) })
+                ?? throw new Exception("MbtiQuizWindow 构造签名不符");
+            var quizWin = (Window?)quizCtor.Invoke(new object[] { new Action<string>(_ => { }) })
                 ?? throw new Exception("MbtiQuizWindow 构造失败");
             quizWin.Show();
             quizWin.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);   // 触发 Loaded → ShowQuestion(0)
