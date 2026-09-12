@@ -641,9 +641,9 @@ internal static class Program
             }
         });
 
-        // ---- v0.1.68 第 26 项：命理插件人格测试（MBTI 问卷 UI：24 题 × 2 选项 + 提交按钮；可滚动）----
+        // ---- v0.1.73 第 26 项：命理插件人格定制（默认关闭 + 93 题 + 开关/开始测试/直接选择显隐）----
         // 只构建 + 校验结构，**不点提交**（提交会弹 MessageBox，会阻塞探针）。
-        Check("v0.1.73：命理插件人格定制（默认关闭 + 93 题 + 开关/开始测试/直接选择入口）", () =>
+        Check("v0.1.73：命理插件人格定制（默认关闭 + 93 题 + 入口显隐 + 问卷窗口控件）", () =>
         {
             var asm = ResolveBaziAssembly(win);
             var pageType = asm.GetType("DesktopPet.Builtin.Bazi.BaziSettingsPage")
@@ -681,23 +681,70 @@ internal static class Program
             if (mbtiCheck.IsChecked == true)
                 throw new Exception("人格定制开关应默认关闭");
 
-            // 入口：开始测试按钮 + 直接选择下拉
-            if (!buttons.Any(b => (b.Content as string) == "开始测试"))
-                throw new Exception("缺「开始测试」按钮");
-            if (combos.Count == 0)
-                throw new Exception("缺「直接选择」下拉框");
+            // 入口：开始测试按钮 + 直接选择下拉（16 型）；默认关闭时应隐藏
+            var quizBtn = buttons.FirstOrDefault(b => (b.Content as string) == "开始测试")
+                ?? throw new Exception("缺「开始测试」按钮");
+            var typeCombo = combos.FirstOrDefault(c => c.Items.Count == 16)
+                ?? throw new Exception("缺「直接选择」下拉框（16 型）");
+            if (quizBtn.Visibility != Visibility.Collapsed || typeCombo.Visibility != Visibility.Collapsed)
+                throw new Exception("默认关闭时「开始测试」「直接选择」应隐藏");
 
-            // 状态行
+            // 状态行默认「未开启」
             if (!texts.Any(t => t.Text.Contains("未开启")))
                 throw new Exception("默认关闭时状态行应含「未开启」");
 
-            // MbtiQuizWindow 能构造（独立弹窗做题）
-            var winType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuizWindow")
+            // 开启开关 → 入口显示 + 状态行变「已开启」
+            mbtiCheck.IsChecked = true;
+            if (quizBtn.Visibility != Visibility.Visible || typeCombo.Visibility != Visibility.Visible)
+                throw new Exception("开启开关后「开始测试」「直接选择」应显示");
+            if (!texts.Any(t => t.Text.Contains("已开启")))
+                throw new Exception("开启开关后状态行应含「已开启」");
+
+            // 再次关闭 → 入口隐藏
+            mbtiCheck.IsChecked = false;
+            if (quizBtn.Visibility != Visibility.Collapsed || typeCombo.Visibility != Visibility.Collapsed)
+                throw new Exception("关闭开关后「开始测试」「直接选择」应再次隐藏");
+
+            // ---- MbtiQuizWindow：独立弹窗 + 关键控件 ----
+            var quizWinType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuizWindow")
                 ?? throw new Exception("MbtiQuizWindow 类型未找到");
-            var w = winType.GetConstructor(new[] { typeof(Action<string>) })
+            var quizWin = (Window)quizWinType.GetConstructor(new[] { typeof(Action<string>) })
                 ?.Invoke(new object[] { new Action<string>(_ => { }) })
                 ?? throw new Exception("MbtiQuizWindow 构造失败");
-            (w as System.Windows.Window)?.Close();
+            quizWin.Show();
+            quizWin.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);   // 触发 Loaded → ShowQuestion(0)
+            try
+            {
+                var progress = (ProgressBar)(quizWinType.GetField("_progress", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _progress 进度条"));
+                if (Math.Abs(progress.Maximum - 93) > 0.5)
+                    throw new Exception($"进度条最大值应为 93，实际 {progress.Maximum}");
+
+                var questionText = (TextBlock)(quizWinType.GetField("_questionText", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _questionText 题目区"));
+                if (string.IsNullOrWhiteSpace(questionText.Text))
+                    throw new Exception("题目区不应为空");
+
+                var optA = (RadioButton)(quizWinType.GetField("_optA", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _optA 选项"));
+                var optB = (RadioButton)(quizWinType.GetField("_optB", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _optB 选项"));
+                if (optA.GroupName != "mbti" || optB.GroupName != "mbti")
+                    throw new Exception("两个选项应同组（GroupName=mbti）");
+
+                var prevBtn = (Button)(quizWinType.GetField("_prevBtn", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _prevBtn 上一题"));
+                var nextBtn = (Button)(quizWinType.GetField("_nextBtn", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(quizWin)
+                    ?? throw new Exception("缺 _nextBtn 下一题"));
+                if ((prevBtn.Content as string) != "上一题" || prevBtn.IsEnabled)
+                    throw new Exception("第一题时「上一题」应存在且禁用");
+                if ((nextBtn.Content as string) != "下一题" || !nextBtn.IsEnabled)
+                    throw new Exception("第一题时「下一题」应存在且可用");
+            }
+            finally
+            {
+                quizWin.Close();
+            }
         });
 
         // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----

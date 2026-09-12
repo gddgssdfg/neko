@@ -181,7 +181,7 @@ public sealed class BaziSettingsPage : ISettingsPage
         mbtiStatus.Margin = new Thickness(0, 0, 0, 8);
         root.Children.Add(mbtiStatus);
 
-        // 直接选择下拉（16 型）
+        // 直接选择下拉（16 型）—— 默认关闭时隐藏，开启后才显示
         var typeCombo = new ComboBox
         {
             Width = 220,
@@ -189,6 +189,7 @@ public sealed class BaziSettingsPage : ISettingsPage
             Background = PluginUi.CardBg,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 0, 0, 8),
+            Visibility = p.MbtiEnabled ? Visibility.Visible : Visibility.Collapsed,
         };
         foreach (var t in MbtiQuiz.AllTypes)
             typeCombo.Items.Add(new ComboBoxItem { Content = $"{t}　{MbtiQuiz.Describe(t)}", Tag = t });
@@ -222,9 +223,21 @@ public sealed class BaziSettingsPage : ISettingsPage
         quizHint.Margin = new Thickness(0, 0, 0, 12);
         root.Children.Add(quizHint);
 
-        // 开关联动：开启/关闭时刷新状态；关闭清空类型
-        mbtiCheck.Checked += (_, _) => { mbtiStatus.Text = MbtiStatusText(true, currentMbti); };
-        mbtiCheck.Unchecked += (_, _) => { currentMbti = null; typeCombo.SelectedItem = null; mbtiStatus.Text = MbtiStatusText(false, null); };
+        // 开关联动：开启/关闭时刷新状态 + 入口显隐；关闭清空类型
+        mbtiCheck.Checked += (_, _) =>
+        {
+            mbtiStatus.Text = MbtiStatusText(true, currentMbti);
+            quizBtn.Visibility = Visibility.Visible;
+            typeCombo.Visibility = Visibility.Visible;
+        };
+        mbtiCheck.Unchecked += (_, _) =>
+        {
+            currentMbti = null;
+            typeCombo.SelectedItem = null;
+            mbtiStatus.Text = MbtiStatusText(false, null);
+            quizBtn.Visibility = Visibility.Collapsed;
+            typeCombo.Visibility = Visibility.Collapsed;
+        };
 
         // ---- 保存 ----
         var saveBtn = PluginUi.Button("保存");
