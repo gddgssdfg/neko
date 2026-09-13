@@ -1,0 +1,21 @@
+{
+  "id": "pixel",
+  "displayName": "像素风",
+  "layout": "sheet",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "frames": 4,
+  "hasShadow": true,
+  "eyeLayers": ["eyes_open", "eyes_pet", "eyes_blink", "eyes_half", "eyes_scared"],
+  "states": [
+    { "name": "idle",  "fps": 4,  "eyeLayer": "eyes_open" },
+    { "name": "walk",  "fps": 8,  "eyeLayer": "eyes_open" },
+    { "name": "sit",   "fps": 4,  "eyeLayer": "eyes_open" },
+    { "name": "sleep", "fps": 1,  "eyeLayer": null },
+    { "name": "pet",   "fps": 10, "eyeLayer": "eyes_pet" },
+    { "name": "drag",  "fps": 6,  "eyeLayer": "eyes_scared" },
+    { "name": "fall",  "fps": 12, "eyeLayer": "eyes_scared" },
+    { "name": "climb", "fps": 4,  "eyeLayer": "eyes_open" },
+    { "name": "work",  "fps": 2,  "eyeLayer": "eyes_open" }
+  ]
+}

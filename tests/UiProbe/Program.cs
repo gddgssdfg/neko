@@ -748,40 +748,106 @@ internal static class Program
             }
         });
 
-        // ---- v0.1.48 第 23 项：皮肤切换（pixel ↔ soft，运行时 SetSkin 即时生效）----
-        Check("v0.1.48/54：皮肤（pixel/soft 素材加载 OK；v0.1.54 柔光屏蔽——SetSkin 白名单强制回 pixel）", () =>
+        // ---- v0.1.74 第 23 项：皮肤目录可扩展（SkinRegistry 扫目录 + skin.json 驱动）----
+        Check("v0.1.74：皮肤（skin.json 扫目录发现；pixel/soft 元数据与旧硬编码一致）", () =>
         {
-            // 1) SpriteAtlas 两种皮肤都加载成功 + 状态数符合（素材层不删，UI 层屏蔽）
-            var pixelAtlas = SpriteAtlas.Load(Paths.Assets, "pixel");
-            if (pixelAtlas.Skin != "pixel") throw new Exception($"pixel 模式 Skin 应='pixel' 实际='{pixelAtlas.Skin}'");
+            // 1) 至少扫到 pixel + soft
+            var skins = SkinRegistry.Scan(Paths.Assets);
+            if (skins.Count < 2) throw new Exception($"应至少扫到 2 个皮肤，实际 {skins.Count}");
+            var pixel = skins.FirstOrDefault(s => s.Id == "pixel") ?? throw new Exception("未扫到 pixel 皮肤");
+            var soft = skins.FirstOrDefault(s => s.Id == "soft") ?? throw new Exception("未扫到 soft 皮肤");
+
+            // 2) skin.json 与旧 C# 硬编码逐项一致（防提取时抄错）
+            var expectedPixel = new (string name, double fps, string? eye)[]
+            {
+                ("idle", 4, "eyes_open"), ("walk", 8, "eyes_open"), ("sit", 4, "eyes_open"),
+                ("sleep", 1, null), ("pet", 10, "eyes_pet"), ("drag", 6, "eyes_scared"),
+                ("fall", 12, "eyes_scared"), ("climb", 4, "eyes_open"), ("work", 2, "eyes_open"),
+            };
+            if (pixel.States.Count != expectedPixel.Length)
+                throw new Exception($"pixel states 应 {expectedPixel.Length} 个，实际 {pixel.States.Count}");
+            foreach (var (name, fps, eye) in expectedPixel)
+            {
+                var st = pixel.States.FirstOrDefault(s => s.Name == name) ?? throw new Exception($"pixel 缺状态 {name}");
+                if (Math.Abs(st.Fps - fps) > 1e-9) throw new Exception($"pixel.{name}.fps 应 {fps}，实际 {st.Fps}");
+                if (st.EyeLayer != eye) throw new Exception($"pixel.{name}.eyeLayer 应 {eye ?? "null"}，实际 {st.EyeLayer ?? "null"}");
+            }
+            if (pixel.FrameWidth != 32 || pixel.FrameHeight != 32 || pixel.Frames != 4)
+                throw new Exception($"pixel 应 32x32x4，实际 {pixel.FrameWidth}x{pixel.FrameHeight}x{pixel.Frames}");
+            if (!pixel.HasShadow) throw new Exception("pixel 应有影子层");
+
+            var expectedSoft = new (string name, double fps)[]
+            {
+                ("idle", 4), ("walk", 8), ("sit", 4), ("sleep", 1), ("pet", 10),
+                ("drag", 6), ("fall", 12), ("climb", 4), ("work", 2),
+            };
+            if (soft.States.Count != expectedSoft.Length)
+                throw new Exception($"soft states 应 {expectedSoft.Length} 个，实际 {soft.States.Count}");
+            foreach (var (name, fps) in expectedSoft)
+            {
+                var st = soft.States.FirstOrDefault(s => s.Name == name) ?? throw new Exception($"soft 缺状态 {name}");
+                if (Math.Abs(st.Fps - fps) > 1e-9) throw new Exception($"soft.{name}.fps 应 {fps}，实际 {st.Fps}");
+                if (st.EyeLayer != null) throw new Exception($"soft.{name}.eyeLayer 应 null（眼睛画在身体里）");
+            }
+            if (soft.HasShadow) throw new Exception("soft 不应有影子层");
+
+            // 3) 素材加载行为回归零差异
+            var pixelAtlas = SpriteAtlas.LoadSkin(Paths.Assets, "pixel");
+            if (pixelAtlas.Skin != "pixel") throw new Exception($"pixel Skin 应='pixel'，实际='{pixelAtlas.Skin}'");
             if (pixelAtlas.States.Count != 9) throw new Exception($"pixel 应有 9 状态，实际 {pixelAtlas.States.Count}");
-
-            var softAtlas = SpriteAtlas.Load(Paths.Assets, "soft");
-            if (softAtlas.Skin != "soft") throw new Exception($"soft 模式 Skin 应='soft' 实际='{softAtlas.Skin}'");
+            var softAtlas = SpriteAtlas.LoadSkin(Paths.Assets, "soft");
+            if (softAtlas.Skin != "soft") throw new Exception($"soft Skin 应='soft'，实际='{softAtlas.Skin}'");
             if (!softAtlas.States.ContainsKey("work")) throw new Exception("soft 缺 work 状态");
-            // 软版眼睛在身体里 → EyeLayer=null
-            if (softAtlas.States["work"].EyeLayer != null) throw new Exception("soft work EyeLayer 应=null（眼睛画在身体里）");
+            if (softAtlas.States["work"].EyeLayer != null) throw new Exception("soft work EyeLayer 应=null");
 
-            // 2) v0.1.54：运行时 SetSkin 白名单——非 pixel 一律强制回 pixel
+            // 4) 运行时 SetSkin：已注册皮肤可切换；未注册 id 回退默认 pixel
             var atlasField = typeof(PetRenderer).GetField("_atlas", BindingFlags.NonPublic | BindingFlags.Instance)
                 ?? throw new MissingFieldException("PetRenderer._atlas 不存在");
+            var rendererField = win.GetType().GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!;
             string prevSkin = win.Config.Skin ?? "pixel";
             try
             {
                 win.SetSkin("soft");
-                var cur = (SpriteAtlas)atlasField.GetValue(win.GetType().GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(win))!;
-                if (cur.Skin != "pixel") throw new Exception($"v0.1.54 柔光屏蔽：SetSkin('soft') 后 _atlas.Skin 应仍='pixel'（白名单强制），实际='{cur.Skin}'");
-                if (win.Config.Skin != "pixel") throw new Exception("SetSkin('soft') 后 config.Skin 应被强制回 pixel");
+                var cur = (SpriteAtlas)atlasField.GetValue(rendererField.GetValue(win))!;
+                if (cur.Skin != "soft") throw new Exception($"SetSkin('soft') 后应='soft'，实际='{cur.Skin}'");
+                if (win.Config.Skin != "soft") throw new Exception("SetSkin('soft') 后 config.Skin 应='soft'");
 
-                win.SetSkin("pixel");
-                cur = (SpriteAtlas)atlasField.GetValue(win.GetType().GetField("_renderer", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(win))!;
-                if (cur.Skin != "pixel") throw new Exception("SetSkin('pixel') 后 _atlas.Skin 应='pixel'");
+                win.SetSkin("__no_such_skin__");
+                cur = (SpriteAtlas)atlasField.GetValue(rendererField.GetValue(win))!;
+                if (cur.Skin != "pixel") throw new Exception($"未注册皮肤应回退 pixel，实际='{cur.Skin}'");
             }
             finally
             {
-                // 收尾：恢复初始
                 win.SetSkin(prevSkin);
                 if (win.Config.Skin != prevSkin) { win.Config.Skin = prevSkin; DesktopPet.App.Core.ConfigManager.Save(Paths.ConfigFile, win.Config); }
+            }
+        });
+
+        // ---- v0.1.74 第 23b 项：损坏的 skin.json 被跳过且不抛异常 ----
+        Check("v0.1.74：损坏 skin.json 被跳过（不抛异常）；无有效皮肤时回退内置默认", () =>
+        {
+            var tmp = Path.Combine(Path.GetTempPath(), "neko-skin-probe-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(tmp, "broken"));
+            File.WriteAllText(Path.Combine(tmp, "broken", "skin.json"), "{ this is not valid json ");
+            try
+            {
+                // 只有损坏皮肤 → 扫不到有效皮肤 → 回退内置默认（不抛）
+                var skins = SkinRegistry.Scan(tmp);
+                if (skins.Count != 1) throw new Exception($"期望仅回退 1 个内置默认皮肤，实际 {skins.Count}");
+                if (!skins[0].IsBuiltinFallback) throw new Exception("损坏清单时应回退内置默认皮肤");
+                if (skins[0].Id != "pixel") throw new Exception($"兜底皮肤 id 应=pixel，实际={skins[0].Id}");
+
+                // Resolve 对损坏/未知 id 安全回退，不抛
+                if (SkinRegistry.Resolve(tmp, "broken").Id != "pixel") throw new Exception("损坏皮肤应回退 pixel");
+                if (SkinRegistry.Exists(tmp, "broken")) throw new Exception("损坏的 skin.json 不应被视为已注册");
+
+                // 用损坏皮肤 id 走真实素材根加载，也不应抛（回退 pixel 素材）
+                var atlas = SpriteAtlas.LoadSkin(tmp, "broken");
+                if (atlas.Skin != "pixel") throw new Exception($"损坏皮肤加载应回退 pixel，实际='{atlas.Skin}'");
+            }
+            finally
+            {
+                try { Directory.Delete(tmp, true); } catch { }
             }
         });
 

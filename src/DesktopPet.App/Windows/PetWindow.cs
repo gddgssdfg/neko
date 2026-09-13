@@ -152,10 +152,9 @@ public sealed class PetWindow : Window
         _config = config;
         InitializeWindow();
 
-        // 素材（v0.1.48：按 config.Skin 选皮肤——"pixel" 横排帧 / "soft" 柔光每帧独立 128x128）
-        // v0.1.54：柔光暂屏蔽——残留 config 的 soft 强制回 pixel
-        if (_config.Skin != "pixel") { _config.Skin = "pixel"; }
-        var atlas = SpriteAtlas.Load(Paths.Assets, _config.Skin);
+        // 素材（v0.1.74：扫 neko-assets/<skinId>/skin.json 数据驱动加载；未注册的皮肤回退默认 pixel）
+        if (!SkinRegistry.Exists(Paths.Assets, _config.Skin)) { _config.Skin = SkinRegistry.DefaultSkinId; }
+        var atlas = SpriteAtlas.LoadSkin(Paths.Assets, _config.Skin);
 
         // 事件总线（宿主广播，插件订阅）
         _eventBus = new EventBusImpl();
@@ -626,14 +625,13 @@ public sealed class PetWindow : Window
         try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
     }
 
-    /// <summary>v0.1.48：运行时切换皮肤。v0.1.54：柔光暂屏蔽——白名单只放行 "pixel"（旧 config 若存了 soft 会被强制回 pixel）。</summary>
+    /// <summary>v0.1.74：运行时切换皮肤（支持任意已注册皮肤，含用户自制；未知 id 回退默认 pixel）。</summary>
     public void SetSkin(string skin)
     {
-        if (skin != "pixel") skin = "pixel";   // v0.1.54：柔光暂屏蔽（恢复时删此行 + SpriteAtlas.Load 白名单）
-        if (string.IsNullOrEmpty(skin)) skin = "pixel";
+        if (!SkinRegistry.Exists(Paths.Assets, skin)) skin = SkinRegistry.DefaultSkinId;
         if (_config.Skin == skin && _renderer.Atlas.Skin == skin) return;
         _config.Skin = skin;
-        var newAtlas = SpriteAtlas.Load(Paths.Assets, skin);
+        var newAtlas = SpriteAtlas.LoadSkin(Paths.Assets, skin);
         _renderer.SetAtlas(newAtlas);
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);   // 强制从新 atlas 重拉（避免 _animator 缓存旧 SpriteState）
         SaveConfigFile();

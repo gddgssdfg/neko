@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -285,13 +286,31 @@ public sealed class SettingsWindow : Window
             },
             val => $"{val * 100:F0}%"));
 
-        // v0.1.54：柔光皮肤暂屏蔽（灯灯指示——先专注像素版；素材仍保留在 neko-assets/soft/，代码/配置字段都在，
-        // 恢复时只取消注释这张卡 + SpriteAtlas.Load 白名单即可）
-        // v0.1.48 皮肤切换（原代码）：
-        // stack.Children.Add(BuildChoiceCard(
-        //     "外观风格", "默认像素风；切柔光风可体验柔光版（BongoCat 风格柔化）",
-        //     new[] { "像素风", "柔光风" }, _config.Skin == "soft" ? 1 : 0,
-        //     i => { var s = i == 1 ? "soft" : "pixel"; _pet.SetSkin(s); _config.Skin = s; Save(); }));
+        // v0.1.74：皮肤选择——扫 neko-assets/*/skin.json 动态列出（pixel/soft + 用户自制皮肤）。
+        // 取代 v0.1.48 的写死 pixel/soft 两项；下拉内容随目录变化，宿主无需改动。
+        var skins = SkinRegistry.Scan(Paths.Assets);
+        var skinList = skins.ToList();
+        string curSkin = skinList.Any(s => s.Id == _config.Skin) ? _config.Skin : SkinRegistry.DefaultSkinId;
+        var skinOptions = skinList.Select(s => $"{s.DisplayName}（{s.Id}）").ToArray();
+        int skinIdx = Math.Max(0, skinList.FindIndex(s => s.Id == curSkin));
+        stack.Children.Add(BuildChoiceCardWrapped(
+            "外观风格", "皮肤由 neko-assets/<皮肤名>/skin.json 定义；放入新目录即可扩展",
+            skinOptions, skinIdx,
+            i =>
+            {
+                var s = skinList[i].Id;
+                _pet.SetSkin(s);
+                _config.Skin = s;
+                Save();
+            }));
+        stack.Children.Add(BuildButtonCard(
+            "皮肤目录", "打开 neko-assets/，放入自制皮肤目录（skin.json + 帧 PNG）后重开本页即可选用",
+            "打开皮肤目录",
+            () =>
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = Paths.Assets, UseShellExecute = true }); }
+                catch (Exception ex) { MessageBox.Show("打开皮肤目录失败：" + ex.Message); }
+            }));
 
         // v0.1.41：称呼 + 猫名（封包需求：首启引导后可在设置页改；修改后重建调度器使新台词生效）
         stack.Children.Add(BuildTextCard(
@@ -763,6 +782,51 @@ public sealed class SettingsWindow : Window
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(12, 6, 12, 6),
                 Margin = new Thickness(0, 0, 8, 0),
+                Cursor = Cursors.Hand,
+                Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(TextMain), FontSize = 12 },
+            };
+            btn.MouseLeftButtonUp += (_, _) =>
+            {
+                onChange(cap);
+                RefreshSelection(cap);
+            };
+            buttons.Add(btn);
+            sp.Children.Add(btn);
+        }
+        return BuildCard(title, desc, sp);
+    }
+
+    /// <summary>
+    /// v0.1.74：与 <see cref="BuildChoiceCard"/> 视觉一致，但用 WrapPanel 承载选项——
+    /// 供「皮肤」这类数量可随用户扩展（UGC）的选择器使用，避免横向溢出。
+    /// </summary>
+    private Border BuildChoiceCardWrapped(string title, string? desc, string[] options, int selectedIdx, Action<int> onChange)
+    {
+        var sp = new WrapPanel { Orientation = Orientation.Horizontal };
+        var buttons = new List<Border>();
+        var unselectedBg = Color.FromRgb(0x3A, 0x44, 0x57);
+
+        void RefreshSelection(int newIdx)
+        {
+            for (int i = 0; i < buttons.Count; i++)
+            {
+                var brush = (SolidColorBrush)buttons[i].Background;
+                brush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
+                    new ColorAnimation(newIdx == i ? Accent : unselectedBg, TimeSpan.FromMilliseconds(150)));
+            }
+        }
+
+        for (int i = 0; i < options.Length; i++)
+        {
+            int cap = i;
+            var btn = new Border
+            {
+                Background = new SolidColorBrush(i == selectedIdx ? Accent : unselectedBg),
+                BorderBrush = new SolidColorBrush(BorderC),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 8),
                 Cursor = Cursors.Hand,
                 Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(TextMain), FontSize = 12 },
             };

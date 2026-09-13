@@ -1,0 +1,21 @@
+{
+  "id": "soft",
+  "displayName": "柔光风",
+  "layout": "files",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "frames": 4,
+  "hasShadow": false,
+  "eyeLayers": [],
+  "states": [
+    { "name": "idle",  "fps": 4,  "eyeLayer": null },
+    { "name": "walk",  "fps": 8,  "eyeLayer": null },
+    { "name": "sit",   "fps": 4,  "eyeLayer": null },
+    { "name": "sleep", "fps": 1,  "eyeLayer": null },
+    { "name": "pet",   "fps": 10, "eyeLayer": null },
+    { "name": "drag",  "fps": 6,  "eyeLayer": null },
+    { "name": "fall",  "fps": 12, "eyeLayer": null },
+    { "name": "climb", "fps": 4,  "eyeLayer": null },
+    { "name": "work",  "fps": 2,  "eyeLayer": null }
+  ]
+}

@@ -16,7 +16,7 @@ Neko 像素猫雪碧图生成器
 用法：
   python tools/generate_sprites.py
 
-anim.json 皮肤契约（目录级，本脚本每次运行都会向 OUT(=neko-assets) 写一份）：
+anim.json 皮肤契约（目录级，本脚本每次运行都会向 OUT(=neko-assets/pixel) 写一份）：
 -----------------------------------------------------------------------------
   {
     "fps":  { "idle": 4, "walk": 8, "sit": 4, "sleep": 1,
@@ -28,8 +28,8 @@ anim.json 皮肤契约（目录级，本脚本每次运行都会向 OUT(=neko-as
   用于校验/未来皮肤扩展；当前宿主仍以内置默认 32x32x4 为准。
 - 覆盖规则：C# 侧内置默认表存在；anim.json 只覆盖"出现的键"，缺失键回退内置；
   anim.json 缺失 / JSON 损坏 / fps 值非数字 → 全部静默回退内置表（皮肤缺它也能跑）。
-- 新增皮肤 = 新目录（如 neko-assets/pikachu/）+ 同名 PNG（neko_<state>.png / 眼球层）
-  + 可选 anim.json（目录级；soft 皮肤放 <skinDir>/soft/anim.json）。宿主零改动。
+- 新增皮肤 = 新目录（如 neko-assets/pikachu/）+ skin.json（清单）+ 同名 PNG（neko_<state>.png / 眼球层）
+  + 可选 anim.json（目录级 fps 覆盖）。宿主零改动（v0.1.74 起由 SkinRegistry 扫目录发现）。
 """
 
 import json
@@ -39,7 +39,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageChops
 SIZE = 32
 NF = 4
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "neko-assets")
+OUT = os.path.join(ROOT, "neko-assets", "pixel")   # v0.1.74：像素皮肤迁入 neko-assets/pixel/（与 skin.json 同目录）
 
 # 头部锚点：所有需要叠加眼球层的状态都必须用这个坐标
 HEAD_CX, HEAD_CY = 17, 11

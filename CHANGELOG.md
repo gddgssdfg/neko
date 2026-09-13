@@ -4,6 +4,25 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.75] - 2026-09-14
+
+**皮肤目录可扩展：从「硬编码两种」到「扫目录自动发现」**（借鉴 BongoCat model_catalog，P1 批次）。
+
+### 功能
+- **皮肤由素材侧清单驱动**：`neko-assets/<skinId>/skin.json` 声明 id/尺寸/帧数/状态表（fps + eyeLayer），C# 不再硬编码。
+- **扫目录即发现**：`SkinRegistry.Scan(assetsRoot)` 遍历 `neko-assets/*/`，每个含 `skin.json` 的子目录自动成为一个皮肤 → **用户可自制皮肤**（放进目录即被识别，零改代码）。
+- **素材布局调整**：像素素材从 `neko-assets/` 迁入 `neko-assets/pixel/`（`neko_*.png` + `anim.json` + 新 `skin.json`）；soft 补 `skin.json`。
+- 设置页「猫咪」栏皮肤下拉改为**动态列出**（displayName），新增「**打开皮肤目录**」按钮。
+
+### 健壮性（铁律）
+- 用户皮肤尺寸/帧数非法 → `TryLoad` 校验（frameW/H≤0、frames≤0、fps≤0、states 空 → 判损坏）→ **跳过 + Log.Warn，绝不抛异常崩宿主**。
+- 一个都没扫到 → 回退内置 `BuiltinFallback`（pixel 硬编码规格），保证像素皮永远可用。
+- 现有 pixel/soft 行为**逐项零差异**（states/fps/eyeLayer 与旧硬编码一一对应，UiProbe 断言锁定）。
+- 未触碰 `DesktopPet.Core`。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（含 2 条新断言：skin.json 扫目录发现 + 元数据与旧硬编码一致；损坏 skin.json 跳过 + 无有效皮肤回退内置）。
+
 ## [0.1.74] - 2026-09-13
 
 **配置健壮性 + 隐私合规文档 + 一致性检查脚本**（借鉴 BongoCat 工程实践，P0 批次）。
