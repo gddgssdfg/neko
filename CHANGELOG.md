@@ -4,6 +4,25 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.76] - 2026-09-14
+
+**修掉 UGC 作者陷阱：`anim.json` 曾静默覆盖 `skin.json` 的 fps**（QA 独立验证时发现）。
+
+### 问题（QA 实测复现）
+`skin.json` 写 `idle=7`，但只要同目录的 `anim.json` 还是 `idle=4`，**渲染实际用 4** —— skin.json 的 fps 被静默覆盖。
+- 现有 pixel 皮肤的两个文件数值恰好一致，所以看不出问题
+- 但**用户复制 pixel 做自制皮肤、只改 skin.json 的 fps 会完全无效** → 直接废掉 v0.1.75「解锁用户自制皮肤」的目标
+
+### 修复
+- **`skin.json` 成为 fps 唯一权威**：`SpriteAtlas` 移除 `ReadAnimFpsOverrides`（v0.1.58 引入的 anim.json 覆盖路径）及其调用，fps 一律取 `skin.json` 的 `states[].fps`。
+- **删除 `neko-assets/pixel/anim.json`**（内容已被 skin.json 完全覆盖，QA 已证两者数值逐项一致 → 行为零变化）。
+- **`tools/generate_sprites.py` 停止生成 `anim.json`**（理由：保留生成会持续产出"看着像权威、实则被忽略"的文件，正是该陷阱的心智来源；停掉后素材侧只剩 skin.json 一个 fps 声明点）。
+- `DesktopPet.App.csproj` 注释同步更新。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过。
+新增**陷阱锁死断言** `v0.1.76：skin.json 是 fps 唯一权威`——造一个 skin.json(idle=7) 的自制皮肤，再同目录塞一个会打架的 `anim.json`(idle=4)，断言渲染图集 fps **仍是 7**（若覆盖没删干净此处会得 4）；另有 pixel 9 状态 fps 逐项回归断言证明删除 anim.json 后运行时零变化。
+
 ## [0.1.75] - 2026-09-14
 
 **皮肤目录可扩展：从「硬编码两种」到「扫目录自动发现」**（借鉴 BongoCat model_catalog，P1 批次）。

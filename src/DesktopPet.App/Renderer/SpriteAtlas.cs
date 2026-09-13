@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -67,14 +66,16 @@ public sealed class SpriteAtlas
         return LoadFromInfo(info, dir);
     }
 
-    /// <summary>按已解析的皮肤元数据加载素材。</summary>
+    /// <summary>
+    /// 按已解析的皮肤元数据加载素材。
+    /// <para><b>fps 唯一权威 = skin.json 的 states[].fps</b>（v0.1.76 起）。
+    /// 历史上曾有第二处 fps 来源（皮肤目录内的 anim.json 覆盖表，v0.1.58 引入），
+    /// 它会静默盖掉 skin.json，导致用户自制皮肤「只改 skin.json 的 fps 不生效」——
+    /// 该覆盖路径已移除，skin.json 是素材侧唯一 fps 声明点。</para>
+    /// </summary>
     private static SpriteAtlas LoadFromInfo(SkinInfo info, string skinDir)
     {
         var atlas = new SpriteAtlas { Skin = info.Id };
-
-        // 兼容既有 anim.json 契约：皮肤目录内若有 anim.json，用其 fps 覆盖 skin.json 的 fps
-        // （缺失键 / 文件缺失 / 损坏 → 一律静默回退 skin.json 的值）。
-        var fpsOverrides = ReadAnimFpsOverrides(skinDir);
 
         foreach (var state in info.States)
         {
@@ -109,13 +110,11 @@ public sealed class SpriteAtlas
 
             if (!complete) continue;   // 缺帧 → 跳过该状态（不崩，行为同旧版）
 
-            var fps = fpsOverrides is not null && fpsOverrides.TryGetValue(state.Name, out var f2)
-                ? f2 : state.Fps;
             atlas._states[state.Name] = new SpriteState
             {
                 Name = state.Name,
                 Frames = frames,
-                Fps = fps,
+                Fps = state.Fps,
                 EyeLayer = state.EyeLayer,
             };
         }
@@ -135,35 +134,6 @@ public sealed class SpriteAtlas
         }
 
         return atlas;
-    }
-
-    /// <summary>
-    /// 读取皮肤目录 anim.json 的 fps 覆盖表（兼容 v0.1.58 契约，可选）。
-    /// 契约：{ "fps": { "idle": 4, ... }, "meta": { "frameWidth":32, "frameHeight":32, "framesPerState":4 } }
-    /// 只消费 fps；缺文件 / JSON 损坏 / fps 缺失 / 值为非数字 → 返回 null，调用方回退 skin.json（静默）。
-    /// </summary>
-    private static Dictionary<string, double>? ReadAnimFpsOverrides(string skinDir)
-    {
-        var path = Path.Combine(skinDir, "anim.json");
-        if (!File.Exists(path)) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            if (!doc.RootElement.TryGetProperty("fps", out var fps) || fps.ValueKind != JsonValueKind.Object)
-                return null;
-            var map = new Dictionary<string, double>(StringComparer.Ordinal);
-            foreach (var prop in fps.EnumerateObject())
-            {
-                if (prop.Value.ValueKind == JsonValueKind.Number)
-                    map[prop.Name] = prop.Value.GetDouble();
-            }
-            return map.Count > 0 ? map : null;
-        }
-        catch (Exception)
-        {
-            // 文件损坏/字段异常：静默回退，皮肤缺 anim.json 也能跑
-            return null;
-        }
     }
 
     /// <summary>获取某状态的第 n 帧（帧数循环）</summary>

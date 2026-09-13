@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.1.75</Version>
+    <Version>0.1.76</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -42,7 +42,7 @@
 
   <ItemGroup>
     <None Include="..\..\neko-assets\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <!-- v0.1.74：皮肤清单 skin.json + 兼容的 anim.json（原只拷 anim.json；*.json 覆盖二者） -->
+    <!-- 皮肤清单 skin.json（v0.1.76：anim.json fps 覆盖表已移除，*.json 现仅承载 skin.json；保留通配以便后续扩展） -->
     <None Include="..\..\neko-assets\**\*.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
   </ItemGroup>

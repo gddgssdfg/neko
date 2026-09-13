@@ -16,23 +16,23 @@ Neko 像素猫雪碧图生成器
 用法：
   python tools/generate_sprites.py
 
-anim.json 皮肤契约（目录级，本脚本每次运行都会向 OUT(=neko-assets/pixel) 写一份）：
+皮肤契约（v0.1.76 起）：皮肤目录内的 skin.json 是素材侧唯一权威
 -----------------------------------------------------------------------------
+  neko-assets/<skinId>/skin.json
   {
-    "fps":  { "idle": 4, "walk": 8, "sit": 4, "sleep": 1,
-              "pet": 10, "drag": 6, "fall": 12, "climb": 4, "work": 2 },
-    "meta": { "frameWidth": 32, "frameHeight": 32, "framesPerState": 4 }
+    "id": "pixel", "displayName": "像素风", "layout": "sheet",
+    "frameWidth": 32, "frameHeight": 32, "frames": 4, "hasShadow": true,
+    "eyeLayers": ["eyes_open", "eyes_pet", "eyes_blink", "eyes_half", "eyes_scared"],
+    "states": [ { "name": "idle", "fps": 4, "eyeLayer": "eyes_open" }, ... ]
   }
-- "fps"：状态名 → 每秒帧数（动画宿主 SpriteAtlas.Load 的唯一覆盖入口）。
-- "meta"：素材几何信息（frameWidth/Height 单帧像素、framesPerState 每状态帧数），
-  用于校验/未来皮肤扩展；当前宿主仍以内置默认 32x32x4 为准。
-- 覆盖规则：C# 侧内置默认表存在；anim.json 只覆盖"出现的键"，缺失键回退内置；
-  anim.json 缺失 / JSON 损坏 / fps 值非数字 → 全部静默回退内置表（皮肤缺它也能跑）。
-- 新增皮肤 = 新目录（如 neko-assets/pikachu/）+ skin.json（清单）+ 同名 PNG（neko_<state>.png / 眼球层）
-  + 可选 anim.json（目录级 fps 覆盖）。宿主零改动（v0.1.74 起由 SkinRegistry 扫目录发现）。
+- "states[].fps"：状态名 → 每秒帧数，**宿主读它作为 fps 唯一来源**（skin.json 优先，无二次覆盖）。
+- 本脚本只生成 PNG 素材（neko_<state>.png 横排 4 帧 / 眼球层 / shadow / tray.ico），
+  **不再生成 anim.json**——旧的 anim.json fps 覆盖表会静默盖掉 skin.json（作者陷阱），已从宿主移除。
+  skin.json 由作者手写/维护（本脚本不覆盖它，避免把手调的 fps 冲掉）。
+- 新增皮肤 = 新目录（如 neko-assets/pikachu/）+ skin.json（清单）+ 同名 PNG（neko_<state>.png / 眼球层）。
+  宿主零改动（v0.1.74 起由 SkinRegistry 扫目录发现）。
 """
 
-import json
 import os
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
@@ -525,16 +525,8 @@ def main():
     make_preview(sheets, eye_imgs)
     make_gif(sheets, eye_imgs)
 
-    # v0.1.58(任务6)：写皮肤契约 anim.json（fps 与上方 STATES 硬编码保持同源；meta 记录素材几何）
-    anim = {
-        "fps": {name: fps for name, _, fps, _ in STATES},
-        "meta": {"frameWidth": SIZE, "frameHeight": SIZE, "framesPerState": NF},
-    }
-    with open(os.path.join(OUT, "anim.json"), "w", encoding="utf-8") as f:
-        json.dump(anim, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    print("  anim.json (fps + meta 皮肤契约)")
-
+    # v0.1.76：不再生成 anim.json（其 fps 覆盖表会静默盖掉 skin.json 的 fps，宿主侧已移除该路径）。
+    # fps 的唯一权威是皮肤目录内的 skin.json（由作者维护，本脚本不覆盖它）。
     print(f"\n输出目录: {OUT}")
 
 

@@ -795,6 +795,13 @@ internal static class Program
             var pixelAtlas = SpriteAtlas.LoadSkin(Paths.Assets, "pixel");
             if (pixelAtlas.Skin != "pixel") throw new Exception($"pixel Skin 应='pixel'，实际='{pixelAtlas.Skin}'");
             if (pixelAtlas.States.Count != 9) throw new Exception($"pixel 应有 9 状态，实际 {pixelAtlas.States.Count}");
+            // 3b) v0.1.76：移除 anim.json 覆盖后，pixel 渲染图集 fps 仍逐项等于 skin.json（零行为变化）
+            foreach (var (name, fps, _) in expectedPixel)
+            {
+                if (!pixelAtlas.States.TryGetValue(name, out var ast)) throw new Exception($"pixel 渲染图集缺状态 {name}");
+                if (Math.Abs(ast.Fps - fps) > 1e-9)
+                    throw new Exception($"pixel 渲染图集 {name}.fps 应 {fps}（skin.json 权威），实际 {ast.Fps}");
+            }
             var softAtlas = SpriteAtlas.LoadSkin(Paths.Assets, "soft");
             if (softAtlas.Skin != "soft") throw new Exception($"soft Skin 应='soft'，实际='{softAtlas.Skin}'");
             if (!softAtlas.States.ContainsKey("work")) throw new Exception("soft 缺 work 状态");
@@ -844,6 +851,46 @@ internal static class Program
                 // 用损坏皮肤 id 走真实素材根加载，也不应抛（回退 pixel 素材）
                 var atlas = SpriteAtlas.LoadSkin(tmp, "broken");
                 if (atlas.Skin != "pixel") throw new Exception($"损坏皮肤加载应回退 pixel，实际='{atlas.Skin}'");
+            }
+            finally
+            {
+                try { Directory.Delete(tmp, true); } catch { }
+            }
+        });
+
+        // ---- v0.1.76 第 23c 项：skin.json 是 fps 唯一权威（anim.json 覆盖陷阱已移除）----
+        Check("v0.1.76：skin.json 是 fps 唯一权威（只改 skin.json 的 fps 即生效；anim.json 不再覆盖）", () =>
+        {
+            var tmp = Path.Combine(Path.GetTempPath(), "neko-skin-fps-" + Guid.NewGuid().ToString("N"));
+            var dir = Path.Combine(tmp, "fanmade");
+            Directory.CreateDirectory(dir);
+            try
+            {
+                // 造一个自制皮肤：idle fps=7。sheet 布局，复用 pixel 的 idle 雪碧图（128x32，4 帧）
+                var sheetSrc = Path.Combine(Paths.Assets, "pixel", "neko_idle.png");
+                if (!File.Exists(sheetSrc)) throw new Exception($"测试素材缺失：{sheetSrc}");
+                File.Copy(sheetSrc, Path.Combine(dir, "neko_idle.png"));
+                File.WriteAllText(Path.Combine(dir, "skin.json"),
+                    "{ \"id\": \"fanmade\", \"layout\": \"sheet\", \"frameWidth\": 32, \"frameHeight\": 32, " +
+                    "\"frames\": 4, \"hasShadow\": false, \"eyeLayers\": [], " +
+                    "\"states\": [ { \"name\": \"idle\", \"fps\": 7, \"eyeLayer\": null } ] }");
+
+                // 1) 只读 skin.json：元数据层 + 渲染图集层 fps 都应为 7
+                if (Math.Abs(SkinRegistry.Resolve(tmp, "fanmade").States.Single(s => s.Name == "idle").Fps - 7) > 1e-9)
+                    throw new Exception("skin.json 元数据 idle.fps 应=7");
+                var atlas1 = SpriteAtlas.LoadSkin(tmp, "fanmade");
+                if (atlas1.Skin != "fanmade") throw new Exception($"自制皮肤 Skin 应='fanmade'，实际='{atlas1.Skin}'");
+                if (!atlas1.States.TryGetValue("idle", out var idle1)) throw new Exception("自制皮肤缺 idle 状态（雪碧图未加载？）");
+                if (Math.Abs(idle1.Fps - 7) > 1e-9)
+                    throw new Exception($"渲染图集 idle.fps 应=7（skin.json 权威），实际={idle1.Fps}");
+
+                // 2) 关键：同目录再塞一个会"打架"的 anim.json（idle=4），渲染 fps 必须仍是 7（覆盖已彻底移除）
+                File.WriteAllText(Path.Combine(dir, "anim.json"),
+                    "{ \"fps\": { \"idle\": 4 }, \"meta\": { \"frameWidth\": 32, \"frameHeight\": 32, \"framesPerState\": 4 } }");
+                var atlas2 = SpriteAtlas.LoadSkin(tmp, "fanmade");
+                if (!atlas2.States.TryGetValue("idle", out var idle2)) throw new Exception("塞入 anim.json 后自制皮肤缺 idle 状态");
+                if (Math.Abs(idle2.Fps - 7) > 1e-9)
+                    throw new Exception($"anim.json 不应再覆盖 skin.json：期望 idle.fps=7，实际={idle2.Fps}（覆盖路径未移除？）");
             }
             finally
             {
