@@ -70,6 +70,15 @@ public sealed class AppConfig
     // ---- v0.1.71 径向菜单配置（顺序覆盖 + 显隐 + 全局可见数量上限）----
     /// <summary>径向菜单用户配置。缺失时保持默认（不限 / 不覆盖 / 全显示）。</summary>
     public RadialMenuConfig RadialMenu { get; set; } = new();
+
+    // ---- v0.1.74 未知字段透传（借鉴 BongoCat extensions_json）----
+    /// <summary>
+    /// 未识别的顶层字段原样保留（读写往返不丢）。
+    /// 目的：旧版本 Neko 读新版（或插件自行写入）的 config.json 时，不会把新字段抹掉——
+    /// 直接支撑「Core API 只增不改 + 插件生态」的数据兼容性。
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
 }
 
 /// <summary>热键配置（可持久化）</summary>
@@ -91,6 +100,10 @@ public static class ConfigManager
         AllowTrailingCommas = true,
     };
 
+    /// <summary>
+    /// 读取配置。解析失败时**把损坏的原文件改名备份**（<c>config.json.rejected-&lt;时间戳&gt;</c>），
+    /// 再返回默认配置——避免后续 <see cref="Save"/> 用默认值静默覆盖用户数据（v0.1.74，借鉴 BongoCat 的失败隔离）。
+    /// </summary>
     public static AppConfig Load(string path)
     {
         if (File.Exists(path))
@@ -102,21 +115,46 @@ public static class ConfigManager
             }
             catch (Exception ex)
             {
-                Log.Warn($"配置解析失败，使用默认值: {ex.Message}");
+                PreserveCorruptFile(path, ex);
             }
         }
         return new AppConfig();
     }
 
+    /// <summary>
+    /// 保存配置：**原子写**——先写 <c>path.tmp</c>，再原子替换目标文件。
+    /// 写入中途失败只会留下 tmp，绝不产生半截损坏的 config.json（v0.1.74，借鉴 BongoCat 的 tmp→fsync→rename）。
+    /// </summary>
     public static void Save(string path, AppConfig config)
     {
+        var tmp = path + ".tmp";
         try
         {
-            File.WriteAllText(path, JsonSerializer.Serialize(config, JsonOpts));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(config, JsonOpts));
+            if (File.Exists(path))
+                File.Replace(tmp, path, null);      // 原子替换（Windows 走 ReplaceFile）
+            else
+                File.Move(tmp, path);
         }
         catch (Exception ex)
         {
             Log.Error("配置保存失败", ex);
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 清理失败不影响主流程 */ }
+        }
+    }
+
+    /// <summary>把解析失败的配置文件改名保留，供用户手工找回；改名失败仅记日志，不抛异常。</summary>
+    private static void PreserveCorruptFile(string path, Exception cause)
+    {
+        var backup = $"{path}.rejected-{DateTime.Now:yyyyMMdd-HHmmss}";
+        try
+        {
+            File.Move(path, backup);
+            Log.Warn($"配置解析失败（{cause.Message}），原文件已备份到 {backup}，本次使用默认值");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"配置解析失败（{cause.Message}），备份原文件也失败（{ex.Message}），本次使用默认值");
         }
     }
 }

@@ -1191,6 +1191,44 @@ internal static class Program
             Console.WriteLine("  隐藏/覆盖/截断/缺省/冻结/清理 六项全通过");
         });
 
+        // ---- v0.1.74：配置健壮性（原子写 + 解析失败隔离 + 未知字段透传，借鉴 BongoCat）----
+        Check("v0.1.74(配置)：损坏文件隔离保留 + 原子写无 tmp 残留 + 未知字段透传", () =>
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "neko-cfgtest-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var cfgPath = Path.Combine(dir, "config.json");
+            try
+            {
+                // 1) 损坏文件 → Load 返回默认 + 原文件被改名保留（绝不静默覆盖用户数据）
+                File.WriteAllText(cfgPath, "{ \"Scale\": 3.2, \"Broken\": , }");   // 语法错误
+                var loaded = ConfigManager.Load(cfgPath);
+                if (loaded is null) throw new Exception("Load 应返回默认配置而非 null");
+                if (Directory.GetFiles(dir, "config.json.rejected-*").Length == 0)
+                    throw new Exception("解析失败时原文件应改名保留（.rejected-*），实际未找到");
+
+                // 2) 原子写：Save 后文件存在且无 .tmp 残留
+                foreach (var f in Directory.GetFiles(dir, "config.json.rejected-*")) File.Delete(f);
+                ConfigManager.Save(cfgPath, new AppConfig { Scale = 2.5 });
+                if (!File.Exists(cfgPath)) throw new Exception("Save 后 config.json 应存在");
+                if (Directory.GetFiles(dir, "*.tmp").Length > 0) throw new Exception("Save 后不应残留 .tmp 文件");
+                if (Math.Abs(ConfigManager.Load(cfgPath).Scale - 2.5) > 0.001)
+                    throw new Exception("Save→Load 往返应保持 Scale=2.5");
+
+                // 3) 未知字段透传：Load→Save 往返后未知字段仍在（保护「Core API 只增不改」）
+                File.WriteAllText(cfgPath, "{ \"Scale\": 1.8, \"FutureField\": { \"x\": 42 }, \"PluginNs\": \"hello\" }");
+                ConfigManager.Save(cfgPath, ConfigManager.Load(cfgPath));
+                var text = File.ReadAllText(cfgPath);
+                if (!text.Contains("FutureField") || !text.Contains("42") || !text.Contains("PluginNs"))
+                    throw new Exception("未知字段应在 Load→Save 往返后保留（JsonExtensionData 未生效）");
+
+                Console.WriteLine("  隔离/原子写/透传 三项全通过");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, recursive: true); } catch { }
+            }
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Environment.Exit(_fail == 0 ? 0 : 1);
     }

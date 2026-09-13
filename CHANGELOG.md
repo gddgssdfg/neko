@@ -4,6 +4,26 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.74] - 2026-09-13
+
+**配置健壮性 + 隐私合规文档 + 一致性检查脚本**（借鉴 BongoCat 工程实践，P0 批次）。
+
+### 修复 / 加固
+- **配置解析失败不再丢用户数据**：`ConfigManager.Load()` 解析异常时把损坏文件**改名保留**为 `config.json.rejected-<时间戳>`（原实现会返回默认值 → 后续任何保存都静默覆盖用户配置）。
+- **配置原子写**：`Save()` 改为 写 `.tmp` → `File.Replace` 原子替换（原 `File.WriteAllText` 中途崩溃会留下截断损坏的文件）。
+- **配置未知字段透传**：`AppConfig` 加 `[JsonExtensionData] Extra` —— 旧版本读新版配置（或插件自写段）时不再丢字段，保护「Core API 只增不改 + 插件生态」。
+- **通知日志隐私收紧**：`SystemImpl.Notify` 不再把通知正文写入日志（body 可能含用户内容），且降为 Debug 级。
+
+### 新增
+- `PRIVACY.md` —— 键鼠输入只本地处理；本地数据路径；**网络访问逐条列明**（DeepSeek / open-meteo / 搜索）；数据删除方式；权限用途表。
+- `SECURITY.md` —— 全局键鼠钩子的用途与边界（只转发事件、不记录内容、不注入、不模拟）；日志隐私边界核查结论；漏洞上报。
+- `tools/check_version.py` —— 校验 csproj `<Version>` / `CHANGELOG` 首条 / git tag 三者一致（治版本漂移）。
+- `tools/check_i18n.py` —— 扫所有 `T("中文","English")` 调用，检查双语完整性与漏翻。
+- `README.md` 新增 FAQ「Neko 会记录我的键盘/鼠标输入吗？」+ 版本号改为不写死（原写着 v0.1.60 已漂移）。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；**UiProbe 全过**（新增 v0.1.74 断言：损坏文件隔离保留 + 原子写无 tmp 残留 + 未知字段透传 三项）；两个 python 脚本实跑退出码 0。
+
 ## [0.1.73] - 2026-09-12
 
 **命理插件人格定制改造：默认关闭 + 完整 93 题 + 弹窗做题 + 直接选型**（灯灯需求）。

@@ -2,7 +2,7 @@
 
 > Windows 10 轻量像素桌宠，C# + WPF + .NET 8，VS 2022 开发。
 > **程序根目录：`G:\lantetn-li\neko`**（整个程序都在 G 盘，不占 C 盘）。
-> 当前版本 **v0.1.60**（定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`）。
+> 当前版本：见 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件不硬编码版本号，避免漂移；一致性由 `tools/check_version.py` 守护）。
 
 ## 目录结构
 
@@ -96,6 +96,18 @@ python G:\lantetn-li\neko\tools\generate_sprites.py
 | 窗口 | 开机自启勾选（HKCU 注册表）/ 鼠标穿透（WS_EX_TRANSPARENT）/ 透明度滑条 0.2-1.0 |
 | 行为 | 键盘反应开关 / 菜单热键编辑（Ctrl/Alt/Shift + 主键字母）|
 | 插件 | 插件列表 + 详情（含加载错误 + 插件 ISettingsPage 自定义页）|
+
+## 🔒 隐私与安全
+
+### Neko 会记录我的键盘/鼠标输入吗？
+
+**不会。** Neko 的全局键盘/鼠标监听（低级钩子）只用于三件事：**全局热键**、**键鼠映射窗实时高亮**、**打字/点击时的小反应动画**——所有输入只在内存中即时处理，**不记录按键内容、不写入文件、不上传网络、不注入其他进程、不模拟输入**。其中反应类功能可在设置页关闭。
+
+- Neko 主程序**不联网**。仅当你**主动**使用天气（`api.open-meteo.com`）、命理 AI 咨询（`api.deepseek.com`，需自填 API Key）、搜索（由浏览器打开百度）时才会访问网络。
+- 所有数据保存在程序目录 `data/` 下，删除 `data/` 即清除全部用户数据。
+- 无账号、无遥测、无统计、无广告。
+
+详见 [PRIVACY.md](PRIVACY.md)（隐私说明）与 [SECURITY.md](SECURITY.md)（安全说明与漏洞上报）。
 
 ## 文档
 

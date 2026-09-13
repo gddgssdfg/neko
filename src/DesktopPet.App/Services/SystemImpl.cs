@@ -20,7 +20,9 @@ public sealed class SystemImpl : ISystem
     public void Notify(string title, string body)
     {
         // 托盘气泡通知（v0.1.62：接入 TrayManager.ShowBalloon；sink 未绑定时退化为日志）
-        Log.Info($"[通知] {title}: {body}");
+        // v0.1.74 隐私收紧：不落通知正文（body 可能含用户内容，如待办标题），且降为 Debug 级
+        // （默认 warn 级别本就不落盘；此改动保证用户主动开 debug 时也不会把内容写进日志）。
+        Log.Debug($"[通知] {title}");
         NotifySink?.Invoke(title, body);
     }
 
