@@ -10,11 +10,43 @@ namespace DesktopPet.Tests;
 ///   1. 准备一个临时插件目录，放入 SamplePlugin 的产物
 ///   2. 用 PluginLoader 扫描加载
 ///   3. 验证 manifest 解析、权限授予、OnLoad 调用、Storage 隔离
+///
+/// v0.1.77（修复「假绿」）：所有断言统一走 <see cref="Ok"/>/<see cref="Bad"/>/<see cref="Check"/>，
+/// 任何 <c>FAIL:</c> 都会累加失败计数，最终让 <see cref="Main"/> 返回非 0 退出码——
+/// 之前大量 <c>FAIL:</c> 只打印不改退出码，导致测出问题也可能 exit 0。
 /// </summary>
 public static class Program
 {
+    /// <summary>失败计数：任何 FAIL 都会 +1，决定最终退出码。</summary>
+    private static int _failures;
+
+    private static void Ok(string msg) => Console.WriteLine($"PASS: {msg}");
+
+    private static void Bad(string msg)
+    {
+        _failures++;
+        Console.WriteLine($"FAIL: {msg}");
+    }
+
+    private static void Check(bool ok, string msg)
+    {
+        if (ok) Ok(msg);
+        else Bad(msg);
+    }
+
+    private static void Check(bool ok, string okMsg, string failMsg)
+    {
+        if (ok) Ok(okMsg);
+        else Bad(failMsg);
+    }
+
     public static int Main()
     {
+        // v0.1.77 反向验证开关（默认关闭）：设 LOADERTEST_INJECT_FAILURE=1 时注入一个「必失败」断言，
+        // 用于证明「任何 Fail 都会让 Main 返回非 0 退出码」的接线是真实连通的（可随时重跑以自检测试本身）。
+        if (Environment.GetEnvironmentVariable("LOADERTEST_INJECT_FAILURE") == "1")
+            Check(false, "反向验证：注入的必失败断言（正常应输出 FAIL 且最终退出码 = 1）");
+
         var root = Path.Combine(Path.GetTempPath(), "neko-loader-test-" + Guid.NewGuid().ToString("N"));
         var pluginsDir = Path.Combine(root, "plugins");
         var dataDir = Path.Combine(root, "data");
@@ -45,69 +77,86 @@ public static class Program
 
             if (loaded.Count == 0)
             {
-                Console.WriteLine("FAIL: 没有插件被加载");
+                Bad("没有插件被加载");
                 return 1;
             }
 
             // ============ 1. 示例插件链路 ============
             Console.WriteLine("=== 测试 1：示例插件加载链路 ===");
             var sample = loaded.FirstOrDefault(p => p.Manifest.Id == "com.lantern.sample");
-            if (sample is null) { Console.WriteLine("FAIL: 未加载示例插件"); return 1; }
-            Console.WriteLine($"PASS: 示例插件加载成功");
+            if (sample is null) { Bad("未加载示例插件"); return 1; }
+            Ok("示例插件加载成功");
             Console.WriteLine($"  Id = {sample.Manifest.Id}, 权限掩码 = {sample.GrantedPermissions}, ALC 可回收 = {sample.IsCollectible}");
 
             var expected = PluginPermissions.PetAnimate | PluginPermissions.PetRead
                          | PluginPermissions.UIRegister | PluginPermissions.Storage;
-            if (sample.GrantedPermissions == expected)
-                Console.WriteLine($"PASS: 权限授予正确 = {expected}");
-            else
-                Console.WriteLine($"FAIL: 权限应为 {expected}，实际 {sample.GrantedPermissions}");
+            Check(sample.GrantedPermissions == expected,
+                $"权限授予正确 = {expected}",
+                $"权限应为 {expected}，实际 {sample.GrantedPermissions}");
 
             var sampleCtx = BuildContext(sample, dataDir, petApi, uiApi, events);
             sample.Instance.OnLoad(sampleCtx);
-            Console.WriteLine("PASS: 示例插件 OnLoad 成功");
+            Ok("示例插件 OnLoad 成功");
             if (uiApi.Slots.Count > 0)
-                Console.WriteLine($"PASS: 径向菜单槽位已注册 = {uiApi.Slots[0].Label}");
+                Ok($"径向菜单槽位已注册 = {uiApi.Slots[0].Label}");
             else
-                Console.WriteLine("FAIL: 没有注册径向菜单槽位");
+                Bad("没有注册径向菜单槽位");
 
             // ============ 2. 好感度插件链路 ============
             Console.WriteLine();
             Console.WriteLine("=== 测试 2：好感度内置插件（dogfooding）===");
             var affection = loaded.FirstOrDefault(p => p.Manifest.Id == "com.lantern.affection");
-            if (affection is null) { Console.WriteLine("FAIL: 未加载好感度插件"); return 1; }
-            Console.WriteLine($"PASS: 好感度插件加载成功, 实例 = {affection.Instance.GetType().FullName}");
+            if (affection is null) { Bad("未加载好感度插件"); return 1; }
+            Ok($"好感度插件加载成功, 实例 = {affection.Instance.GetType().FullName}");
 
             var affectionCtx = BuildContext(affection, dataDir, petApi, uiApi, events);
             affection.Instance.OnLoad(affectionCtx);
 
             // 验证注册了径向槽位
             var statusSlot = uiApi.Slots.FirstOrDefault(s => s.Id == "affection-status");
-            if (statusSlot is null) { Console.WriteLine("FAIL: 好感度插件未注册状态槽位"); return 1; }
-            Console.WriteLine($"PASS: 好感度槽位已注册 = {statusSlot.Label}");
+            if (statusSlot is null) { Bad("好感度插件未注册状态槽位"); return 1; }
+            Ok($"好感度槽位已注册 = {statusSlot.Label}");
 
             // 模拟 11 次抚摸 → 好感度增长到 11（第 10 次升级到「熟悉」，触发升级反应）
             for (int i = 0; i < 11; i++) events.Emit(PetEvents.PetPetted, null);
             var storedScore = affectionStorage.Get<int>("score");
-            if (storedScore == 11)
-                Console.WriteLine($"PASS: 11 次抚摸后好感度持久化 = {storedScore}");
-            else
-                Console.WriteLine($"FAIL: 期望好感度 11，实际 {storedScore}");
+            Check(storedScore == 11,
+                $"11 次抚摸后好感度持久化 = {storedScore}",
+                $"期望好感度 11，实际 {storedScore}");
 
             // 升级反应：第 10 次抚摸从「陌生」升到「熟悉」，应触发升级 Say
             var levelUpMsgs = petApi.Spoken.Count(s => s.Contains("好感度提升"));
             if (levelUpMsgs >= 1)
-                Console.WriteLine($"PASS: 升级反应已触发（共 {levelUpMsgs} 条升级消息），例: \"{petApi.Spoken.First(s => s.Contains("好感度提升"))}\"");
+                Ok($"升级反应已触发（共 {levelUpMsgs} 条升级消息），例: \"{petApi.Spoken.First(s => s.Contains("好感度提升"))}\"");
             else
-                Console.WriteLine($"FAIL: 抚摸到升级点后未触发升级反应");
+                Bad("抚摸到升级点后未触发升级反应");
 
             Console.WriteLine($"  全部 Say 共 {petApi.Spoken.Count} 条");
 
-            // ============ 3. 卸载全部 ============
+            // ============ 3. 卸载全部（真验证，非无条件打 PASS）============
             Console.WriteLine();
             Console.WriteLine("=== 测试 3：卸载 ===");
-            foreach (var p in loaded) p.Dispose();
-            Console.WriteLine("PASS: 全部插件卸载成功 (OnUnload + ALC.Unload)");
+            // 卸载前：确认插件确实订阅过事件（AffectionPlugin.OnLoad 订阅 PetPetted）
+            var pettedBefore = events.HandlerCount(PetEvents.PetPetted);
+            var allCollectible = loaded.All(p => p.IsCollectible);
+            var disposeThrew = false;
+            try { foreach (var p in loaded) p.Dispose(); }
+            catch { disposeThrew = true; }
+            // 卸载后：OnUnload 应解绑事件（AffectionPlugin.OnUnload → _unsubscribePetted）
+            var pettedAfter = events.HandlerCount(PetEvents.PetPetted);
+
+            Check(allCollectible,
+                "所有插件 ALC 可回收（IsCollectible=true，支持卸载）",
+                "存在不可回收的插件 ALC（IsCollectible=false）");
+            Check(!disposeThrew,
+                "全部插件卸载成功 (OnUnload + Dispose + Context.Unload 均未抛)",
+                "卸载过程中抛出异常");
+            Check(pettedBefore > 0,
+                $"卸载前已登记事件订阅（PetPetted 处理器 = {pettedBefore}）",
+                "卸载前未登记任何 PetPetted 订阅，无法验证 OnUnload（期望 ≥1）");
+            Check(pettedAfter == 0,
+                $"OnUnload 已解绑事件（PetPetted 处理器 {pettedBefore} → {pettedAfter}）",
+                $"卸载后事件处理器未清空（{pettedBefore} → {pettedAfter}）→ OnUnload 可能未执行");
 
             // ============ 4. 加载「真实 App 输出目录」插件 ============
             Console.WriteLine();
@@ -121,9 +170,15 @@ public static class Program
             // 清理
             try { Directory.Delete(root, true); } catch { }
 
+            // ---- 汇总（保持外部脚本可 grep 的格式）----
             Console.WriteLine();
-            Console.WriteLine("=== 全部通过 ===");
-            return 0;
+            if (_failures == 0)
+            {
+                Console.WriteLine("=== 全部通过 ===");
+                return 0;
+            }
+            Console.WriteLine($"=== {_failures} 项失败 ===");
+            return 1;
         }
         catch (Exception ex)
         {
@@ -142,7 +197,9 @@ public static class Program
         var pluginsDir = Path.Combine(appOut, "plugins");
         if (!Directory.Exists(pluginsDir))
         {
-            Console.WriteLine($"WARN: App 输出目录不存在 {pluginsDir}，跳过");
+            // v0.1.77：发布形态缺插件属配置错误 → 计入失败（不再静默跳过）。
+            // 正常流程先 `dotnet build src/DesktopPet.sln` 会产出该目录。
+            Bad($"App 输出目录不存在 {pluginsDir}（请先构建 src/DesktopPet.App；发布形态缺插件属配置错误）");
             return;
         }
 
@@ -155,10 +212,10 @@ public static class Program
         var affection = loaded.FirstOrDefault(p => p.Manifest.Id == "com.lantern.affection");
         if (affection is null)
         {
-            Console.WriteLine("FAIL: App 输出目录未能加载好感度插件");
+            Bad("App 输出目录未能加载好感度插件");
             return;
         }
-        Console.WriteLine($"PASS: App 输出目录成功加载好感度插件, 实例 = {affection.Instance.GetType().FullName}");
+        Ok($"App 输出目录成功加载好感度插件, 实例 = {affection.Instance.GetType().FullName}");
 
         // 完整链路：OnLoad 建数据目录 + Storage 持久化 + 事件驱动
         var dataDir = Path.Combine(Path.GetTempPath(), "neko-appout-" + Guid.NewGuid().ToString("N"));
@@ -166,17 +223,15 @@ public static class Program
         var petApi = new TestPetApi();
         var ctx = BuildContext(affection, dataDir, petApi, new TestUIApi(), events);
         affection.Instance.OnLoad(ctx);
-        if (Directory.Exists(Path.Combine(dataDir, "plugins", "com.lantern.affection")))
-            Console.WriteLine("PASS: OnLoad 创建了插件数据目录");
-        else
-            Console.WriteLine("FAIL: OnLoad 未创建数据目录");
+        Check(Directory.Exists(Path.Combine(dataDir, "plugins", "com.lantern.affection")),
+            "OnLoad 创建了插件数据目录",
+            "OnLoad 未创建数据目录");
 
         for (int i = 0; i < 11; i++) events.Emit(PetEvents.PetPetted, null);
         var score = new TestStorage(Path.Combine(dataDir, "plugins", "com.lantern.affection")).Get<int>("score");
-        if (score == 11)
-            Console.WriteLine($"PASS: 发布形态插件 11 次抚摸后好感度 = {score}");
-        else
-            Console.WriteLine($"FAIL: 期望 11，实际 {score}");
+        Check(score == 11,
+            $"发布形态插件 11 次抚摸后好感度 = {score}",
+            $"期望 11，实际 {score}");
 
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(dataDir, true); } catch { }
@@ -203,7 +258,8 @@ public static class Program
             "builtins", "DesktopPet.Builtin.Bazi", "bin", "Debug", "net8.0-windows"));
         if (!Directory.Exists(baziOut))
         {
-            Console.WriteLine($"WARN: Bazi 输出目录不存在 {baziOut}，跳过");
+            // v0.1.77：缺构建产物属配置错误 → 计入失败（不再静默跳过）。
+            Bad($"Bazi 输出目录不存在 {baziOut}（请先构建 DesktopPet.Builtin.Bazi）");
             return;
         }
 
@@ -228,17 +284,17 @@ public static class Program
         var bazi = loaded.FirstOrDefault(p => p.Manifest.Id == "com.lantern.bazi");
         if (bazi is null)
         {
-            Console.WriteLine("FAIL: 命理插件未加载（第三方依赖 ALC 解析可能失败）");
+            Bad("命理插件未加载（第三方依赖 ALC 解析可能失败）");
             return;
         }
-        Console.WriteLine("PASS: 命理插件加载成功（Bazi.dll 在 ALC 下实例化）");
+        Ok("命理插件加载成功（Bazi.dll 在 ALC 下实例化）");
 
         var expected = PluginPermissions.PetAnimate | PluginPermissions.PetRead
                      | PluginPermissions.UIRegister | PluginPermissions.Storage
                      | PluginPermissions.Scheduler | PluginPermissions.Notify | PluginPermissions.Network;
-        Console.WriteLine(bazi.GrantedPermissions == expected
-            ? $"PASS: 权限授予正确 = {expected}"
-            : $"FAIL: 权限应为 {expected}，实际 {bazi.GrantedPermissions}");
+        Check(bazi.GrantedPermissions == expected,
+            $"权限授予正确 = {expected}",
+            $"权限应为 {expected}，实际 {bazi.GrantedPermissions}");
 
         // OnLoad 内部调用 BaziEngine（lunar）——若 lunar.dll 未被插件 ALC 解析，此处必抛
         var uiApi = new TestUIApi();
@@ -247,11 +303,11 @@ public static class Program
         try
         {
             bazi.Instance.OnLoad(ctx);
-            Console.WriteLine("PASS: OnLoad 成功（lunar 计算未抛异常 → 第三方依赖在插件 ALC 下可用）");
+            Ok("OnLoad 成功（lunar 计算未抛异常 → 第三方依赖在插件 ALC 下可用）");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"FAIL: OnLoad 抛异常（第三方依赖 ALC 解析失败）：{ex.GetType().Name}: {ex.Message}");
+            Bad($"OnLoad 抛异常（第三方依赖 ALC 解析失败）：{ex.GetType().Name}: {ex.Message}");
             return;
         }
 
@@ -261,41 +317,40 @@ public static class Program
 
         var hasAsk = uiApi.Slots.Any(s => s.Id == "bazi-ask");
         var hasToday = uiApi.Slots.Any(s => s.Id == "bazi-today");
-        Console.WriteLine(hasAsk && hasToday
-            ? "PASS: 径向槽位已注册 = bazi-ask（问问猫）+ bazi-today（今日运势）"
-            : $"FAIL: 径向槽位缺失（ask={hasAsk}, today={hasToday}）");
+        Check(hasAsk && hasToday,
+            "径向槽位已注册 = bazi-ask（问问猫）+ bazi-today（今日运势）",
+            $"径向槽位缺失（ask={hasAsk}, today={hasToday}）");
 
-        if (uiApi.Pages.Any(pg => pg.Title == "com.lantern.bazi"))
-            Console.WriteLine("PASS: 设置页已注册且 Title == Manifest.Id");
-        else
-            Console.WriteLine("FAIL: 设置页未注册或 Title 与 Manifest.Id 不一致");
+        Check(uiApi.Pages.Any(pg => pg.Title == "com.lantern.bazi"),
+            "设置页已注册且 Title == Manifest.Id",
+            "设置页未注册或 Title 与 Manifest.Id 不一致");
 
         // 回归自检：BaziEngine.VerifyKnownCases() 的结果（不依赖编译期引用，走反射读属性）
         var engType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.BaziEngine");
         var prop = engType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var selfTest = prop?.GetValue(null) as string;
-        Console.WriteLine(selfTest == "OK"
-            ? "PASS: lunar 已知用例回归通过（1981-01-29→1989-02-18 / 2020-01-06→2020-02-06 / 立春边界）"
-            : $"FAIL: lunar 回归校验未通过：{selfTest ?? "(属性未读到)"}");
+        Check(selfTest == "OK",
+            "lunar 已知用例回归通过（1981-01-29→1989-02-18 / 2020-01-06→2020-02-06 / 立春边界）",
+            $"lunar 回归校验未通过：{selfTest ?? "(属性未读到)"}");
 
         // P2：每日运势构建器自检（五行生克 5 例 + 播报冒烟）
         var builderType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.DailyFortuneBuilder");
         var bprop = builderType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var bself = bprop?.GetValue(null) as string;
-        Console.WriteLine(bself == "OK"
-            ? "PASS: DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟 + MBTI 16 型全覆盖/按类型分支 + 开关默认关/关闭残留回退）"
-            : $"FAIL: DailyFortuneBuilder 自检未通过：{bself ?? "(属性未读到)"}");
+        Check(bself == "OK",
+            "DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟 + MBTI 16 型全覆盖/按类型分支 + 开关默认关/关闭残留回退）",
+            $"DailyFortuneBuilder 自检未通过：{bself ?? "(属性未读到)"}");
 
         // P4：MBTI 问卷计分自检（纯函数：全选A→ESTJ / 全选B→INFP / 维度独立 / 平局取首极 / 题量均衡）
         var quizType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.MbtiQuiz");
         var qprop = quizType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var qself = qprop?.GetValue(null) as string;
-        Console.WriteLine(qself == "OK"
-            ? "PASS: MbtiQuiz 计分自检通过（93 题 + EI23/SN26/TF24/JP20 四维题量 + 全选A→ESTJ / 全选B→INFP / 平局取首极）"
-            : $"FAIL: MbtiQuiz 自检未通过：{qself ?? "(属性未读到)"}");
+        Check(qself == "OK",
+            "MbtiQuiz 计分自检通过（93 题 + EI23/SN26/TF24/JP20 四维题量 + 全选A→ESTJ / 全选B→INFP / 平局取首极）",
+            $"MbtiQuiz 自检未通过：{qself ?? "(属性未读到)"}");
 
         // P2：手动播报全链路 —— 预置档案 → 触发「今日运势」槽位 → 断言 Say + System.Notify
         ctx.Capability.Storage.Set("profile",
@@ -305,41 +360,42 @@ public static class Program
         todaySlot?.OnInvoke();
         var said = petApi.Spoken.LastOrDefault() ?? "";
         // 宽松断言：黄历宜忌每天不同，只校验结构（含干支日 + 「宜」+「忌」），不钉死具体条目。
-        Console.WriteLine(said.Contains("今日") && said.Contains("宜") && said.Contains("忌")
-            ? $"PASS: 「今日运势」手动播报 Say = \"{said}\""
-            : $"FAIL: 手动播报未产出预期 Say，实际=\"{said}\"");
+        Check(said.Contains("今日") && said.Contains("宜") && said.Contains("忌"),
+            $"「今日运势」手动播报 Say = \"{said}\"",
+            $"手动播报未产出预期 Say，实际=\"{said}\"");
 
         var sys = (NullSystem)ctx.Capability.System;
-        Console.WriteLine(sys.Notifications.Count > 0 && sys.Notifications[0].Body.Contains("能量基调")
-            ? $"PASS: 完整运势已走 System.Notify（首条 {sys.Notifications[0].Body.Length} 字，含「能量基调」）"
-            : $"FAIL: 未按预期调用 System.Notify（{sys.Notifications.Count} 条）");
+        if (sys.Notifications.Count > 0 && sys.Notifications[0].Body.Contains("能量基调"))
+            Ok($"完整运势已走 System.Notify（首条 {sys.Notifications[0].Body.Length} 字，含「能量基调」）");
+        else
+            Bad($"未按预期调用 System.Notify（{sys.Notifications.Count} 条）");
 
         // P3：API Key 加密自检（DPAPI 往返 + 旧版明文兼容 + 损坏密文安全返回）
         var akpType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.ApiKeyProtector");
         var aprop = akpType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var aself = aprop?.GetValue(null) as string;
-        Console.WriteLine(aself == "OK"
-            ? "PASS: ApiKeyProtector 自检通过（DPAPI 往返 + 明文兼容）"
-            : $"FAIL: ApiKeyProtector 自检未通过：{aself ?? "(属性未读到)"}");
+        Check(aself == "OK",
+            "ApiKeyProtector 自检通过（DPAPI 往返 + 明文兼容）",
+            $"ApiKeyProtector 自检未通过：{aself ?? "(属性未读到)"}");
 
         // P3：Prompt 组装自检（system 含铁律 + 四柱/日主/五行/今日干支/宜忌，历史带入，末条为当前问题）
         var promptType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.FortunePrompt");
         var pprop = promptType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var pself = pprop?.GetValue(null) as string;
-        Console.WriteLine(pself == "OK"
-            ? "PASS: FortunePrompt 自检通过（含铁律 + 四柱/日主/五行/今日干支/宜忌）"
-            : $"FAIL: FortunePrompt 自检未通过：{pself ?? "(属性未读到)"}");
+        Check(pself == "OK",
+            "FortunePrompt 自检通过（含铁律 + 四柱/日主/五行/今日干支/宜忌）",
+            $"FortunePrompt 自检未通过：{pself ?? "(属性未读到)"}");
 
         // P3：DeepSeekClient 失败路径自检（空/空白 Key 返回可读错误；请求体含 model/role/content/stream）
         var dsType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.DeepSeekClient");
         var dprop = dsType?.GetProperty("LastSelfTest",
             System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
         var dself = dprop?.GetValue(null) as string;
-        Console.WriteLine(dself == "OK"
-            ? "PASS: DeepSeekClient 自检通过（空 Key 返回可读错误而非抛异常）"
-            : $"FAIL: DeepSeekClient 自检未通过：{dself ?? "(属性未读到)"}");
+        Check(dself == "OK",
+            "DeepSeekClient 自检通过（空 Key 返回可读错误而非抛异常）",
+            $"DeepSeekClient 自检未通过：{dself ?? "(属性未读到)"}");
 
         // P3：无 Key 点「问问猫」→ 可读提示、不抛异常、不开窗（走 Key 校验前置分支）
         ctx.Capability.Storage.Set("profile",
@@ -350,13 +406,13 @@ public static class Program
         {
             askSlot?.OnInvoke();
             var hint = petApi.Spoken.LastOrDefault() ?? "";
-            Console.WriteLine(hint.Contains("API Key")
-                ? $"PASS: 无 Key 点「问问猫」给出可读提示 = \"{hint}\""
-                : $"FAIL: 无 Key 时未给出可读提示，实际=\"{hint}\"");
+            Check(hint.Contains("API Key"),
+                $"无 Key 点「问问猫」给出可读提示 = \"{hint}\"",
+                $"无 Key 时未给出可读提示，实际=\"{hint}\"");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"FAIL: 无 Key 点「问问猫」抛异常：{ex.GetType().Name}: {ex.Message}");
+            Bad($"无 Key 点「问问猫」抛异常：{ex.GetType().Name}: {ex.Message}");
         }
 
         // P5 内存实测：跑完全链路（播报 + Prompt + 客户端自检 + 无 Key 槽位）后的稳态（仍在加载态）
@@ -474,6 +530,9 @@ public sealed class TestEventBus : IEventBus
     private readonly Dictionary<string, List<Action<object?>>> _s = new();
     public Action On(string evt, Action<object?> h) { if (!_s.TryGetValue(evt, out var l)) { l = []; _s[evt] = l; } l.Add(h); return () => l.Remove(h); }
     public void Emit(string evt, object? p = null) { if (_s.TryGetValue(evt, out var l)) foreach (var h in l) h(p); }
+
+    /// <summary>v0.1.77：某事件当前的处理器数量（用于验证 OnUnload 真的解绑了事件）。</summary>
+    public int HandlerCount(string evt) => _s.TryGetValue(evt, out var l) ? l.Count : 0;
 }
 
 public sealed class TestCapability : ICapabilityApi

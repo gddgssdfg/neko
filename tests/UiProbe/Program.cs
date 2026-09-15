@@ -1328,6 +1328,77 @@ internal static class Program
             if (h.IsActive) throw new Exception("Dispose 后 IsActive 应为 false");
         });
 
+        // ---- v0.1.77：调度器「首帧回调竞态杀宿主」高频并发回归（P0-5）----
+        // 复现原 bug 的触发条件：At(DateTime.Now) → delay≈0 → System.Threading.Timer 立即在线程池回调；
+        // 旧实现把 timer 直接用 dueMs=0 启动后才赋值 handle → 回调闭包捕获的 handle 此刻仍是 null →
+        // 首次 SafeInvoke(handle!) 内 NRE，catch 里再访问同一个 null handle 二次 NRE → 逃出回调 →
+        // 线程池未处理异常 → CLR 直接终止进程（App.xaml.cs 三层兜底只覆盖 UI 线程，拦不住）。
+        // 修复后 handle 先以 Timeout.Infinite 装配完成，再 Change(dueMs, periodMs) 启动，
+        // 回调无论多早触发都拿得到非 null 的完整 handle。本探针 4 线程 × 125 并发打满这条路径。
+        Check("v0.1.77(调度器)：4 线程 × 125 并发 At(DateTime.Now) 不杀宿主（P0-5 竞态回归）", () =>
+        {
+            // 记录任何逃逸到 AppDomain / TaskScheduler 的未处理异常（进程若存活，这必须是 0）
+            int unhandled = 0;
+            UnhandledExceptionEventHandler onUnhandled =
+                (_, _) => Interlocked.Increment(ref unhandled);
+            EventHandler<UnobservedTaskExceptionEventArgs> onUnobserved =
+                (_, e) => { Interlocked.Increment(ref unhandled); e.SetObserved(); };
+            AppDomain.CurrentDomain.UnhandledException += onUnhandled;
+            TaskScheduler.UnobservedTaskException += onUnobserved;
+            try
+            {
+                var sched = new SchedulerImpl();
+                int fired = 0;
+                const int threads = 4;
+                const int perThread = 125;   // 4 × 125 = 500 个 due≈0 定时器
+                var handles = new List<DesktopPet.Core.IScheduleHandle>(threads * perThread);
+                var handlesLock = new object();
+
+                var workers = new Thread[threads];
+                for (int t = 0; t < threads; t++)
+                {
+                    workers[t] = new Thread(() =>
+                    {
+                        var local = new List<DesktopPet.Core.IScheduleHandle>(perThread);
+                        for (int i = 0; i < perThread; i++)
+                            // delay≈0：这是原竞态最凶的触发路径（回调抢在 handle 赋值前触发）
+                            local.Add(sched.At(DateTime.Now, () => Interlocked.Increment(ref fired)));
+                        lock (handlesLock) handles.AddRange(local);
+                    })
+                    { IsBackground = true };
+                    workers[t].Start();
+                }
+                foreach (var w in workers) w.Join();
+
+                // 等待全部 due=0 定时器在线程池上跑完（旧实现在此之前就已崩进程退出）
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (Volatile.Read(ref fired) < threads * perThread && sw.ElapsedMilliseconds < 5000)
+                    Thread.Sleep(10);
+
+                if (Volatile.Read(ref fired) < threads * perThread)
+                    throw new Exception($"仅 {fired}/{threads * perThread} 个 At(DateTime.Now) 回调触发（回调被静默吞掉）");
+
+                // 每个句柄都必须是有效对象（非 null、未被误熔断/误释放）
+                foreach (var h in handles)
+                {
+                    if (h is null) throw new Exception("存在 null 句柄（handle 装配竞态未消除）");
+                    if (!h.IsActive) throw new Exception("存在已失效句柄（被误熔断/误释放）");
+                }
+                foreach (var h in handles) h.Dispose();
+
+                if (Volatile.Read(ref unhandled) != 0)
+                    throw new Exception($"捕获到 {unhandled} 次未处理异常（应被 SafeInvoke 全部隔离）");
+
+                Console.WriteLine($"  {threads * perThread} 个 At(DateTime.Now)(4 线程并发) 回调全部触发；" +
+                                  "句柄均有效；进程存活；0 未处理异常");
+            }
+            finally
+            {
+                AppDomain.CurrentDomain.UnhandledException -= onUnhandled;
+                TaskScheduler.UnobservedTaskException -= onUnobserved;
+            }
+        });
+
         // ---- v0.1.71：径向菜单顺序/显隐/数量上限（RadialMenuResolver 纯函数单测）----
         Check("v0.1.71(径向菜单)：RadialMenuResolver 隐藏过滤 + Order 覆盖 + 数量上限截断 + 缺省回退", () =>
         {
