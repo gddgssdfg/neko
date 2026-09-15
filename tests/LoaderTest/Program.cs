@@ -167,6 +167,10 @@ public static class Program
             Console.WriteLine();
             TestBaziPlugin();
 
+            // ============ 6. 内置插件信任通道（审计 P0-4 T02）============
+            Console.WriteLine();
+            TestTrustChannel();
+
             // 清理
             try { Directory.Delete(root, true); } catch { }
 
@@ -187,21 +191,40 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// 定位 DesktopPet.App 的输出目录（含 plugins/ 的目录）。
+    /// v0.1.80：App 为 SelfContained + RID=win-x64，输出实际在 <c>.../net8.0-windows/win-x64/</c>；
+    /// 旧代码写死了无 RID 路径导致找不到 App 输出。此处按 Debug/Release × win-x64/无 RID 兜底探测。
+    /// </summary>
+    private static string? FindAppOutputDir()
+    {
+        var bin = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "DesktopPet.App", "bin"));
+        foreach (var cfg in new[] { "Debug", "Release" })
+        {
+            foreach (var rid in new[] { "win-x64", "" })
+            {
+                var cand = Path.Combine(bin, cfg, "net8.0-windows", rid);
+                if (Directory.Exists(Path.Combine(cand, "plugins"))) return cand;
+            }
+        }
+        return null;
+    }
+
     /// <summary>加载「真实 App 输出目录」的插件，验证发布形态下的完整链路（加载 + OnLoad + Storage）。</summary>
     private static void TestAppOutputPlugins()
     {
-        // App 输出目录：从 LoaderTest 输出向上定位
-        var appOut = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-            "src", "DesktopPet.App", "bin", "Debug", "net8.0-windows"));
-        var pluginsDir = Path.Combine(appOut, "plugins");
-        if (!Directory.Exists(pluginsDir))
+        // App 输出目录：从 LoaderTest 输出向上定位（兼容 RID 子目录 win-x64 与无 RID 两种布局）
+        var appOut = FindAppOutputDir();
+        if (appOut is null)
         {
             // v0.1.77：发布形态缺插件属配置错误 → 计入失败（不再静默跳过）。
             // 正常流程先 `dotnet build src/DesktopPet.sln` 会产出该目录。
-            Bad($"App 输出目录不存在 {pluginsDir}（请先构建 src/DesktopPet.App；发布形态缺插件属配置错误）");
+            Bad("App 输出目录不存在（请先构建 src/DesktopPet.App；发布形态缺插件属配置错误）");
             return;
         }
+        var pluginsDir = Path.Combine(appOut, "plugins");
 
         var loader = new PluginLoader(pluginsDir);
         var loaded = loader.LoadAll(new HashSet<string>(), out var errors);
@@ -421,6 +444,194 @@ public static class Program
 
         foreach (var p in loaded) p.Dispose();
         try { Directory.Delete(root, true); } catch { }
+    }
+
+    /// <summary>
+    /// 测试 6（审计 P0-4 T02）：内置插件信任通道。
+    /// 用「合成的高危权限插件」做夹具（manifest 声明 <c>other=["process"]</c>），与 T01 的 manifest 政策解耦：
+    ///   1) Empty 信任集 → 高危仍拒载（现状不变）
+    ///   2) 信任清单含该 id → 放行
+    ///   3) 清单损坏 / 缺失 → 返回 Empty 且不抛
+    ///   4) 摘要不匹配 → 不受信 → 仍拒载
+    /// 另加端到端：真实内置插件 com.lantern.music 在受信清单下放行。
+    /// </summary>
+    private static void TestTrustChannel()
+    {
+        Console.WriteLine("=== 测试 6：内置插件信任通道（审计 P0-4 T02）===");
+
+        // 局部：构造 builtins.lock.json 文本（用序列化避免手写 JSON 转义出错）
+        static string LockJson(params (string Id, string? EntrySha)[] items)
+            => System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schema = 1,
+                builtins = items.Select(i => i.EntrySha is null
+                    ? (object)new { id = i.Id }
+                    : new { id = i.Id, entrySha256 = i.EntrySha }).ToArray(),
+            });
+
+        var root = Path.Combine(Path.GetTempPath(), "neko-trust-" + Guid.NewGuid().ToString("N"));
+        var pluginsDir = Path.Combine(root, "plugins");
+        Directory.CreateDirectory(pluginsDir);
+        try
+        {
+            // ---- 合成高危夹具：复用 SamplePlugin.dll，但配一份声明 process 的 manifest ----
+            const string fxId = "com.lantern.highrisk-fixture";
+            var fxDir = Path.Combine(pluginsDir, fxId);
+            Directory.CreateDirectory(fxDir);
+
+            var sampleOut = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+                "samples", "SamplePlugin", "bin", "Debug", "net8.0-windows");
+            if (!Directory.Exists(sampleOut)) { Bad($"夹具缺失 SamplePlugin 产物: {sampleOut}"); return; }
+            foreach (var f in new[] { "SamplePlugin.dll", "DesktopPet.Sdk.dll", "DesktopPet.Core.dll" })
+                if (File.Exists(Path.Combine(sampleOut, f)))
+                    File.Copy(Path.Combine(sampleOut, f), Path.Combine(fxDir, f), true);
+
+            var fxManifest = Path.Combine(fxDir, "plugin.toml");
+            File.WriteAllText(fxManifest,
+                $"[plugin]\nid = \"{fxId}\"\nname = \"信任通道夹具\"\nversion = \"0.1.0\"\napi = 1\n" +
+                "entry = \"SamplePlugin.dll\"\nauthor = \"test\"\n\n" +
+                "[permissions]\nui = [\"register\"]\nother = [\"process\"]\n");
+            var fxEntry = Path.Combine(fxDir, "SamplePlugin.dll");
+
+            var declared = PermissionChecker.FromManifest(ManifestParser.Parse(fxManifest));
+            Check(PermissionChecker.IsHighRisk(declared),
+                $"夹具被正确判为高危（{declared}）",
+                $"夹具未被判高危（{declared}），后续断言无意义");
+
+            // ---- 断言 1：Empty 信任集 → 高危仍拒载 ----
+            var loaderEmpty = new PluginLoader(pluginsDir);
+            var p1 = loaderEmpty.LoadOne(fxDir, out var err1);
+            Check(p1 is null && err1 is not null && err1.Contains("高风险"),
+                $"断言1: Empty 信任集 → 高危插件被拒载（{err1}）",
+                $"断言1 失败: Empty 应拒载，实际 loaded={p1 is not null}, err={err1}");
+            p1?.Dispose();
+            Check(!PluginTrustSet.Empty.IsTrusted(fxId, fxManifest, fxEntry, out var rEmpty),
+                $"断言1b: Empty.IsTrusted 恒 false（{rEmpty}）",
+                "断言1b 失败: Empty 信任集竟然信任了插件");
+
+            // ---- 断言 3：清单缺失 / 损坏 → Empty 且不抛 ----
+            var missing = Path.Combine(root, "missing.lock.json");
+            PluginTrustSet? tM = null; string? wM = null; Exception? exM = null;
+            try { tM = PluginTrustSet.Load(missing, out wM); } catch (Exception e) { exM = e; }
+            Check(exM is null && tM is not null && !tM.IsTrusted(fxId, fxManifest, fxEntry, out _) && !string.IsNullOrEmpty(wM),
+                $"断言3a: 缺失清单 → Empty + warning 且不抛（{wM}）",
+                $"断言3a 失败: ex={exM?.Message}, warn={wM}");
+
+            var corrupt = Path.Combine(root, "corrupt.lock.json");
+            File.WriteAllText(corrupt, "not a json ][ {");
+            PluginTrustSet? tC = null; string? wC = null; Exception? exC = null;
+            try { tC = PluginTrustSet.Load(corrupt, out wC); } catch (Exception e) { exC = e; }
+            Check(exC is null && tC is not null && !tC.IsTrusted(fxId, fxManifest, fxEntry, out _) && !string.IsNullOrEmpty(wC),
+                $"断言3b: 损坏清单 → Empty + warning 且不抛（{wC}）",
+                $"断言3b 失败: ex={exC?.Message}, warn={wC}");
+
+            // ---- 断言 2：含该 id 的清单 → 放行（仅按 id，未登记摘要）----
+            var goodLock = Path.Combine(root, "builtins.lock.json");
+            File.WriteAllText(goodLock, LockJson((fxId, null)));
+            var trust = PluginTrustSet.Load(goodLock, out var wGood);
+            Check(string.IsNullOrEmpty(wGood), "断言2 前置: 合法清单无 warning", $"断言2 前置失败: warning={wGood}");
+            var loaderTrusted = new PluginLoader(pluginsDir, trust);
+            var p2 = loaderTrusted.LoadOne(fxDir, out var err2);
+            Check(p2 is not null,
+                $"断言2: 含 id 的信任清单 → 高危插件被放行（实例 {p2?.Instance.GetType().FullName}）",
+                $"断言2 失败: 应放行，实际 err={err2}");
+            p2?.Dispose();
+
+            // ---- 断言 4：摘要不匹配 → 不受信 → 仍拒载 ----
+            var badLock = Path.Combine(root, "baddigest.lock.json");
+            File.WriteAllText(badLock, LockJson((fxId, new string('0', 64))));
+            var trustBad = PluginTrustSet.Load(badLock, out _);
+            Check(!trustBad.IsTrusted(fxId, fxManifest, fxEntry, out var rBad),
+                $"断言4a: 摘要不匹配 → IsTrusted=false（{rBad}）",
+                "断言4a 失败: 摘要不匹配却仍受信");
+            var loaderBad = new PluginLoader(pluginsDir, trustBad);
+            var p4 = loaderBad.LoadOne(fxDir, out var err4);
+            Check(p4 is null && err4 is not null && err4.Contains("高风险"),
+                $"断言4b: 摘要不匹配 → 仍拒载（{err4}）",
+                $"断言4b 失败: loaded={p4 is not null}, err={err4}");
+            p4?.Dispose();
+
+            // ---- 正向对照：登记正确摘要（现场现算）→ 放行 ----
+            var goodDigestLock = Path.Combine(root, "gooddigest.lock.json");
+            File.WriteAllText(goodDigestLock, LockJson((fxId, Sha256Hex(fxEntry))));
+            var trustGood = PluginTrustSet.Load(goodDigestLock, out _);
+            Check(trustGood.IsTrusted(fxId, fxManifest, fxEntry, out var rGood),
+                $"断言4c（正向对照）: 摘要匹配 → 受信放行（{rGood}）",
+                $"断言4c 失败: 摘要正确却不受信（{rGood}）");
+
+            // ---- 端到端：真实内置插件在受信清单下放行 ----
+            TestRealBuiltinUnderTrust();
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    /// <summary>真实内置插件 com.lantern.music 在受信清单下被放行——证明 T02 修复「内置高危从未加载」。</summary>
+    private static void TestRealBuiltinUnderTrust()
+    {
+        var appOut = FindAppOutputDir();
+        if (appOut is null)
+        {
+            Console.WriteLine("  [跳过] 真实插件端点测试：未找到 App 输出目录");
+            return;
+        }
+        var pluginsDir = Path.Combine(appOut, "plugins");
+        var musicDir = Path.Combine(pluginsDir, "com.lantern.music");
+        if (!Directory.Exists(musicDir))
+        {
+            Console.WriteLine($"  [跳过] 真实插件端点测试：{musicDir} 不存在");
+            return;
+        }
+        var musicManifest = Path.Combine(musicDir, "plugin.toml");
+        var musicEntry = Path.Combine(musicDir, "MusicControl.dll");
+
+        var declared = PermissionChecker.FromManifest(ManifestParser.Parse(musicManifest));
+        if (PermissionChecker.IsHighRisk(declared))
+        {
+            var loader0 = new PluginLoader(pluginsDir);
+            var q0 = loader0.LoadOne(musicDir, out var e0);
+            Check(q0 is null && e0 is not null && e0.Contains("高风险"),
+                $"端到端: 无清单时 com.lantern.music 仍被拒载（{e0}）",
+                $"端到端 失败: 应拒载，实际 loaded={q0 is not null}, err={e0}");
+            q0?.Dispose();
+        }
+        else
+        {
+            Console.WriteLine($"  [信息] com.lantern.music 当前已非高危（{declared}），无清单拒载断言跳过");
+        }
+
+        var lockDir = Path.Combine(Path.GetTempPath(), "neko-trust-real-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(lockDir);
+        try
+        {
+            var lockPath = Path.Combine(lockDir, PluginTrustSet.DefaultFileName);
+            var items = new List<string> { "\"com.lantern.music\"" };
+            if (Directory.Exists(Path.Combine(pluginsDir, "com.lantern.screenshot")))
+                items.Add("\"com.lantern.screenshot\"");
+            File.WriteAllText(lockPath,
+                $"{{ \"schema\": 1, \"builtins\": [ {string.Join(", ", items.Select(i => $"{{ \"id\": {i} }}"))} ] }}");
+
+            var trust = PluginTrustSet.Load(lockPath, out _);
+            var loader = new PluginLoader(pluginsDir, trust);
+            var q = loader.LoadOne(musicDir, out var err);
+            Check(q is not null,
+                $"端到端: 受信清单下 com.lantern.music 被放行（实例 {q?.Instance.GetType().FullName}）",
+                $"端到端 失败: 受信后仍未放行，err={err}");
+            q?.Dispose();
+        }
+        finally
+        {
+            try { Directory.Delete(lockDir, true); } catch { }
+        }
+    }
+
+    /// <summary>SHA-256（小写 hex），供摘要绑定测试现场现算。</summary>
+    private static string Sha256Hex(string path)
+    {
+        using var s = File.OpenRead(path);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(s)).ToLowerInvariant();
     }
 
     /// <summary>把某个项目的产物部署成标准插件目录，返回该插件的数据存储。</summary>

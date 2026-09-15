@@ -23,7 +23,7 @@ public sealed class ScreenshotPlugin : PluginBase
     public override string Name => "截图";
 
     public override PluginPermissions RequiredPermissions =>
-        PluginPermissions.PetAnimate | PluginPermissions.UIRegister | PluginPermissions.FileAccess;
+        PluginPermissions.PetAnimate | PluginPermissions.UIRegister | PluginPermissions.FileOwnDir;   // v0.1.80：由粗 token FileAccess 细化为 FileOwnDir（仅写自己数据目录，低危）
 
     public override void OnLoad(IPluginContext ctx)
     {

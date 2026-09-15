@@ -66,10 +66,16 @@ public sealed class LoadedPlugin : IDisposable
 public sealed class PluginLoader
 {
     private readonly string _pluginsRoot;
+    private readonly PluginTrustSet _trust;
 
-    public PluginLoader(string pluginsRoot)
+    /// <summary>
+    /// v0.1.80 / P0-4 T02：新增可选参 <paramref name="trust"/>——内置插件信任集。
+    /// 不传（现有调用点不动）→ <see cref="PluginTrustSet.Empty"/>，行为与旧版一致（高风险一律拒载）。
+    /// </summary>
+    public PluginLoader(string pluginsRoot, PluginTrustSet? trust = null)
     {
         _pluginsRoot = pluginsRoot;
+        _trust = trust ?? PluginTrustSet.Empty;
     }
 
     /// <summary>v0.1.46：插件目录根（用于运行时按 id 定位 dir）</summary>
@@ -149,8 +155,9 @@ public sealed class PluginLoader
         if (!Directory.Exists(_pluginsRoot)) Directory.CreateDirectory(_pluginsRoot);
     }
 
-    /// <summary>v0.1.34：抽取的"加载单个插件"逻辑，返回 LoadedPlugin 或 null（out 错误信息）</summary>
-    private static bool TryLoadOne(
+    /// <summary>v0.1.34：抽取的"加载单个插件"逻辑，返回 LoadedPlugin 或 null（out 错误信息）
+    /// <para>v0.1.80 T02：由 static 改实例方法——判定高风险豁免需要访问实例字段 <see cref="_trust"/>。</para></summary>
+    private bool TryLoadOne(
         string dir,
         IReadOnlySet<string> disabledPlugins,
         out LoadedPlugin? plugin,
@@ -173,11 +180,19 @@ public sealed class PluginLoader
 
             // 权限：manifest 声明 → 计算授予掩码
             var declared = PermissionChecker.FromManifest(manifest);
-            if (PermissionChecker.IsHighRisk(declared))
-            { error = $"插件声明了高风险权限，拒绝自动加载: {declared}"; return false; }
 
+            // v0.1.80 T02：入口 dll 判定前置（信任通道要拿它做内容摘要绑定）
             var entryDll = Path.Combine(dir, manifest.Entry);
             if (!File.Exists(entryDll)) { error = $"入口 dll 不存在: {manifest.Entry}"; return false; }
+
+            // 高风险权限：默认拒载；唯一豁免路径 = 命中内置信任清单（官方内置插件，可含内容摘要绑定）。
+            // 第三方插件不在清单内 → 仍被拒载（安全底线不动）。
+            if (PermissionChecker.IsHighRisk(declared) &&
+                !_trust.IsTrusted(manifest.Id, manifestFile, entryDll, out var why))
+            {
+                error = $"插件声明了高风险权限且未受信任，拒绝自动加载: {declared}（{why}）";
+                return false;
+            }
 
             // ALC 隔离加载
             var alc = new PluginLoadContext(dir, manifest.Entry);

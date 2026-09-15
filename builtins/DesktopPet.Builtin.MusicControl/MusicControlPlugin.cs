@@ -22,7 +22,7 @@ public sealed class MusicControlPlugin : PluginBase
     public override string Name => "音乐控制";
 
     public override PluginPermissions RequiredPermissions =>
-        PluginPermissions.UIRegister | PluginPermissions.Process;
+        PluginPermissions.UIRegister | PluginPermissions.MediaKey;   // v0.1.80：由粗 token Process 细化为 MediaKey（低危，不再被误判拒载）
 
     public override void OnLoad(IPluginContext ctx)
     {

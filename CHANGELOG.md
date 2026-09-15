@@ -4,6 +4,32 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.80] - 2026-09-16
+
+**审计 P0-4：内置插件信任通道（权限细分 + 受控豁免）+ 修 v0.1.79 素材摊平 P0 回归**。
+
+### P0-4-a 权限细分（根因修复）
+两个官方内置插件（`com.lantern.music` / `com.lantern.screenshot`）因声明粗 token `process`/`file` 被判高危，**每次启动都被拒载**（从来没工作过）。
+- `Core/Enums.cs` 新增两个**低危**细分位：`FileOwnDir = 1L<<11`（仅写本插件数据目录）、`MediaKey = 1L<<12`（发媒体键）。
+- `Runtime/PermissionChecker.cs` 加 `["file.own"]` / `["media"]` 映射。**粗 token `file`/`process` 仍是高危**（第三方底线不动）。
+- 两个内置插件 manifest 与代码声明同步改：`process`→`media`、`file`→`file.own`。
+
+### P0-4-b 信任通道内核（受控豁免）
+- 新增 `Runtime/PluginTrust.cs`（`PluginTrustSet`）：`builtins.lock.json` 信任清单 + **SHA-256 内容摘要绑定**（防同 id 冒充）；缺失/坏 JSON/schema 不符 → `Empty` + warning，**绝不抛**。
+- `Runtime/PluginLoader.cs` 高危拦截改为 `IsHighRisk(declared) && !_trust.IsTrusted(...)` → **信任清单是唯一豁免路径**；构造加可选参（向后兼容，现有调用点零改动）。
+
+### ⚠️ 修复 v0.1.79 引入的 P0 回归：素材被摊平
+- **症状**：`neko-assets/` 内容被摊平到根级（`pixel/neko_idle.png` → `neko-assets/neko_idle.png`），运行时代码按子目录找 → **图标 / 爪印 / 皮肤 / 帧图全部丢失**，真机安装包同样塌陷。
+- **根因**：P2-3 把通配改成逐目录 glob 后，**`LinkBase` 没跟着补子目录** → MSBuild 的 `%(RecursiveDir)` 基准目录下移后变空，丢一层目录。
+- **修法**：`LinkBase` 补齐（`neko-assets\icons` / `\mirror` / `\pixel` / `\soft`），还原目录结构（两个 csproj 同步）。
+- **教训**：v0.1.79 当时的"UiProbe 全过"是**假绿**（bin 里残留上一版嵌套文件）。**涉及素材/打包的改动，必须先清 bin 再测**。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；**UiProbe 全过**（清 bin 后）。
+- 「拒载行」实测消失：`com.lantern.music` / `com.lantern.screenshot` 不再被拒。
+- 信任通道 4 条断言全 PASS：`Empty` 仍拒载 / 含 id 的清单放行 / 清单缺失损坏不抛 / **摘要不匹配仍拒载**。
+- 素材结构核对：`neko-assets/{icons,mirror,pixel,soft}/` 齐全，无根级摊平 png。
+
 ## [0.1.79] - 2026-09-16
 
 **审计 P0-1 + P2-3：MSI 不再打包开发机运行期数据 + 素材复制改白名单**。

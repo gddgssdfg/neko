@@ -10,7 +10,7 @@ description = "一键全屏截图，保存到插件数据目录"
 [permissions]
 pet = ["animate"]
 ui = ["register"]
-other = ["file"]
+other = ["file.own"]
 
 [ui]
 radial = true

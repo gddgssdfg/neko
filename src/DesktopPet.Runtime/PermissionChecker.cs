@@ -18,6 +18,9 @@ public static class PermissionChecker
         ["network"]      = PluginPermissions.Network,
         ["file"]         = PluginPermissions.FileAccess,
         ["process"]      = PluginPermissions.Process,
+        // ---- v0.1.80：细分 token（低危，天然不命中 IsHighRisk）----
+        ["file.own"]     = PluginPermissions.FileOwnDir,
+        ["media"]        = PluginPermissions.MediaKey,
     };
 
     /// <summary>合并 manifest 中所有权限段声明为位掩码</summary>

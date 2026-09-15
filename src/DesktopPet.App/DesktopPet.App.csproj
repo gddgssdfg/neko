@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.1.79</Version>
+    <Version>0.1.80</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -49,11 +49,16 @@
            · mirror\**\*.png  —— InputMirrorWindow 爪子素材 paw_up/paw_down
            · <skin>\**        —— SkinRegistry 扫 <skin>\skin.json 发现皮肤（pixel/soft）及帧图
            · tray.ico         —— TrayManager 托盘图标 + ApplicationIcon
-         新增内置皮肤需在此补一行（用户自制皮肤放运行时 neko-assets，不受此影响）。 -->
-    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+         新增内置皮肤需在此补一行（用户自制皮肤放运行时 neko-assets，不受此影响）。
+         ⚠️ v0.1.80 P0 修复：LinkBase 必须把子目录写进去（neko-assets\icons 而非仅 neko-assets）。
+         MSBuild 的 LinkBase 会自动拼接 %(RecursiveDir)，而 %(RecursiveDir) 是相对「通配符基准目录」的——
+         白名单把基准目录下移到 icons\ / pixel\ 等，若 LinkBase 仍只写 neko-assets，则 icons\book.png
+         会被摊平到 neko-assets\book.png（丢一层目录）。运行时按 neko-assets/icons 定位 → 图标全丢。
+         正确写法：LinkBase 补齐子目录，使 RecursiveDir 相对其后拼接，还原 v0.1.78 通配的目录结构。 -->
+    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\icons" />
+    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mirror" />
+    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel" />
+    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
     <None Remove="..\..\neko-assets\**\*preview*" />

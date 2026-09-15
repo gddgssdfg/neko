@@ -19,11 +19,14 @@
     <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
     <!-- 素材是 <None> 项，不会随项目引用传递，需显式复制到本测试输出目录。
          v0.1.78 P2-3：改白名单，与 DesktopPet.App.csproj 同步（测试要能扫到 icons/mirror/pixel/soft + tray.ico）；
-         不再全量复制 **\*.png，避免 _icon_*、*preview*、reference\ 等开发噪声进测试输出。 -->
-    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+         不再全量复制 **\*.png，避免 _icon_*、*preview*、reference\ 等开发噪声进测试输出。
+         ⚠️ v0.1.80 P0 修复：LinkBase 必须含子目录（neko-assets\icons…），否则 MSBuild 会
+         按「通配符基准目录」计算 %(RecursiveDir) 而把 icons\book.png 摊平到 neko-assets\book.png，
+         导致 SkinRegistry 扫不到 <skin>/skin.json、RadialMenu 找不到 icons\ → UiProbe 素材断言全红。 -->
+    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\icons" />
+    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mirror" />
+    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel" />
+    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Remove="..\..\neko-assets\**\*preview*" />
     <None Remove="..\..\neko-assets\**\*.bak-*" />
