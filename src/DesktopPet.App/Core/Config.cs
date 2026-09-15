@@ -71,6 +71,12 @@ public sealed class AppConfig
     /// <summary>径向菜单用户配置。缺失时保持默认（不限 / 不覆盖 / 全显示）。</summary>
     public RadialMenuConfig RadialMenu { get; set; } = new();
 
+    // ---- v0.1.77 自动更新（阶段1：检查 → 提示 → 打开下载页）----
+    /// <summary>是否启用自动检查更新（默认开）。关闭后启动路径不查；设置页手动「检查更新」仍可用。</summary>
+    public bool UpdateCheckEnabled { get; set; } = true;
+    /// <summary>上次自动检查的日期（yyyy-MM-dd），用于「每天只检查一次」去重。</summary>
+    public string LastUpdateCheckDay { get; set; } = "";
+
     // ---- v0.1.74 未知字段透传（借鉴 BongoCat extensions_json）----
     /// <summary>
     /// 未识别的顶层字段原样保留（读写往返不丢）。

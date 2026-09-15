@@ -898,6 +898,77 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.77 第 25 项：自动更新（阶段1：IsNewer + 真实 Gitee 响应解析）----
+        Check("v0.1.77：自动更新（IsNewer 语义化比较 + 真实 Gitee 响应解析）", () =>
+        {
+            // 1) IsNewer：数字段比较 / v 前缀 / 预发布 / 非法输入（保守 false）
+            if (!UpdateService.IsNewer("0.1.76", "0.1.77")) throw new Exception("0.1.76 < 0.1.77 应 true");
+            if (UpdateService.IsNewer("0.1.76", "0.1.76")) throw new Exception("相同版本应 false");
+            if (UpdateService.IsNewer("0.1.77", "0.1.76")) throw new Exception("更旧版本应 false");
+            if (!UpdateService.IsNewer("v0.1.76", "v0.1.77")) throw new Exception("带 v 前缀应能比较");
+            if (!UpdateService.IsNewer("1.2", "1.2.1")) throw new Exception("缺位应补 0（1.2 < 1.2.1）");
+            if (UpdateService.IsNewer("0.1.77", "0.1.77-beta")) throw new Exception("预发布应比正式版旧");
+            if (!UpdateService.IsNewer("0.1.77-beta", "0.1.77")) throw new Exception("正式版应比预发布新");
+            if (UpdateService.IsNewer("0.1.77-beta", "0.1.77-beta")) throw new Exception("同号同预发布应 false");
+            if (UpdateService.IsNewer("abc", "1.0.0")) throw new Exception("非法 current 应 false（保守）");
+            if (UpdateService.IsNewer("1.0.0", "not-a-version")) throw new Exception("非法 latest 应 false（保守）");
+            if (UpdateService.IsNewer("", "1.0.0")) throw new Exception("空 current 应 false");
+
+            // 2) CurrentVersion：形如 x.y.z
+            var cv = UpdateService.CurrentVersion;
+            if (string.IsNullOrWhiteSpace(cv) || cv.Split('.').Length != 3)
+                throw new Exception($"CurrentVersion 应形如 x.y.z，实际='{cv}'");
+
+            // 3) 解析「真实 Gitee 响应」（实抓自 mindspore/mindspore 的 releases/latest；body 截断便于阅读）
+            const string giteeJson = """
+            {
+              "id": 569215,
+              "tag_name": "v2.7.2",
+              "target_commitish": "970b12dc1a89d57d703e7a1bae412212aad95887",
+              "prerelease": false,
+              "name": "MindSpore 2.7.2 Release Notes",
+              "body": "## MindSpore 2.7.2 Release Notes\r\n\r\n### Major Features and Improvements\r\n\r\n#### Ascend\r\n\r\n- [BETA] The GroupedMatMul + R",
+              "created_at": "2026-01-16T15:50:42+08:00",
+              "assets": [
+                { "browser_download_url": "https://gitee.com/mindspore/mindspore/archive/refs/tags/v2.7.2.zip", "name": "v2.7.2.zip" },
+                { "browser_download_url": "https://gitee.com/mindspore/mindspore/archive/refs/tags/v2.7.2.tar.gz", "name": "v2.7.2.tar.gz" }
+              ]
+            }
+            """;
+            var rel = UpdateService.ParseLatest(giteeJson) ?? throw new Exception("真实 Gitee 响应应能解析");
+            if (rel.TagName != "v2.7.2") throw new Exception($"tag_name 应 v2.7.2，实际 {rel.TagName}");
+            if (rel.Version != "2.7.2") throw new Exception($"Version 应 2.7.2（去 v 前缀），实际 {rel.Version}");
+            if (string.IsNullOrEmpty(rel.Notes)) throw new Exception("body 应非空");
+            if (rel.DownloadUrl != "https://gitee.com/mindspore/mindspore/archive/refs/tags/v2.7.2.zip")
+                throw new Exception($"assets[0] 下载地址解析错误：{rel.DownloadUrl}");
+            // Gitee 响应无 html_url → 应回退到按仓库坐标拼的发布页地址
+            if (rel.ReleaseUrl != "https://gitee.com/gddgssdfg/neko/releases/tag/v2.7.2")
+                throw new Exception($"无 html_url 时应拼发布页地址，实际 {rel.ReleaseUrl}");
+
+            // 4) 显式 html_url 应被采用
+            var rel2 = UpdateService.ParseLatest("{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://example.com/r\",\"body\":\"x\"}");
+            if (rel2 is null || rel2.ReleaseUrl != "https://example.com/r") throw new Exception("显式 html_url 应被采用");
+
+            // 5) body 截断到 ~2000 字
+            var bigBody = new string('A', 2500);
+            var rel3 = UpdateService.ParseLatest($"{{\"tag_name\":\"v1.0.0\",\"body\":\"{bigBody}\"}}");
+            if (rel3 is null || rel3.Notes.Length > 2001) throw new Exception($"body 应截断到 ~2000，实际 {rel3?.Notes.Length}");
+
+            // 6) 缺 tag_name / 非法 JSON / 空 / 非对象 → null
+            if (UpdateService.ParseLatest("{}") is not null) throw new Exception("缺 tag_name 应 null");
+            if (UpdateService.ParseLatest("not json") is not null) throw new Exception("非法 JSON 应 null");
+            if (UpdateService.ParseLatest("") is not null) throw new Exception("空串应 null");
+            if (UpdateService.ParseLatest("[1,2,3]") is not null) throw new Exception("非对象应 null");
+        });
+
+        // ---- v0.1.77 第 25b 项：UpdateService 网络失败静默返回 null（绝不抛）----
+        Check("v0.1.77：UpdateService 网络失败静默返回 null（不抛）", () =>
+        {
+            // .invalid 顶级域保证 DNS 解析失败 → HttpClient 抛 → 应被吞掉返回 null（铁律：没网不能崩）
+            var r = UpdateService.FetchAsync("http://neko-update-probe.invalid/latest", default).GetAwaiter().GetResult();
+            if (r is not null) throw new Exception("网络失败应返回 null");
+        });
+
         // ---- v0.1.50 第 24 项：主题/语言字段 + SettingsWindow 主题色按 Theme 实例化（深/浅两套）----
         Check("v0.1.50：Config Theme/Language 字段 + SettingsWindow 主题色按主题实例化", () =>
         {

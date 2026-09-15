@@ -4,6 +4,30 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.77] - 2026-09-16
+
+**自动更新·阶段1（检查 → 提示 → 打开下载页）**（借鉴 BongoCat update_service，走 Gitee API）。
+
+### 功能
+- **不做静默安装**（同 BongoCat 的最安全形态）：只检查、提示、打开下载页。静默安装需代码签名，否则会被 SmartScreen 拦截。
+- 设置页「关于」栏新增：**「检查更新」按钮**（检查中禁用 + 文案变「检查中…」）+ **「启用自动检查更新」开关**。
+- **每日静默检查**：启动后延迟 8s 后台跑（fire-and-forget，不拖慢启动），`LastUpdateCheckDay` 去重保证一天最多一次；发现新版本发**托盘气泡**提示，不弹模态框。
+- 数据源：Gitee API `releases/latest`；`IsNewer` 做语义化版本比较（处理 `v` 前缀与预发布后缀，解析失败保守返回 false）。
+
+### 健壮性
+- **网络失败全静默**（非用户主动触发时）：`FetchAsync` 一律吞异常返回 null + `Log.Warn`，绝不因没网报错或崩溃。
+- 用户可**完全关闭**（`UpdateCheckEnabled=false` 时启动路径不查；手动检查仍可用）。
+- 无第三方依赖（仅 `System.Net.Http` + `System.Text.Json`）。
+
+### 新增/修改
+- 新增 `Core/UpdateModels.cs`（`ReleaseInfo`）、`Services/UpdateService.cs`
+- 修改 `Core/Config.cs`（`UpdateCheckEnabled` + `LastUpdateCheckDay`）、`Windows/SettingsWindow.cs`（关于页）、`App.xaml.cs`（每日静默检查）
+- 修正规格 bug：**Gitee releases 响应无 `html_url` 字段**（原按 GitHub schema 写）→ 改为按仓库坐标自行拼发布页 URL
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增 2 条断言：`IsNewer` 语义化比较 + 真实 Gitee 响应解析、网络失败静默返回 null）。
+⚠️ **端到端未通**：Gitee 仓库当前为私有（账号安全评级不足，需 2FA 或绑定第三方）→ 匿名 API 404 → 检查更新恒返回 null。代码逻辑已验证，等仓库公开即生效。
+
 ## [0.1.76] - 2026-09-14
 
 **修掉 UGC 作者陷阱：`anim.json` 曾静默覆盖 `skin.json` 的 fps**（QA 独立验证时发现）。

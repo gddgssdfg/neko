@@ -96,6 +96,56 @@ public partial class App : Application
         };
 
         _petWindow.Show();
+
+        // v0.1.77：每日静默检查更新（阶段1）——延迟 + 后台 + 只气泡轻提示，不弹模态打扰。
+        ScheduleDailyUpdateCheck(config);
+    }
+
+    /// <summary>
+    /// 每日一次的后台更新检查（v0.1.77·阶段1）：
+    ///   - 关闭开关 或 今天已查过 → 不查；
+    ///   - 延迟数秒（避开启动 / 插件加载高峰）后用 <see cref="DispatcherTimer"/> 触发一次，不阻塞 UI；
+    ///   - 无论成败都写回 <c>LastUpdateCheckDay = 今天</c>，避免一天内反复查；
+    ///   - 发现新版本 → 托盘气泡轻提示（**不弹模态框**）。
+    /// </summary>
+    private void ScheduleDailyUpdateCheck(AppConfig config)
+    {
+        if (!config.UpdateCheckEnabled) return;
+
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+        if (string.Equals(config.LastUpdateCheckDay, today, StringComparison.Ordinal)) return;
+
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        timer.Tick += async (_, _) =>
+        {
+            timer.Stop();
+            await RunDailyUpdateCheckAsync(config);
+        };
+        timer.Start();
+    }
+
+    /// <summary>跑一次后台检查并把结果（无论成败）标记为「今天已查」。</summary>
+    private async Task RunDailyUpdateCheckAsync(AppConfig config)
+    {
+        try
+        {
+            var latest = await UpdateService.FetchLatestAsync(CancellationToken.None);
+
+            // 无论结果如何都记录今天已查（失败也不在一天内反复重试，避免骚扰）
+            config.LastUpdateCheckDay = DateTime.Now.ToString("yyyy-MM-dd");
+            ConfigManager.Save(Paths.ConfigFile, config);
+
+            if (latest is not null && UpdateService.IsNewer(UpdateService.CurrentVersion, latest.Version))
+            {
+                Log.Info($"[更新] 发现新版本 {latest.TagName}（当前 v{UpdateService.CurrentVersion}）");
+                _tray?.ShowBalloon($"发现新版本 {latest.TagName}", "可在「设置 → 关于」查看并打开下载页");
+            }
+        }
+        catch (Exception ex)
+        {
+            // FetchLatestAsync 自身已吞异常，这里仅作最后兜底
+            Log.Warn($"[更新] 每日检查失败：{ex.Message}");
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

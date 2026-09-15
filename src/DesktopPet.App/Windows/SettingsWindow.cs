@@ -707,6 +707,14 @@ public sealed class SettingsWindow : Window
             Text = $"版本：v{_config.GetType().Assembly.GetName().Version?.ToString(3) ?? "?"}\n\n一只轻量像素橘猫，支持插件生态和键鼠可视化。\n\n作者：灯灯（Lantern）\n技术：C# + WPF + .NET 8",
             FontSize = 13, Foreground = new SolidColorBrush(TextMain), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0), LineHeight = 22,
         });
+        sp.Children.Add(MakeSectionHeader("更新"));
+        sp.Children.Add(BuildUpdateCard());
+        sp.Children.Add(BuildToggleCard(
+            "启用自动检查更新",
+            "每天启动时后台静默检查一次；发现新版本用气泡轻提示（不打断你）。关闭后不再自动检查。",
+            _config.UpdateCheckEnabled,
+            on => { _config.UpdateCheckEnabled = on; Save(); }));
+
         sp.Children.Add(MakeSectionHeader("快捷键速查"));
         sp.Children.Add(new TextBlock
         {
@@ -901,6 +909,83 @@ public sealed class SettingsWindow : Window
         };
         btn.MouseLeftButtonUp += (_, _) => onClick();
         return BuildCard(title, desc, btn);
+    }
+
+    /// <summary>
+    /// v0.1.77：「检查更新」按钮卡片——点击后异步查 Gitee；
+    /// 检查中按钮禁用 + 文案变「检查中…」（防狂点）；结果用 MessageBox 反馈。
+    /// 有新版本 → 「打开下载页」；无 → 「已是最新」；失败 → 「请稍后重试」。
+    /// </summary>
+    private Border BuildUpdateCard()
+    {
+        var btn = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x44, 0x57)),
+            BorderBrush = new SolidColorBrush(BorderC),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(14, 6, 14, 6),
+            Cursor = Cursors.Hand,
+            Child = new TextBlock { Text = "检查更新", Foreground = new SolidColorBrush(TextMain), FontSize = 13 },
+        };
+        var label = (TextBlock)btn.Child;
+        var busy = false;
+        btn.MouseLeftButtonUp += async (_, _) =>
+        {
+            if (busy) return;                 // 防狂点
+            busy = true;
+            btn.IsEnabled = false;            // Border 禁用后会吞掉后续点击
+            btn.Opacity = 0.6;
+            label.Text = "检查中…";
+            try
+            {
+                var latest = await UpdateService.FetchLatestAsync(CancellationToken.None);
+                if (latest is null)
+                {
+                    MessageBox.Show(T("检查失败，请稍后重试（网络不可用，或仓库暂未发布 Release）。", "Check failed. Please try again later."),
+                        "Neko", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else if (UpdateService.IsNewer(UpdateService.CurrentVersion, latest.Version))
+                {
+                    var r = MessageBox.Show(
+                        T($"发现新版本 {latest.TagName}（当前 v{UpdateService.CurrentVersion}）。\n\n是否打开下载页？",
+                          $"New version {latest.TagName} found (current v{UpdateService.CurrentVersion}).\n\nOpen the download page?"),
+                        "Neko", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (r == MessageBoxResult.Yes) OpenUrl(latest.ReleaseUrl);
+                }
+                else
+                {
+                    MessageBox.Show(T($"已是最新版本（v{UpdateService.CurrentVersion}）。", $"You're on the latest version (v{UpdateService.CurrentVersion})."),
+                        "Neko", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            finally
+            {
+                busy = false;
+                btn.IsEnabled = true;
+                btn.Opacity = 1.0;
+                label.Text = "检查更新";
+            }
+        };
+        return BuildCard(T("检查更新", "Check for updates"), T("手动检查是否有新版本；只提示，不会自动安装。", "Manually check for a newer version; it only notifies — never auto-installs."), btn);
+    }
+
+    /// <summary>用系统默认浏览器打开链接；失败弹可读提示（不抛）。</summary>
+    private static void OpenUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            MessageBox.Show("发布页地址为空，无法打开。", "Neko", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("打开链接失败：" + ex.Message, "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>v0.1.41：文本输入卡片（称呼/猫名等）—— 标题/副/输入框/保存按钮（回车也保存）</summary>

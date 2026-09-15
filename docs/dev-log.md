@@ -1966,3 +1966,67 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
   - ⚠️ 首次构建偶发 `MSB3030`（`Bazi.deps.json` 找不到）——是构建顺序竞态：App 的 `DeployPluginsToOutput` target 跑在 Bazi 的 `DeployToPlugins`（生成 deps.json）之前；**重跑即过**，非代码缺陷。
 - **LoaderTest 全过**（含 P5 内存打点）；**UiProbe 全过（35 项，0 FAIL）**。
 - 真机（灯灯双击 exe：ChatWindow 真弹窗 + MBTI 答题 → 播报随类型变化）留给灯灯。
+
+---
+
+## 2026-09-16（v0.1.70–v0.1.77 补记：槽位修复 → 径向菜单可配置 → 键盘窗UI → 人格定制 → BongoCat 借鉴(P0/P1)）
+
+> 断档说明：v0.1.70–v0.1.76 的改动已进 CHANGELOG，但 dev-log 未同步。本条补齐决策与踩坑。
+
+### 1. v0.1.70 径向菜单槽位修复（为"顺序可配置"清障）
+- Order 16 冲突（MusicControl 与 Countdown 撞号）→ 音乐控制挪到 [2,3,4]（**连续且空闲，且是高频操作放靠前**）。
+- 两个「今日运势」重名 → Fortune 改「抽个签」（娱乐向），Bazi 保留「今日运势」（真八字）。
+- Bazi 槽位对调（先看播报再深入问）。
+
+### 2. v0.1.71 径向菜单顺序/显隐/数量上限可配置（灯灯需求）
+- **架构选型：宿主侧覆盖层，不改 Core API**。`RadialMenuConfig`（MaxVisible + Order 字典 + Visible 字典）+ `RadialMenuResolver`（纯静态解析器）。
+- 语义：插件声明的 `Order` 是默认基准，用户设置页覆盖；「显示多少」= 全局可见槽位总数上限（非每页）。
+- 消费点唯一（`RadialMenu.RebuildSlots`），改动面仅 6 文件。
+- 踩坑：`IReadOnlyList<RadialSlot>` 是 `AllRadialSlots` 的类型，Resolve 输出要转 List。
+
+### 3. v0.1.72 键盘映射窗 UI 调整（灯灯截图反馈）
+- 鼠标圆头朝下（`CornerRadius` 参数调换）；猫手从**底部上抬**（`PawRaisedTop` 由 `-PawSize-3` 改为 `KbH+5`）。
+- ⚠️ **踩坑（重要）**：`PawRaisedTop` 一度从 `const` 改成实例字段 → **UiProbe 回归 NRE**（layout pass 触发 null 访问）。根因：`KbH+5` 本就是 const 表达式，**保持 const 即可**。教训：WPF 里能保持 const 就别改实例字段。
+- 定位手法：`git stash` 整体 revert → 确认是我改的 → 逐项回退二分。
+
+### 4. v0.1.73 命理插件人格定制改造（灯灯需求）
+- 默认关闭（`MbtiEnabled`，关闭时忽略残留）；题库 24→**93 题**（按官方四维度结构：EI23/SN26/TF24/JP20，**自己中文重写，不照抄**规避版权）；新增 `MbtiQuizWindow` 弹窗（连续 93 题 + 进度条）；设置页可选可填 16 型。
+- 双保险：读侧 `MbtiEnabled ? MbtiTip : null` + 写侧关闭强制 `Mbti=null` 落盘。
+- **入口显隐联动**：默认关时「开始测试」「直接选择」隐藏（QA 断言发现我遗漏，补上）。
+
+### 5. v0.1.74 BongoCat 借鉴 P0 批次（配置健壮性 + 合规）
+- 背景：灯灯要求参考 `G:/参考案例/BongoCat-main`（C++/OpenGL 桌宠）找优化点。派 2 个并行研究员（架构侧 + 功能工程侧），合并去重得 18 项。
+- ⚠️ **修了一个真 bug**：`ConfigManager.Load()` 解析失败 → 返回默认值 → **后续任何 Save 都会用默认值永久覆盖用户配置**。改为把损坏文件改名保留 `.rejected-<时间戳>`。
+- 配置原子写（tmp → `File.Replace`）；配置未知字段透传（`[JsonExtensionData]`，保护"Core API 只增不改"）。
+- 新增 `PRIVACY.md`（**网络访问逐条列明**：DeepSeek/open-meteo/浏览器搜索）+ `SECURITY.md`（含日志隐私核查结论）+ `tools/check_version.py` + `tools/check_i18n.py`。
+- 通知日志收紧：`SystemImpl.Notify` 不落通知正文（可能含用户内容）且降 Debug 级。
+- 注：BongoCat 是 **AGPL-3.0**，只借设计不抄码（项目铁律）。
+
+### 6. v0.1.75 皮肤目录可扩展（解锁 UGC）
+- `SkinRegistry.Scan` 扫 `neko-assets/*/skin.json` 自动发现 → **用户自制皮肤零改代码**。
+- 素材迁移：像素素材进 `neko-assets/pixel/`（`skin.json` 成为素材侧契约）。
+- 健壮性：非法尺寸/帧数 → 跳过 + `Log.Warn`；一个都没有 → 回退 `BuiltinFallback`。
+- QA 独立验证（63/63 自写探针）：9 状态元数据与旧硬编码**零差异**；15 张 png 与迁移前**字节级 hash 逐个相等**（纯 move）；并独立验证"塞自制皮肤即被零改码发现"。
+
+### 7. v0.1.76 修 UGC 作者陷阱（QA 挖出）
+- **陷阱**：`anim.json` 的 fps 会**静默覆盖** `skin.json`（仅渲染层）。pixel 两处数值恰好一致故看不出，但**用户改 skin.json 的 fps 会完全无效** → 直接废掉 UGC 目标。
+- 修：`skin.json` 成为 fps 唯一权威（移除 `ReadAnimFpsOverrides`）+ 删 `pixel/anim.json` + 生成器停止产 anim.json + 断言锁死（造打架的 anim.json，断言 skin.json 仍生效）。
+
+### 8. v0.1.77 自动更新·阶段1（Gitee）
+- **形态**：只「检查 → 提示 → 打开下载页」，**不做静默安装**（静默安装需代码签名，否则被 SmartScreen 拦）。
+- Gitee API：`/api/v5/repos/gddgssdfg/neko/releases/latest`；`IsNewer` 语义化版本比较（纯函数可单测，处理 `v` 前缀/预发布，解析失败保守返回 false）。
+- 每日静默检查（延迟 8s + fire-and-forget + `LastUpdateCheckDay` 去重）；**网络失败全静默**；用户可完全关闭。
+- ⚠️ **规格 bug（工程师发现）**：Gitee releases 响应**没有 `html_url` 字段**（我照 GitHub schema 写的）→ 改为按仓库坐标自行拼发布页 URL。
+
+### 9. Gitee 仓库接入与踩坑
+- 仓库：`https://gitee.com/gddgssdfg/neko`；git 身份改为 `Lantern <1157165121@qq.com>`。
+- ⚠️ **踩坑 1**：建仓时传 `"private":false` 被忽略（默认私有）→ 转公开需 `PATCH /repos/{owner}/{repo}`，且**必须带 `name` 字段**（否则报 `name is missing`）。
+- ⚠️ **踩坑 2**：转公开被拒 —— Gitee 要求「账号安全评级达标」，需**完成 2FA** 或**绑定可靠第三方**（微信/QQ/GitHub 等）。当前仓库仍为私有，**匿名 API 读不到 → 自动更新端到端不生效**（代码逻辑已对，等仓库公开即通）。
+- 沙箱实测：`git ls-remote github.com` 偶发 SSL 中断，**Gitee 一次通过**（国内更稳，故选 Gitee）。
+
+### 环境经验（沉淀）
+- **UiProbe 在本沙箱偶发挂起不返回** → 对策：`timeout` 重跑，或直接跑已编译的 `UiProbe.exe` 并重定向到**项目内**日志文件再 `grep -a`（输出含特殊字符会被判为 binary）。
+- Git Bash 基本命令（`head`/`tail`/`sleep`）仅当 PATH 含 `PortableGit/versions/1.2.0/usr/bin` 时可用。
+
+### 验证汇总（v0.1.70–v0.1.77）
+每版均：`build sln` 0 警告 0 错误 + LoaderTest 全过 + UiProbe 全过（新增断言逐版累加：Resolver 六场景/配置三项/皮肤两项/损坏回退/skin.json 唯一权威/自动更新两项）。
