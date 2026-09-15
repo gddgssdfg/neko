@@ -4,6 +4,24 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.78] - 2026-09-16
+
+**审计 P0 修复：调度器竞态（能杀宿主）+ 测试假绿**（据 2026-09-16 只读审计报告）。
+
+### P0-5 修 `SchedulerImpl` 竞态（真 bug，可致 CLR 终止进程）
+- **根因**：`Add()` 用 `new Timer(..., dueMs, periodMs)` 直接启动，**之后**才 `handle = new TimerHandle(timer)`。当 `dueMs=0`（`At(DateTime.Now)`）时回调可能抢在赋值前于**线程池**触发 → `SafeInvoke(null!)` 内 NRE → **catch 里再访问同一 null handle 二次 NRE** → 逃出回调 → 线程池未处理异常 → **CLR 终止进程**（App 三层兜底只覆盖 UI 线程，拦不住）。
+- **修法**：Timer 先以 `Timeout.Infinite` 创建（装配完成前绝不触发）→ 装配 `handle` → 入 `_handles` → 最后 `timer.Change(dueMs, periodMs)` 启动；`SafeInvoke` 改可空入参 + 首行 null 返回 + 计数/日志/熔断整块再包一层 try/catch（任何路径不外抛）。
+- 行为语义完全保留（熔断阈值 5、日志文案不变）。
+
+### P0-3 修 LoaderTest「假绿」
+- 原先 **16 处 `FAIL:` 只打印不改退出码**，`PASS: 全部插件卸载成功` 是无条件打印，`TestAppOutputPlugins()` 是 `void` → 测出问题也可能 `exit 0`。
+- 改为：失败计数器 + `Main` 返回 `int`（任何 FAIL → 退出码 1）；卸载改为**真验证**（断言事件处理器数归零、`IsCollectible=true`）；缺目录由静默跳过改为计入失败。
+
+### 验证
+- 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过。
+- **P0-5 回归锁**：UiProbe 新增「4 线程 × 125 并发 `At(DateTime.Now)`」断言 → 500 次回调全触发、句柄均有效、**进程存活、0 未处理异常**。
+- **P0-3 反向验证**：`LOADERTEST_INJECT_FAILURE=1` 注入必失败条件 → 打印 `FAIL:` + `=== 1 项失败 ===` + **退出码 1**（证明假绿已修）。
+
 ## [0.1.77] - 2026-09-16
 
 **自动更新·阶段1（检查 → 提示 → 打开下载页）**（借鉴 BongoCat update_service，走 Gitee API）。
