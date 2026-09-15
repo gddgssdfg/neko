@@ -4,6 +4,21 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.79] - 2026-09-16
+
+**审计 P0-1 + P2-3：MSI 不再打包开发机运行期数据 + 素材复制改白名单**。
+
+### P0-1 ⚠️ MSI 曾把开发机 `data/` 打进安装包
+- **问题**：`installer/gen_setup_wxs.py` 唯一过滤是 `.pdb` → `publish/<ver>/data/**`（含**开发机的 `config.json`**、`host/activity.json`、插件私有数据）被打成 MSI 组件。三层后果：① 泄露开发数据 ② 安装后覆盖用户自己的配置 ③ 卸载残留。更严重的是 `config.json` 成为 MSI 自有组件 → 升级/卸载与用户数据打架。（`.gitignore` 有 `data/` 但打包器不读 gitignore）
+- **修法**：`gen_setup_wxs.py` 加**显式排除规则常量集合**：`EXCLUDE_TOP_DIRS={"data"}` / `EXCLUDE_EXACT_FILES={".env"}` / `EXCLUDE_DIR_NAMES={"reference"}` / `EXCLUDE_PREFIXES={"_icon_"}` / `EXCLUDE_CONTAINS={"preview",".bak-"}`，保留 `.pdb`。
+
+### P2-3 素材复制白名单
+- `DesktopPet.App.csproj` + `UiProbe.csproj` 由 `<None Include="..\..\neko-assets\**\*.png">` **通配**改为**白名单**（icons/mirror/pixel/soft/tray.ico），并 `Remove` 掉 `*preview*`、`*.bak-*`。原先 `_icon_clean.png`(1.1MB) 等噪声也进了 publish→MSI。
+
+### 验证
+- 构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（皮肤断言仍过，证明白名单没误伤）。
+- **wxs 反向验证**：用含 `data/` 的 publish 目录生成 → `data` 条目 **0**（排除 15 个噪声文件），且 `Neko.exe`(4)、`bazi 插件`(9)、`neko_idle` 素材(20) **均在**（未误伤必需文件）。
+
 ## [0.1.78] - 2026-09-16
 
 **审计 P0 修复：调度器竞态（能杀宿主）+ 测试假绿**（据 2026-09-16 只读审计报告）。
@@ -1642,4 +1657,5 @@ v0.1.5 设置窗口闭环 + 插件自定义设置页 dogfooding 示范。
 
 - 素材 PNG 存在 `libpng warning: iCCP: known incorrect sRGB profile`（无害，来自内嵌色彩配置，不影响显示）
 - 径向菜单打开时会覆盖宠物区域（透明区域仍接收点击），关闭后方可与宠物交互
+
 

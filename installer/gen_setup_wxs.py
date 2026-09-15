@@ -9,6 +9,39 @@ import uuid
 
 NS = uuid.UUID("a1b2c3d4-e5f6-7890-1234-567890abcdef")
 
+# ── v0.1.78 P0-1：打包排除规则（显式常量集合，便于维护）─────────────────────────
+# 背景：旧实现只排除 .pdb，导致 publish/<ver>/ 下「开发机的运行期数据」被当成 MSI 自有组件打进安装包：
+#   - data/**（config.json、host/activity.json、plugins/ 私有数据）
+#       → ① 泄露开发机个人数据 ② 安装/升级覆盖用户自己的配置 ③ 卸载残留、与用户数据打架
+#   - neko-assets/ 下的开发噪声（_icon_*、*preview*、reference/**、*.bak-*）→ 白送体积
+# ⚠️ 打包器不读 .gitignore，必须在此显式排除——否则 data/ 会被静默打进包（本规则即唯一防线）。
+EXCLUDE_TOP_DIRS = {"data"}            # publish 根下的整棵目录（开发机运行期数据）
+EXCLUDE_DIR_NAMES = {"reference"}      # 任意层级的目录名（开发参考图，非运行时素材）
+EXCLUDE_EXACT_FILES = {".env"}         # 精确文件名（密钥，绝不入包）
+EXCLUDE_SUFFIXES = (".pdb",)           # 文件后缀（保留原有 .pdb 排除）
+EXCLUDE_PREFIXES = ("_icon_",)         # 文件名前缀（拼图标中间产物）
+EXCLUDE_CONTAINS = ("preview", ".bak-")  # 文件名含片段（*_preview* / preview.png / *.bak-* 变体）
+
+
+def is_excluded(rel: str) -> bool:
+    """判断相对路径（/ 分隔）是否应从安装包排除；True = 不打包。"""
+    parts = rel.split("/")
+    name = parts[-1]
+    low = name.lower()
+    if parts[0] in EXCLUDE_TOP_DIRS:                               # data/**（整棵）
+        return True
+    if any(p in EXCLUDE_DIR_NAMES for p in parts[:-1]):            # 任意层级目录名命中
+        return True
+    if name in EXCLUDE_EXACT_FILES:                                # .env
+        return True
+    if low.endswith(tuple(s.lower() for s in EXCLUDE_SUFFIXES)):   # .pdb
+        return True
+    if low.startswith(tuple(p.lower() for p in EXCLUDE_PREFIXES)):  # _icon_*
+        return True
+    if any(frag.lower() in low for frag in EXCLUDE_CONTAINS):      # *preview* / *.bak-*
+        return True
+    return False
+
 
 def main():
     src = os.path.abspath(sys.argv[1])
@@ -16,11 +49,14 @@ def main():
     out = os.path.abspath(sys.argv[3])
 
     rels = []
+    excluded = 0
     for root, dirs, files in os.walk(src):
         for f in sorted(files):
-            if f.lower().endswith(".pdb"):
+            rel = os.path.relpath(os.path.join(root, f), src).replace("\\", "/")
+            if is_excluded(rel):
+                excluded += 1
                 continue
-            rels.append(os.path.relpath(os.path.join(root, f), src).replace("\\", "/"))
+            rels.append(rel)
 
     def d_id(path):
         return "Dir_" + "".join(c if c.isalnum() else "_" for c in path)
@@ -119,7 +155,7 @@ def main():
 
     with open(out, "w", encoding="utf-8") as f:
         f.write("\n".join(L) + "\n")
-    print(f"OK: {len(rels)} files -> {out}")
+    print(f"OK: {len(rels)} files -> {out}（已排除 {excluded} 个 data/噪声文件）")
 
 
 if __name__ == "__main__":

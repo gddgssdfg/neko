@@ -17,10 +17,16 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
-    <!-- 素材是 <None> 项，不会随项目引用传递，需显式复制到本测试输出目录 -->
-    <None Include="..\..\neko-assets\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <!-- v0.1.74：皮肤清单 skin.json（SkinRegistry 扫描依赖它，缺失会回退内置默认而扫不到皮肤） -->
-    <None Include="..\..\neko-assets\**\*.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <!-- 素材是 <None> 项，不会随项目引用传递，需显式复制到本测试输出目录。
+         v0.1.78 P2-3：改白名单，与 DesktopPet.App.csproj 同步（测试要能扫到 icons/mirror/pixel/soft + tray.ico）；
+         不再全量复制 **\*.png，避免 _icon_*、*preview*、reference\ 等开发噪声进测试输出。 -->
+    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
+    <None Remove="..\..\neko-assets\**\*preview*" />
+    <None Remove="..\..\neko-assets\**\*.bak-*" />
     <!-- v0.1.46：插件目录同样复制到测试输出（Plugins.LoadCore 依赖 BaseDirectory/plugins/） -->
     <None Include="..\..\plugins\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="plugins" />
   </ItemGroup>
