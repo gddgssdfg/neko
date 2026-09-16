@@ -27,6 +27,10 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // v0.1.82：stdout 重定向到文件时是**块缓冲**——一旦进程不退出，最后的输出会留在缓冲区里
+        // 看不见（症状：日志停在某一项、没有结尾那行，容易误判成"卡在那一项"）。
+        // 改成 AutoFlush，保证结果随时可读。
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
         Paths.EnsureCreated();
 
         // ---- 1. 径向菜单反复开关（复现旧崩溃：Close 期间 Show） ----
@@ -1553,7 +1557,183 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.82 第 30 项：重复选皮肤重套推荐缩放 + 步进器 ± 按「活的当前值」起算 ----
+        Check("v0.1.82：重复选皮肤重套推荐缩放 + 未声明皮肤零副作用 + 步进器 ± 从活值起算", () =>
+        {
+            // ---------- A. 重复 SetSkin("hd") 必须重新套用推荐缩放 ----------
+            var p30Cfg = new AppConfig { Skin = "pixel", Scale = 1.0 };
+            var p30Win = new PetWindow(p30Cfg);
+            p30Win.Show();
+            p30Win.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            string enterSkin30 = p30Win.Config.Skin;
+            double enterScale30 = p30Win.CurrentScale;
+            try
+            {
+                // 切到 hd → 自动套用 4
+                p30Win.SetSkin("hd");
+                if (Math.Abs(p30Win.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"切到 hd 应套用推荐缩放 4，实际 {p30Win.CurrentScale}");
+
+                // 用户手动把缩放调回 2
+                p30Win.SetScale(2.0);
+                if (Math.Abs(p30Win.CurrentScale - 2) > 1e-9)
+                    throw new Exception($"SetScale(2) 后应=2，实际 {p30Win.CurrentScale}");
+
+                // 再点一次「同一皮肤 hd」→ 必须重新套用 4（这是设置页对已选中项也会回调的路径）
+                p30Win.SetSkin("hd");
+                if (Math.Abs(p30Win.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"重复选 hd 应重套 scale=4，实际 {p30Win.CurrentScale}（早返回吞掉了推荐缩放？）");
+                if (Math.Abs(p30Win.Width - 128) > 0.5)
+                    throw new Exception($"重复选 hd 后窗口宽应=128，实际 {p30Win.Width}");
+
+                // ---------- 重复 SetSkin("pixel")（未声明推荐缩放）必须零副作用 ----------
+                p30Win.SetSkin("pixel");   // atlas 变了，但 pixel 无推荐缩放 → 不改用户缩放
+                if (p30Win.Config.Skin != "pixel")
+                    throw new Exception($"切到 pixel 后 config.Skin 应=pixel，实际='{p30Win.Config.Skin}'");
+                if (Math.Abs(p30Win.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"pixel 未声明推荐缩放，Scale 应保持 4 不变，实际 {p30Win.CurrentScale}");
+
+                p30Win.SetScale(2.0);      // 用户再手动改成 2
+                p30Win.SetSkin("pixel");   // 再点一次「同一皮肤 pixel」→ 未声明 → 不许拉回
+                if (Math.Abs(p30Win.CurrentScale - 2) > 1e-9)
+                    throw new Exception($"重复选 pixel（未声明推荐缩放）不该改缩放，应保持 2，实际 {p30Win.CurrentScale}");
+
+                // ---------- B. 步进器 ± 必须从「活的当前值」起算 ----------
+                // 直接反射驱动私有 MakeStepperButtons（不经 BuildStepperCard，降低脆弱性）。
+                var p30Settings = new SettingsWindow(p30Win);
+                p30Settings.Show();
+                p30Settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+                try
+                {
+                    var msw = typeof(SettingsWindow).GetMethod("MakeStepperButtons", BindingFlags.NonPublic | BindingFlags.Instance)
+                        ?? throw new MissingMethodException("SettingsWindow.MakeStepperButtons 不存在");
+                    double live = 1.0;               // 模拟「活的当前值」（外部写入者）
+                    double? received = null;
+
+                    // readCurrent 非空：点 + 必须基于 live 而非构建时的 initial
+                    var btns = ((Border, Border))msw.Invoke(p30Settings, new object?[]
+                    {
+                        1.0, 0.2, (Action<double>)(v => received = v), (Func<double>)(() => live),
+                    })!;
+                    var incBtn = btns.Item2;
+                    var decBtn = btns.Item1;
+
+                    live = 4.0;   // 模拟切皮肤后外部把实时值改到 4.0
+                    incBtn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = incBtn });
+                    if (received is null || Math.Abs(received.Value - 4.2) > 1e-6)
+                        throw new Exception($"readCurrent=4.0 时点 + 应回调 4.2（基于活值），实际 {received?.ToString() ?? "null"}");
+
+                    received = null;
+                    live = 4.2;
+                    decBtn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = decBtn });
+                    if (received is null || Math.Abs(received.Value - 4.0) > 1e-6)
+                        throw new Exception($"readCurrent=4.2 时点 − 应回调 4.0（基于活值），实际 {received?.ToString() ?? "null"}");
+
+                    // 回归：readCurrent=null 时退化为内部自持值（无外部写入者的卡片，行为必须不变）
+                    received = null;
+                    var btns2 = ((Border, Border))msw.Invoke(p30Settings, new object?[]
+                    {
+                        1.0, 0.5, (Action<double>)(v => received = v), (Func<double>?)null,
+                    })!;
+                    btns2.Item2.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = btns2.Item2 });
+                    if (received is null || Math.Abs(received.Value - 1.5) > 1e-6)
+                        throw new Exception($"readCurrent=null 时点 + 应回调 1.5（内部值 1.0+0.5），实际 {received?.ToString() ?? "null"}");
+                }
+                finally
+                {
+                    p30Settings.Close();
+                }
+            }
+            finally
+            {
+                p30Win.SetSkin(enterSkin30);
+                p30Win.SetScale(enterScale30);
+                p30Win.Dispose();
+                p30Win.Close();
+            }
+        });
+
+        // ---- v0.1.82 第 31 项：新动画皮肤契约 + 设置页缩略图 ----
+        Check("v0.1.82：动画皮肤契约（8 帧 / 静态态 fps=0）+ 设置页缩略图齐备", () =>
+        {
+            var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd" };
+            var skins = SkinRegistry.Scan(Paths.Assets);
+            var staticStates = new[] { "idle", "sit", "sleep" };
+
+            foreach (var id in animated)
+            {
+                var info = skins.FirstOrDefault(s => s.Id == id)
+                    ?? throw new Exception($"未扫到皮肤 {id}");
+                if (info.Frames != 8)
+                    throw new Exception($"{id} 的 frames 应为 8，实际 {info.Frames}");
+
+                // 待机/坐/睡必须是静止（fps=0，帧不推进）；其余必须是动画（fps>0）
+                foreach (var st in info.States)
+                {
+                    bool isStatic = staticStates.Contains(st.Name);
+                    if (isStatic && st.Fps > 0)
+                        throw new Exception($"{id}.{st.Name} 应静止(fps=0)，实际 {st.Fps}");
+                    if (!isStatic && st.Fps <= 0)
+                        throw new Exception($"{id}.{st.Name} 应有动画(fps>0)，实际 {st.Fps}");
+                }
+
+                // 帧契约：每张状态图总宽 = frameWidth × frames（否则引擎固定切帧会切到画布外 = 空白帧闪烁）
+                var atlas = SpriteAtlas.LoadSkin(Paths.Assets, id);
+                if (atlas.States.Count != 9)
+                    throw new Exception($"{id} 应有 9 状态，实际 {atlas.States.Count}");
+                foreach (var st in atlas.States.Values)
+                {
+                    if (st.Frames.Length != 8)
+                        throw new Exception($"{id}.{st.Name} 应有 8 帧，实际 {st.Frames.Length}");
+                    foreach (var fr in st.Frames)
+                    {
+                        if (fr.Bitmap.PixelWidth != info.FrameWidth || fr.Bitmap.PixelHeight != info.FrameHeight)
+                            throw new Exception($"{id}.{st.Name} 帧尺寸应为 {info.FrameWidth}x{info.FrameHeight}，" +
+                                                $"实际 {fr.Bitmap.PixelWidth}x{fr.Bitmap.PixelHeight}");
+                    }
+                }
+
+                // 设置页缩略图：thumb.png 必须存在且为 96×96 RGBA（缺失时列表显示"无预览"）
+                // ⚠️ 不能叫 preview.png —— csproj 的 `<None Remove="**\*preview*" />` 会把它排除掉，打不进输出目录
+                var thumb = System.IO.Path.Combine(Paths.Assets, id, "thumb.png");
+                if (!System.IO.File.Exists(thumb))
+                    throw new Exception($"{id} 缺少 thumb.png（跑 tools/gen_skin_previews.py 生成）");
+                using var fs = System.IO.File.OpenRead(thumb);
+                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bmp.StreamSource = fs;
+                bmp.EndInit();
+                if (bmp.PixelWidth != 96 || bmp.PixelHeight != 96)
+                    throw new Exception($"{id}/thumb.png 应为 96x96，实际 {bmp.PixelWidth}x{bmp.PixelHeight}");
+            }
+
+            // 端到端：切到动画皮肤会套用推荐缩放 4
+            var c31 = new AppConfig { Skin = "pixel", Scale = 1.0 };
+            var w31 = new PetWindow(c31);
+            w31.Show();
+            w31.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            try
+            {
+                w31.SetSkin("cat_pixel");
+                if (Math.Abs(w31.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"切到 cat_pixel 应套用推荐缩放 4，实际 {w31.CurrentScale}");
+            }
+            finally
+            {
+                w31.Dispose();
+                w31.Close();
+            }
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
+        Console.Out.Flush();
+        // v0.1.82：用 Environment.Exit 强制退出。测试里创建过真实 WPF 窗口（PetWindow/RadialMenu），
+        // 它们的 Dispatcher 与全局钩子会留下前台线程，正常 return 不保证进程结束
+        // （表现为"打印完结果却不退出"，QA 复验时观察到过 19 分钟不退出）。
         Environment.Exit(_fail == 0 ? 0 : 1);
     }
 

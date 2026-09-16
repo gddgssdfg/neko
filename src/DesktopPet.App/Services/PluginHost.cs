@@ -58,6 +58,7 @@ public sealed class PluginHost : IDisposable
     {
         var loaded = _loader.LoadAll(_disabled, out var errors);
         _errors.AddRange(errors);
+        ReportErrors("LoadAll", errors);
         OnLoadAll(loaded);
     }
 
@@ -66,6 +67,7 @@ public sealed class PluginHost : IDisposable
     {
         var loaded = _loader.LoadCore(_disabled, _deferredIds, out var errors);
         _errors.AddRange(errors);
+        ReportErrors("LoadCore", errors);
         OnLoadAll(loaded);
     }
 
@@ -74,7 +76,21 @@ public sealed class PluginHost : IDisposable
     {
         var loaded = _loader.LoadDeferred(_disabled, _deferredIds, out var errors);
         _errors.AddRange(errors);
+        ReportErrors("LoadDeferred", errors);
         OnLoadAll(loaded);
+    }
+
+    /// <summary>
+    /// v0.1.82：把加载阶段的错误写进日志。
+    /// <para>踩坑：此前 <c>_errors</c> 只收集不落地，插件「一个都没加载」时日志里干干净净，
+    /// 只能靠猜——插件加载失败必须能在 data/logs 里看到原因。</para>
+    /// </summary>
+    private static void ReportErrors(string stage, IReadOnlyList<(string dir, string error)> errors)
+    {
+        if (errors.Count == 0) return;
+        Log.Warn($"[插件] {stage}：{errors.Count} 个插件加载失败");
+        foreach (var (dir, error) in errors)
+            Log.Warn($"[插件] {System.IO.Path.GetFileName(dir)} 加载失败：{error}");
     }
 
     private void OnLoadAll(IEnumerable<LoadedPlugin> loaded)

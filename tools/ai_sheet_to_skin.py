@@ -72,6 +72,26 @@ FRAMES = 4             # 每状态帧数（由单帧程序生成微动）
 DEFAULT_MAX_FRAME = 256          # 单帧最大边长（超过则 LANCZOS 下采样）
 DEFAULT_RECOMMENDED_SCALE = 4.0  # 写入 skin.json 的推荐显示倍率
 
+# ---- 像素模式（--pixel）----
+# 背景：豆包出的"像素风"其实是高分辨率插画（单格 ~680px、3 万多种颜色、带抗锯齿），
+# 必须先降采样再**量化调色板 + alpha 二值化**才能得到硬边像素画。
+DEFAULT_PIXEL_SIZE = 64          # 像素模式下的正方帧边长（64 → Scale 4 时正好 2× 整数放大）
+DEFAULT_PIXEL_COLORS = 24        # 量化后的调色板颜色数（真像素画通常 16~32）
+PIXEL_ALPHA_CUTOFF = 128         # alpha 二值化阈值：≥ 视为实心，< 视为全透（硬边）
+
+# 像素模式的微动：**只允许整数像素位移**（缩放/旋转会重采样，像素会糊、颜色会溢出调色板）
+PIXEL_MOTION: dict[str, list[tuple[int, int]]] = {   # (dx, dy) 每帧
+    "idle":  [(0, 0), (0, -1), (0, 0), (0, -1)],       # 呼吸
+    "walk":  [(0, 0), (-2, 0), (0, 0), (2, 0)],        # 颠簸
+    "sit":   [(0, 0), (0, -1), (0, 0), (0, -1)],
+    "sleep": [(0, 0), (0, -1), (0, 0), (0, -1)],
+    "pet":   [(0, 0), (0, -1), (1, 0), (0, -1)],       # 舒服地蹭
+    "drag":  [(0, 0), (1, -1), (0, 0), (-1, -1)],      # 被拎着晃
+    "fall":  [(0, 0), (1, 0), (0, 0), (-1, 0)],
+    "climb": [(0, 0), (0, -2), (0, 0), (0, -1)],       # 往上够
+    "work":  [(0, 0), (0, 1), (0, 0), (0, 1)],         # 点头
+}
+
 
 def remove_bg(img: Image.Image, tol: int = BG_TOLERANCE) -> Image.Image:
     """把**与图像边缘连通的**近白背景转透明（flood fill）。
@@ -129,6 +149,20 @@ def remove_bg(img: Image.Image, tol: int = BG_TOLERANCE) -> Image.Image:
                 if diff <= tol + EDGE_FEATHER:
                     px[x, y] = (r, g, b, int(255 * (diff - tol) / EDGE_FEATHER))
     return img
+
+
+def has_alpha_cutout(img: Image.Image, min_ratio: float = 0.04) -> bool:
+    """判断图是否**已经**带了透明背景（豆包可直接出透明图，那就不用再抠）。
+
+    判据：全透明（alpha < 16）像素占比超过 min_ratio。
+    用"全透明"而不是"半透明"是为了避开抗锯齿边缘——那些像素本来就不是背景。
+    """
+    if img.mode != "RGBA":
+        return False
+    a = img.getchannel("A")
+    hist = a.histogram()
+    transparent = sum(hist[:16])
+    return transparent / max(1, img.width * img.height) >= min_ratio
 
 
 def crop_to_content(img: Image.Image, tol: int = 12) -> Image.Image:
@@ -195,6 +229,35 @@ def make_motion_frames(base: Image.Image, state: str) -> list[Image.Image]:
     return out
 
 
+def pixelize(img: Image.Image, colors: int) -> Image.Image:
+    """把高分辨率插画降成硬边像素画：量化调色板 + alpha 二值化。
+
+    为什么两步都要：
+      - 只降采样不量化 → 边缘仍是抗锯齿的灰阶，放大后是"糊的方块"而不是像素画；
+      - 只二值化 alpha 不量化 → 颜色仍有上万种，放大后色块边界不干净。
+    """
+    img = img.convert("RGBA")
+    # alpha 二值化：硬边（半透明像素在桌面上会显出桌面颜色，破坏像素感）
+    alpha = img.getchannel("A").point(lambda v: 255 if v >= PIXEL_ALPHA_CUTOFF else 0)
+    quant = img.convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT)
+    out = quant.convert("RGBA")
+    out.putalpha(alpha)
+    return out
+
+
+def make_pixel_motion_frames(base: Image.Image, state: str) -> list[Image.Image]:
+    """像素模式微动：只用整数像素平移（不缩放/不旋转），保证像素不被重采样。"""
+    params = PIXEL_MOTION.get(state, PIXEL_MOTION["idle"])
+    cw, ch = base.size
+    out: list[Image.Image] = []
+    for i in range(FRAMES):
+        dx, dy = params[i % len(params)]
+        canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        canvas.paste(base, (dx, dy), base)      # 整数偏移 → 无插值，颜色不变
+        out.append(canvas)
+    return out
+
+
 def arg_value(flag: str) -> str | None:
     """读取 `--flag value` 形式的 CLI 参数值；不存在返回 None。"""
     if flag in sys.argv:
@@ -227,10 +290,16 @@ def main() -> int:
 
     # 1) 切格 + 抠背 + 裁包围盒
     pieces: list[tuple[str, int, int, Image.Image]] = []
+    cutout_mode: bool | None = None      # 首格判定一次即可（同一张图各格情况一致）
     for idx, (name, cell, fps) in enumerate(STATES):
         r, c = (cell - 1) // 3, (cell - 1) % 3
         cell_img = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
-        cell_img = remove_bg(cell_img)
+        if cutout_mode is None:
+            cutout_mode = has_alpha_cutout(cell_img)
+            print("背景：已带透明通道 → 跳过抠图" if cutout_mode
+                  else "背景：不透明 → flood-fill 抠白底")
+        if not cutout_mode:
+            cell_img = remove_bg(cell_img)
         cell_img = crop_to_content(cell_img)
         pieces.append((name, cell, fps, cell_img))
         print(f"  ①..⑨ 第 {cell} 格 → {name:<6} 内容尺寸 {cell_img.size}")
@@ -242,9 +311,18 @@ def main() -> int:
     print(f"统一画布: {canvas_w}x{canvas_h}（底部中心对齐）")
 
     # 2.4) 尺寸自适应：统一画布若超过 --max-frame，按比例 LANCZOS 下采样（保持宽高比）
-    frame_w, frame_h = fit_within(canvas_w, canvas_h, max_frame)
-    if (frame_w, frame_h) != (canvas_w, canvas_h):
-        print(f"下采样: {canvas_w}x{canvas_h} → {frame_w}x{frame_h}（LANCZOS，max-frame={max_frame}）")
+    pixel_mode = "--pixel" in sys.argv
+    pixel_size = int(arg_value("--pixel-size") or DEFAULT_PIXEL_SIZE)
+    pixel_colors = int(arg_value("--pixel-colors") or DEFAULT_PIXEL_COLORS)
+
+    if pixel_mode:
+        frame_w = frame_h = pixel_size
+        print(f"像素模式: 帧 {pixel_size}×{pixel_size}，调色板 {pixel_colors} 色"
+              f"（LANCZOS 降采样 → 调色板量化 → alpha 二值化，微动只用整数位移）")
+    else:
+        frame_w, frame_h = fit_within(canvas_w, canvas_h, max_frame)
+        if (frame_w, frame_h) != (canvas_w, canvas_h):
+            print(f"下采样: {canvas_w}x{canvas_h} → {frame_w}x{frame_h}（LANCZOS，max-frame={max_frame}）")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for name, _cell, _fps, img in pieces:
@@ -254,11 +332,19 @@ def main() -> int:
         canvas.paste(img, (x, y), img)
 
         # 2.4) 尺寸自适应：对统一画布下采样（每状态等宽，保证「总宽 / frames」整除）
-        if (frame_w, frame_h) != (canvas_w, canvas_h):
-            canvas = canvas.resize((frame_w, frame_h), Image.LANCZOS)
-
-        # 2.5) 单帧 → 4 帧微动（否则猫是静态图，不会呼吸）
-        frames = make_motion_frames(canvas, name)
+        if pixel_mode:
+            # 先保持宽高比缩进 pixel_size 方框（thumbnail 不放大、不变形），再底对齐合成正方帧
+            inner = canvas.copy()
+            inner.thumbnail((pixel_size, pixel_size), Image.LANCZOS)
+            sq = Image.new("RGBA", (pixel_size, pixel_size), (0, 0, 0, 0))
+            sq.paste(inner, ((pixel_size - inner.width) // 2, pixel_size - inner.height), inner)
+            canvas = pixelize(sq, pixel_colors)
+            frames = make_pixel_motion_frames(canvas, name)
+        else:
+            if (frame_w, frame_h) != (canvas_w, canvas_h):
+                canvas = canvas.resize((frame_w, frame_h), Image.LANCZOS)
+            # 2.5) 单帧 → 4 帧微动（否则猫是静态图，不会呼吸）
+            frames = make_motion_frames(canvas, name)
         fw, fh = canvas.size
         sheet = Image.new("RGBA", (fw * len(frames), fh), (0, 0, 0, 0))
         for i, f in enumerate(frames):

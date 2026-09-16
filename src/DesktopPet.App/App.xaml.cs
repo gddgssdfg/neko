@@ -97,6 +97,16 @@ public partial class App : Application
 
         _petWindow.Show();
 
+        // v0.1.82：开发用 `Neko.exe --settings[=栏目]` —— 启动后直接打开设置页（可指定栏目，
+        // 如 --settings=input 打开"输入"页），方便改完 UI 截图核对。
+        var settingsArg = e.Args.FirstOrDefault(a => a == "--settings" || a.StartsWith("--settings="));
+        if (settingsArg is not null)
+        {
+            var section = settingsArg.Contains('=') ? settingsArg.Split('=', 2)[1] : null;
+            _petWindow.Dispatcher.BeginInvoke(new Action(() => _tray?.OpenSettingsForDev(section)),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
         // v0.1.77：每日静默检查更新（阶段1）——延迟 + 后台 + 只气泡轻提示，不弹模态打扰。
         ScheduleDailyUpdateCheck(config);
     }

@@ -629,7 +629,21 @@ public sealed class PetWindow : Window
     public void SetSkin(string skin)
     {
         if (!SkinRegistry.Exists(Paths.Assets, skin)) skin = SkinRegistry.DefaultSkinId;
-        if (_config.Skin == skin && _renderer.Atlas.Skin == skin) return;
+
+        // v0.1.82：把「素材是否需要重载」与「是否要套用推荐缩放」解耦。
+        // 陷阱（v0.1.81 踩过）：旧代码在「已是同一皮肤」时直接 return，导致
+        // 设置页对「已选中项」也触发回调时（鼠标点击无条件调 onChange），推荐缩放不重套——
+        // 用户手动把缩放调回 2 后再点 hd，应被拉回作者的推荐值 4，却仍是 2。
+        bool atlasChanged = _config.Skin != skin || _renderer.Atlas.Skin != skin;
+        if (!atlasChanged)
+        {
+            // 同一皮肤被重复选择：不重载素材，但若作者声明了推荐缩放且当前值不同，仍套用。
+            // RecommendedScale <= 0 的皮肤（pixel/soft）→ 完全无副作用（不改缩放、不写配置）。
+            double rec = _renderer.Atlas.RecommendedScale;
+            if (rec > 0 && Math.Abs(_config.Scale - rec) > 1e-9) SetScale(rec);
+            return;
+        }
+
         _config.Skin = skin;
         var newAtlas = SpriteAtlas.LoadSkin(Paths.Assets, skin);
         _renderer.SetAtlas(newAtlas);
@@ -1325,13 +1339,23 @@ public sealed class PetWindow : Window
     public void LoadPlugins()
     {
         _pluginHost.LoadCore(); // v0.1.34：只立即加载核心插件（deferred 集合外的）；延迟插件主窗口显示后异步加载
+
         // v0.1.34：窗口首次显示完成后 Background 加载 deferred 插件（不抢首屏渲染）
-        Loaded += (_, _) => Dispatcher.BeginInvoke(new Action(() =>
+        // ⚠️ v0.1.82 修：原来无条件 `Loaded += ...`，但本方法是被 App 的 Loaded 处理器调用的，
+        // 也就是「在 Loaded 事件的触发过程中再挂一个 Loaded 处理器」——WPF 不会在本次触发里调用
+        // 新挂的处理器，且 Loaded 不会重放，于是 LoadDeferred() **永远不执行**：
+        // weather/quote/wordcard/screenshot/fortune/hourly 这 6 个延迟插件从来没被加载过。
+        // 正确做法：已加载完就直接排后台任务；否则才挂一次性处理器。
+        void QueueDeferredLoad() => Dispatcher.BeginInvoke(new Action(() =>
         {
             _pluginHost.LoadDeferred();
             DeferredPluginsLoaded?.Invoke();   // 通知 App/TrayManager 等刷新
             PruneRadialMenuConfig();           // v0.1.71：插件全加载完后清一次径向菜单配置残留 slotId
         }), DispatcherPriority.Background);
+
+        if (IsLoaded) QueueDeferredLoad();
+        else Loaded += (_, _) => QueueDeferredLoad();
+
         _eventBus.Emit(DesktopPet.Core.PetEvents.AppReady, null); // v0.1.0+：插件初始化完成，订阅 AppReady 可替代 OnLoad 做延迟初始化
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);
         _loopTimer.Start(); // v0.1.1 fix：之前忘了 Start()，主循环从未跑（动画、眼神追踪、边缘吸附全部失效 → 用户只看到冻住的死图猫）

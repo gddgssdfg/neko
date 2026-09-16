@@ -33,6 +33,21 @@ neko-assets/_airaw/
 /_live_shot*.png
 /_win_*.png
 
+# ===== 其余调试/核对产物（v0.1.82：素材体检图、菜单判读图、皮肤预览页等）=====
+# 同样只列仓库根的具体前缀，绝不用 *.png 通配（否则会漏掉 neko-assets 里的素材）
+/_assets_contact.png
+/_icons_compare.png
+/_icons_prev_direction.png
+/_menu_*.png
+/_pixelai_live.png
+/_qa_*.png
+/_radial_shot.png
+/_settings_*.png
+/_preview_skins.html
+
+# ===== 测试备用输出目录（v0.1.82：沙箱里旧 UiProbe 进程锁住 bin/ 时的绕法，见 dev-log）=====
+bin_alt*/
+
 # ===== 编辑器 / 系统 =====
 .vscode/
 .workbuddy/

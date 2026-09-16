@@ -4,6 +4,106 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.82] - 2026-09-16
+
+**修 QA 复验（v0.1.81）查出的 2 个真实缺陷：重复选皮肤不重套推荐缩放 + 设置页步进器基准漂移**。
+
+### 缺陷 1：`PetWindow.SetSkin` 的早返回吞掉了推荐缩放
+- **现象**：切到 hd（自动 Scale=4）→ 手动把缩放调回 2 → **再点一次 hd，缩放仍是 2**。
+- **根因**：设置页皮肤按钮在 `MouseLeftButtonUp` 里对「已选中项」也无条件回调 `onChange`，而 `SetSkin` 开头 `if (_config.Skin == skin && _renderer.Atlas.Skin == skin) return;` 直接早返回——**把「素材是否需要重载」和「是否要套用推荐缩放」耦合在一起**。
+- **修法**：解耦。素材已是同一皮肤 → 不重载，但若作者声明了推荐缩放（>0）且当前值不同，仍 `SetScale(rec)`；`RecommendedScale <= 0` 的皮肤（pixel/soft）重复点击**完全无副作用**（不改缩放、不写配置）。
+- **语义更新**：**推荐缩放的套用时机 = 「切换到该皮肤」与「重复选择该皮肤」两种**。用户手动改过缩放后再点该皮肤，会被拉回作者推荐值——这是 UI 上「把皮肤调回作者推荐尺寸」的可发现路径。
+
+### 缺陷 2：设置页步进器内部基准没同步（注释与实现不符）
+- **现象**：切皮肤后卡片显示已刷成 `4.0x`，但点一次「+」回调收到 `2.4` 而非 `4.2`。
+- **根因**：`BuildStepperCard` 的 `refresh` 只更新了外层 `value`，而 `MakeStepperButtons` 自己还持有一份独立局部 `value = initial`，± 从**旧基准**起算。
+- **修法**：`MakeStepperButtons` 新增可选 `readCurrent`；± 每次点击都 `Base() + step`（`Base()` 从 `readCurrent` 读活值），只有「缩放倍率」卡片传 `() => _config.Scale`。其余卡片（透明度 / 径向菜单数量等，无外部写入者）传 null，行为完全不变。
+
+### 缺陷 3【P0】：**插件一个都加载不了** —— `SelfContained` 泄漏到构建期
+- **现象**：右键菜单里插件**全没了**（只剩"无快捷项"）。
+- **根因**：`DesktopPet.App.csproj` 里 `<SelfContained>true</SelfContained>` 是**构建期**属性（不是发布专用），
+  于是 `dotnet build`(Debug) 也产出「自包含非单文件」形态；**该形态下 `AssemblyDependencyResolver` 直接失败**：
+  `Dependency resolution failed ... Hostpolicy must be initialized and corehost_main must have been called`（code -2147450750）
+  → 12 个核心插件全部加载失败。
+- **修法**：改用 .NET 8 的 **`PublishSelfContained`**（只影响 `dotnet publish`）。Debug 恢复框架依赖 → 插件正常；
+  发布产物仍是自包含单文件。
+- **连带**：`tests/UiProbe/UiProbe.csproj` 的 `<SelfContained>true</SelfContained>`（v0.1.61 为对齐当时自包含的 App 而设）
+  必须同步去掉，否则报 NETSDK1150（自包含 exe 不能引用非自包含 exe）。
+
+### 缺陷 4【P0】：延迟插件**永远不加载** —— 在 `Loaded` 回调里再挂 `Loaded`
+- **根因**：`PetWindow.LoadPlugins()` 是被 App 的 `Loaded` 处理器调用的，而它内部又无条件 `Loaded += ...` 来排延迟加载。
+  **WPF 不会在事件触发过程中调用新挂的处理器，且 `Loaded` 不会重放** → `LoadDeferred()` 永不执行。
+  `weather / quote / wordcard / screenshot / fortune / hourly` 这 6 个插件**从来没被加载过**（发布版同样中招）。
+- **修法**：`if (IsLoaded) QueueDeferredLoad(); else Loaded += (_, _) => QueueDeferredLoad();`
+- **实测**：修复后 **18/18 插件全部加载**（`data/plugins/` 从 1 个目录变 13+）。
+
+### 可诊断性：`PluginHost._errors` 只收集不落日志
+插件全挂了而 `data/logs/` 干净得像没事，只能靠猜。新增 `PluginHost.ReportErrors(stage, errors)`，
+把每个插件的失败原因写进日志——**这一个改动让上述 P0 的根因 5 分钟暴露**。
+
+### 设置页：卡片右侧控件被 `Grid` 的 Auto 列纵向拉满
+- **现象**：左侧描述文字一换行，右侧选项按钮就被拉成方块，卡片下方留大片空白。
+- **根因**：`BuildCard` 的 `Grid` 子元素默认 `VerticalAlignment=Stretch`，行高 = max(文字块, 控件)。
+- **修法**：`control.VerticalAlignment = VerticalAlignment.Center`（**通用修复**，选项/开关/步进/按钮/文本框全部受益）；
+  另加 `BuildWideCard` 给"会换行/数量可变"的控件（控件在标题下独占整行），新增 `MinHeight=30` 统一选项按钮高度。
+
+### 设置页：外观选择器改版 —— 一行一个皮肤 + 预览缩略图
+- 原 `WrapPanel` 标签在皮肤增至 8 套后挤成一团、且看不出皮肤长什么样。
+- 新增 `SettingsWindow.BuildSkinPicker`：每行 = 48px 缩略图 + 显示名 + id，选中行 accent 高亮（150ms 过渡）。
+- 新增 `tools/gen_skin_previews.py`：为每套皮肤生成 `neko-assets/<id>/thumb.png`（96×96、底对齐、像素风用 NEAREST 保硬边）。
+- ⚠️ **缩略图不能命名 `preview.png`**：csproj 的 `<None Remove="..\..\neko-assets\**\*preview*" />` 会把它一并排除，**打不进输出目录**。
+
+### 设置窗不再全局置顶
+- **根因**：WPF 规则「被 Topmost 窗口拥有的窗口自身也是 Topmost」。桌宠是 Topmost，设置页因此永远压在所有应用之上。
+- **修法**：`TrayManager.OpenSettings` 在打开设置期间**临时把桌宠 `Topmost` 置 false**，`finally` 恢复 ——
+  设置页只保持"高于桌宠本体"，不再压别的程序。
+
+### 设置页在高 DPI 下更锐利
+`SettingsWindow.UseLayoutRounding = true`。本机 125% 缩放（物理 2560×1440 / 逻辑 2048×1152）下，
+不取整会让 1px 卡片描边与圆角落到半像素上 → 发虚。
+
+### 素材：20 个 AI 图标替换
+`neko-assets/icons/` 全部换成豆包新出的 20 个图标（32×32 RGBA，文件名与顺序严格对应插件 `Icon = "xxx"` 引用）。
+`prev.png` 模型画成指右，做**水平镜像**修正为指左（保持新风格统一）。原图标备份移至 `neko-assets/_icon_backup_before_ai/`
+（**必须移出 `icons/`**：白名单是 `icons\**\*.png` 递归通配，否则备份会被打进发布产物）。
+
+### 素材：4 套新动画皮肤（真动画帧）
+`cat_pixel` / `cat_hd` / `phoebe_pixel` / `phoebe_hd`，每状态 **8 帧**；
+**待机/坐/睡为静止**（`skin.json` 的 `fps = 0` —— `FrameAnimator` 里有 `if (fps <= 0) return false`，安全且帧不推进），
+其余 6 个状态播动画。新工具 `tools/build_skin_v2.py`（静态图 + 序列条混合）：
+- **分段策略**：先按等分切并校验（无空格 + 内容高离散 <20%），不合格才退回孤岛切
+- **跨画布归一**：序列条每格 512 / 静态图整张 1024，按画布比缩放（×0.5）对齐
+- **调色板全皮肤共享**：逐帧各自量化会让同一块毛色帧间跳变（实测 728 色 → 共享后 22~23 色）
+
+### 新增开发参数与素材体检工具
+- `Neko.exe --settings[=栏目]`（如 `--settings=input`）：启动即打开设置页并定位栏目。
+  动机：设置页只能从托盘点开，改完 UI 没法截图核对（托盘在通知区，程序化点击极脆弱）。
+- `tools/analyze_assets.py`（批量体检：画布/透明通道/每格内容尺寸/一致性/贴边）
+- `tools/find_grid.py`（沿 X/Y 投影数"孤岛"，判定是否真分成独立格子 + 格线穿越检测）
+- `tools/probe_menu_count.py`（**DPI-aware** 的径向菜单槽位判读：本机 125% 缩放，
+  非 DPI-aware 进程的 `GetWindowRect` 是逻辑坐标而抓屏是物理像素，差 1.25 倍 → 前面几轮像素分析全错位）
+- `tools/capture_pet.py`（PrintWindow 抓 WPF 分层窗口：GDI 常规方式抓不到）
+
+### 缺陷 5【P0，被新写的 UiProbe 断言当场拦下】：`fps = 0` 的皮肤被整体判为损坏
+- **背景**：为落实"猫大部分时间不动"，待机/坐/睡的 `skin.json` 写了 `fps: 0`。
+- **根因**：`SkinRegistry.TryLoad` 里 `if (fps <= 0) return null;` —— 一句"fps 非法 → 整个皮肤判为损坏"，
+  把 **4 套新皮肤全部跳过**。症状是"设置页里根本没有这几套皮肤"，且日志只有一行不易察觉的
+  `[皮肤] 跳过非法皮肤目录：...`。
+- **引擎侧其实一直是支持静止的**：`FrameAnimator.Tick` 里 `if (fps <= 0) return false;`（帧永不推进）。
+  所以是**校验规则与引擎语义不一致**。
+- **修法**：只拦真正非法的值 —— `if (fps < 0 || double.IsNaN(fps)) return null;`（0 视为静止）。
+- **教训**：这个 bug 是**刚写的 UiProbe 第 31 项断言第一次运行就抓出来的**（`未扫到皮肤 cat_pixel`）。
+  如果只靠"看一眼设置页"，很可能漏掉——因为漏掉的表现是"列表里少几项"，不是崩溃。
+
+### 验证
+- 构建 **0 警告 0 错误**（解决方案级）
+- **LoaderTest 40 PASS / 0 FAIL**
+- **UiProbe 46 PASS / 0 FAIL**（新增第 31 项：动画皮肤契约 —— 4 套皮肤 `frames=8`、
+  静态态 `fps=0` / 动画态 `fps>0`、每帧位图尺寸 == `frameWidth×frameHeight`、`thumb.png` 齐备且 96×96、
+  切到 `cat_pixel` 自动套用推荐缩放 4）
+- 真机：**18/18 插件全部加载**；`hd` 窗口 128×128；重复选皮肤能把缩放从 2 拉回 4；
+  设置页选项按钮高度 **36~38px**（修复前被拉满至 ~60px）；外观列表缩略图区域唯一色数 45（空白占位仅 3~5 色）
+
 ## [0.1.81] - 2026-09-16
 
 **hd 皮肤尺寸自适应（`recommendedScale`）+ 素材降采样省 53MB 内存**。

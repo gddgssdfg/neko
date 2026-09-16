@@ -8,10 +8,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>UiProbe</AssemblyName>
     <RootNamespace>DesktopPet.Tests.UiProbe</RootNamespace>
-    <!-- v0.1.61：App 自 v0.1.60 起为自包含（SelfContained=true + RID=win-x64）。
-         非自包含 exe 不能引用自包含 exe（NETSDK1151），故测试侧对齐为自包含。
-         仅影响测试产物，不改动 App 的发布配置。 -->
-    <SelfContained>true</SelfContained>
+    <!-- v0.1.82：**不要**再写 SelfContained。
+         v0.1.61 曾因「App 自 v0.1.60 起是自包含」而对齐设为 SelfContained=true（避 NETSDK1151：
+         非自包含 exe 不能引用自包含 exe）。v0.1.82 把 App 的 SelfContained 换成了
+         PublishSelfContained（因为 SelfContained 是**构建期**属性，会让 Debug 也产出自包含形态，
+         而该形态下 AssemblyDependencyResolver 失败 → 插件全加载不了），
+         于是 App 的 Debug 产物变回**非自包含**，方向反过来：自包含的 UiProbe 不能引用
+         非自包含的 App（NETSDK1150）。故这里去掉 SelfContained，与 App 保持一致。 -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
@@ -29,6 +32,12 @@
     <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
     <!-- v0.1.81：AI 高清皮肤（与 App 侧同步） -->
     <None Include="..\..\neko-assets\hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\hd" />
+    <None Include="..\..\neko-assets\pixelai\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixelai" />
+    <None Include="..\..\neko-assets\cat_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_pixel" />
+    <None Include="..\..\neko-assets\cat_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_hd" />
+    <None Include="..\..\neko-assets\phoebe_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_pixel" />
+    <None Include="..\..\neko-assets\phoebe_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_hd" />
+    <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Remove="..\..\neko-assets\**\*preview*" />
     <None Remove="..\..\neko-assets\**\*.bak-*" />

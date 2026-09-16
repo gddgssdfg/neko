@@ -264,7 +264,13 @@ public static class SkinRegistry
                     var name = GetString(s, "name");
                     if (string.IsNullOrWhiteSpace(name)) continue;   // 无名状态无意义，跳过该条
                     double fps = GetDouble(s, "fps", 0);
-                    if (fps <= 0) return null;                        // fps 非法 → 整个皮肤判为损坏
+                    // v0.1.82：**fps == 0 是合法的「静止」声明**，不能判为损坏。
+                    // 反例（真踩过）：为了做"猫大部分时间不动"，待机/坐/睡的帧数写 1、fps 写 0，
+                    // 结果旧校验 `fps <= 0 → return null` 把**整套皮肤**判为非法并跳过——
+                    // 表现为"新皮肤在设置页里根本不存在"，而且日志里只有一行难懂的"跳过非法皮肤目录"。
+                    // 引擎侧是支持静止的：FrameAnimator.Tick 里 `if (fps <= 0) return false;`（帧永不推进）。
+                    // 这里只拦真正非法的值：负数 / NaN（缺字段时 GetDouble 回落成 0 → 视为静止，偏宽容但有意义）。
+                    if (fps < 0 || double.IsNaN(fps)) return null;
                     var eye = GetString(s, "eyeLayer");
                     states.Add(new SkinState { Name = name!, Fps = fps, EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye });
                 }

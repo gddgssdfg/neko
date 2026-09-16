@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.1.81</Version>
+    <Version>0.1.82</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -21,7 +21,14 @@
          桌宠是常驻程序，内存优先 → 关压缩（灯灯 2026-09-11 拍板）
          若改回框架依赖需同步：MSI 加 .NET 8 Desktop Runtime 前置检测 + neko.iss 注释 -->
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- ⚠️ 必须用 PublishSelfContained，不能写 SelfContained（v0.1.82 血案）
+         SelfContained 是**构建期**属性：写在这里会让 `dotnet build`(Debug) 也产出
+         "自包含非单文件"形态，而该形态下 AssemblyDependencyResolver 直接失败——
+         所有插件加载报 "Hostpolicy must be initialized and corehost_main must have been
+         called before calling corehost_resolve_component_dependencies"（code -2147450750），
+         表现为「右键菜单一个插件都没有」。PublishSelfContained 只影响 dotnet publish，
+         Debug 保持框架依赖 → 插件正常；发布产物仍是自包含单文件。 -->
+    <PublishSelfContained>true</PublishSelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
@@ -61,6 +68,12 @@
     <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
     <!-- v0.1.81：AI 高清皮肤（由 tools/ai_sheet_to_skin.py 生成） -->
     <None Include="..\..\neko-assets\hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\hd" />
+    <None Include="..\..\neko-assets\pixelai\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixelai" />
+    <None Include="..\..\neko-assets\cat_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_pixel" />
+    <None Include="..\..\neko-assets\cat_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_hd" />
+    <None Include="..\..\neko-assets\phoebe_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_pixel" />
+    <None Include="..\..\neko-assets\phoebe_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_hd" />
+    <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
     <None Remove="..\..\neko-assets\**\*preview*" />

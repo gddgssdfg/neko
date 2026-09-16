@@ -140,13 +140,36 @@ public sealed class TrayManager : IDisposable
     private static string VersionText =>
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "?";
 
-    /// <summary>打开设置页；section 非空时直接定位到对应栏（如 "about"）</summary>
+    /// <summary>
+    /// 打开设置页；section 非空时直接定位到对应栏（如 "about"）。
+    /// <para>v0.1.82：设置窗必须在打开期间**临时取消桌宠的 Topmost**。
+    /// WPF 规则：<b>被 Topmost 窗口拥有的窗口自身也是 Topmost</b> —— 之前设置页因此永远压在
+    /// 所有应用窗口之上（灯灯反馈"为什么总是置于我所有窗口的最上面"）。
+    /// 取消 Topmost 后，设置页只保持"高于桌宠本体"（拥有者关系决定的 z 序），不会再压别的程序。
+    /// 关闭后恢复桌宠的 Topmost。</para>
+    /// </summary>
     private void OpenSettings(string? section = null)
     {
-        var win = new SettingsWindow(_petWindow) { Owner = Application.Current.MainWindow };
-        if (section is not null) win.ShowSection(section);
-        win.ShowDialog();
+        bool petTopmost = _petWindow.Topmost;
+        _petWindow.Topmost = false;
+        try
+        {
+            var win = new SettingsWindow(_petWindow) { Owner = _petWindow };
+            if (section is not null) win.ShowSection(section);
+            win.ShowDialog();
+        }
+        finally
+        {
+            _petWindow.Topmost = petTopmost;
+        }
     }
+
+    /// <summary>
+    /// v0.1.82：开发用入口——`Neko.exe --settings` 启动即打开设置页。
+    /// 为什么需要：设置页只能从托盘菜单点开，改完 UI 想截图核对时没有可靠手段
+    /// （托盘图标在通知区，程序化点击很脆弱）。
+    /// </summary>
+    public void OpenSettingsForDev(string? section = null) => OpenSettings(section);
 
     private static System.Drawing.Icon LoadIcon(string path)
     {

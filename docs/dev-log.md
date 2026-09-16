@@ -2059,3 +2059,244 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 
 ### 5. 验证汇总（v0.1.81）
 构建 0 警告 0 错误 + LoaderTest 全过 + UiProbe 全过（新增第 29 项：Scan 到 hd 且 RecommendedScale=4 / pixel·soft=0；`LoadSkin(hd)` 9 状态 × 4 帧 × 256px；端到端 `SetSkin(hd)`→Scale=4·窗口 32×4，`SetSkin(pixel)`→Scale 不变）+ 真机 `Neko.exe --dev` 窗口 128×128 + 截图渲染正常 + 内存实测回落。
+
+---
+
+## 2026-09-17（v0.1.82 大修：插件全丢的两个 P0 + 设置页一轮打磨 + AI 素材管线 v1→v3）
+
+### 0. 这一天的起点：灯灯问「插件那边现在为啥都没了」
+
+排查花了很久，值得完整记下来——**卡住的不是技术难点，是"看不见"**。
+
+#### 0.1 先排除假象（都验证过，全是好的）
+- 仓库 `plugins/` 19 个目录、`builtins/` 18 个工程、输出目录 19 个目录，**每个都含 DLL + plugin.toml** → 文件没丢
+- `data/config.json`：`DisabledPlugins` 空、`RadialMenu.MaxVisible=0`（0 = 不限制）→ 配置没丢
+- `git status` 无任何删除 → 仓库没被改坏
+- LoaderTest 全过（插件加载 / 权限 / 信任通道 / ALC 卸载）
+
+#### 0.2 转折点：把「看不见」变成「看得见」
+- **径向菜单判读**：读源码发现 `Width = 2*(OuterRadius+2)`、`Height = Width + (多页 ? 26 : 0)`
+  → **窗口高==宽 ⇔ 单页 ⇔ 总槽位 ≤8**；而 18 个插件应注册 28 槽位（4 页）。
+  实测窗口 **250×250 正方形** → 槽位 ≤8，与"全没了"吻合。
+  再补一刀：`all.Count == 0` 时源码**不画中心洞**、只显示"无快捷项" → 实测中心是实心盘面 → **槽位 = 0**。
+- **给 `PluginHost` 补错误日志**（`ReportErrors`）：此前 `_errors` 只收集不落盘，插件全挂了日志干净得像没事。
+  **这个改动一跑就打印出真因**：
+  `Dependency resolution failed for component ...Affection.dll with error code -2147450750`
+  （详细：`Hostpolicy must be initialized and corehost_main must have been called before calling corehost_resolve_component_dependencies`）
+
+#### 0.3 两个 P0
+1. **`SelfContained` 泄漏到构建期**（详见 CHANGELOG 缺陷 3）：对照实验一次定案——
+   同一份代码，`-p:SelfContained=false` 重建 → 12 个插件**全部加载成功**；不改 → 12 个全失败。
+   → 换 `PublishSelfContained`。**连带**：`UiProbe.csproj` 的 `SelfContained=true` 必须同步去掉
+   （否则 NETSDK1150）。这个连带是**改了 UiProbe 源码触发重建才暴露的**——之前"解决方案 0/0"里有缓存成分。
+2. **在 `Loaded` 回调里再挂 `Loaded`**（详见 CHANGELOG 缺陷 4）：`LoadDeferred()` 永不执行。
+   发布版同样中招（实跑 `publish/v0.1.73` 验证：`data/plugins/` 只有 11 个，缺 6 个延迟插件）。
+
+#### 0.4 一个反复咬人的环境坑：**DPI 125%**
+本机物理 2560×1440、逻辑 2048×1152（125% 缩放）。
+**非 DPI-aware 的 Python 进程**：`GetWindowRect`/`GetSystemMetrics` 返回**逻辑坐标**，
+而 Pillow `ImageGrab` 抓的是**物理像素** → 差 1.25 倍，所有裁剪都错位。
+我因此在前几轮把菜单判读错了（"盘面被裁掉、左上近黑"其实是抓偏了）。
+**解法**：进程启动时先 `shcore.SetProcessDpiAwareness(2)`，之后坐标全是物理像素，与抓屏一致。
+工具：`tools/probe_menu_count.py`（拿它对菜单做 ASCII 判读才第一次看清）。
+
+### 1. 设置页一轮打磨（灯灯连续三条反馈）
+
+| 反馈 | 根因 | 修法 |
+|---|---|---|
+| 选项按钮被拉成方块、下面留大片空白 | `BuildCard` 的 `Grid` 子元素默认 `Stretch`，行高 = max(左文字, 右控件)，文字一换行就把按钮顶高 | `control.VerticalAlignment = Center`（**通用修复**）+ `BuildWideCard`（会换行的控件独占整行） |
+| 皮肤标签挤成一团、看不出长相 | 8 套皮肤用 WrapPanel 标签 | 新增 `BuildSkinPicker`：一行一个 + 48px 缩略图 |
+| 设置窗永远压在所有窗口上 | **WPF 规则：被 Topmost 窗口拥有的窗口自身也是 Topmost**（桌宠是 Topmost） | 打开设置期间临时把桌宠 `Topmost=false`，`finally` 恢复 |
+
+**踩到的命名坑**：缩略图最初叫 `preview.png` → 被 csproj 的
+`<None Remove="..\..\neko-assets\**\*preview*" />`（早期排除临时预览图的规则）**一并排除，打不进输出目录**。
+改 `thumb.png`。**教训：往 neko-assets 放新素材前先看 csproj 的 `None Remove` 规则。**
+
+**高 DPI**：`SettingsWindow.UseLayoutRounding = true`，否则 125% 下 1px 描边/圆角落到半像素 → 发虚。
+
+### 2. AI 素材管线 v1 → v2 → v3（三次试错才找到对的路）
+
+#### v1：一张九宫格 → 9 状态 × 4 帧程序微动
+`tools/ai_sheet_to_skin.py`。**抠白底必须 flood-fill**（只抠与图像边缘连通的背景）——
+全局容差会把奶白肚皮一起抠掉（第一版就这么翻车的）。
+
+#### v2：豆包画「横向 N 格序列条」当动画帧 —— **这条路走不通**
+
+| 版本 | 格数 | 相邻帧差异 |
+|---|---|---|
+| v1 | 6 格 | 9~34% |
+| v2 | 8 格（prompt 明确写了"相邻格位移 ≤1/12 身高"） | **13~42%** |
+
+图像模型每画一格都会重新构形，**做不到帧间连贯**——这**不是 prompt 问题，是图像模型的固有限制**。
+（顺带证明：v2 素材是按 512 等分排的，硬切没问题；v1 素材位置会漂移、按格线切会切出"半只猫"。
+所以 `build_skin_v2.py` 的分段策略是**先试等分并校验**（无空格 + 内容高离散 <20%），不合格才退回孤岛切。）
+
+#### v3：改用「图生视频」+ 抽帧（已给灯灯指令，待出图）
+静态图 → 图生视频（3 秒循环动作）→ 我抽帧 → 真·逐帧。
+三条硬约束：**镜头必须固定 / 角色不能位移缩放 / 背景纯绿 #00FF00**（视频无 alpha，靠色键抠）。
+本机也有视频工具但**每 5 秒耗 50~100 积分**，所以让灯灯用豆包出。
+
+#### 附带踩坑：**眼球层不能跨素材差分**
+眼球层（眼神追踪用）从 `*_base_3x3.png` 与 `*_closed_3x3.png` 差分抠出，但 idle 帧现在来自**单独的 still 图**。
+实测两张画**不是同一张**（橘猫 idle 差 42.7 / sit 56.0；菲比 60~78）→ 瞳孔贴上去会错位成漂浮色斑。
+**结论：眼球层必须来自「同一张画的闭眼版」**。补救只需 4 张图（`{cat,phoebe}_still_{idle,sit}_closed.png`），已写进提示词块 12。
+
+另：`sleep/pet` 这类本就是闭眼/眯眼的状态，差分出来的瞳孔是畸形的（实测 112×14、15×32），
+已在 `build_skin_v2.py` 里加**离群校验**（小于中位数 0.35 倍就剔除）。
+
+#### 像素模式的调色板必须全皮肤共享
+逐帧各自 `quantize` → 每帧调色板不同 → 同一块毛色在帧间跳变（**动画发闪**）。实测逐帧量化产生 **728 色**；
+改成"所有状态×帧拼一张长图统一定调色板再套用"后降到 **22~23 色**。
+
+### 3. 静态态的正确表达：`fps = 0`
+落实灯灯「猫大部分时间不动、交互时才动」：待机/坐/睡用静态图 + `fps = 0`。
+`FrameAnimator.Tick` 里有 `if (fps <= 0) return false;` → **安全且帧永不推进**，正好当"静止"用。
+呼吸/眨眼后续由程序做（待灯灯的闭眼图）。
+
+### 3.5 新写的 UiProbe 断言第一次运行就抓到一个 P0：`fps = 0` 被当成皮肤损坏
+我用 `fps = 0` 表达"静止"（`FrameAnimator.Tick` 里 `if (fps <= 0) return false` 正好是这个语义），
+但 `SkinRegistry.TryLoad` 里有一句 `if (fps <= 0) return null;`（"fps 非法 → 整个皮肤判为损坏"）。
+→ **4 套新皮肤全部被跳过**，设置页里根本不显示，日志只有一行 `[皮肤] 跳过非法皮肤目录`。
+断言直接报 `未扫到皮肤 cat_pixel`，一次命中。修法：只拦 `fps < 0 || NaN`。
+
+**这条特别值得记**：症状是"设置页少几项"而不是崩溃，靠肉眼看极容易漏；
+而断言把"皮肤是否真的被注册"变成了可判定的命题。**校验规则与引擎语义不一致**也是隐蔽 bug 的常见来源。
+
+### 4. UiProbe 的两个健壮性问题 + 一个沙箱坑
+- **不退出**：打印完结果后进程一直活着（QA 曾观察到 19 分钟不退出）。原因是测试里创建过真实 WPF 窗口，
+  Dispatcher / 全局钩子留下前台线程。已在收尾处加 `Console.Out.Flush()` 并注明用 `Environment.Exit` 强制退出。
+- **stdout 块缓冲**：重定向到文件时输出是缓冲的，进程不退出就**看不到结尾那行**，容易误判成"卡在最后一项"。
+  已在 `Main` 开头 `Console.SetOut(new StreamWriter(...) { AutoFlush = true })`。
+- ⚠️ **沙箱进程视图不一致（未解决）**：卡住的 UiProbe 进程用 `taskkill` 报"没有此任务的实例在运行"、
+  用 PS 的 `Stop-Process -Force` 报成功但进程仍在 tasklist 里，且**确实锁着输出目录的 Neko.dll**
+  （Python `open(..., 'r+b')` 报 Permission denied）。`rm -rf tests/UiProbe/bin` 也被 safe-delete 挡下（trash-failed）。
+  **绕法**：`-p:BaseOutputPath=bin_alt/` 换个输出目录构建、从那里跑。
+
+### 5. 新增工具（都可复用）
+
+| 工具 | 用途 |
+|---|---|
+| `tools/capture_pet.py` | PrintWindow 抓 WPF 分层窗口（GDI 常规方式抓不到） |
+| `tools/probe_menu_count.py` | **DPI-aware** 径向菜单槽位判读（开菜单 → 几何公式反推页数 → ASCII 判读） |
+| `tools/analyze_assets.py` | 批量体检 AI 素材：画布/透明通道/每格内容尺寸/一致性/贴边 |
+| `tools/find_grid.py` | 沿 X/Y 投影数"孤岛"，判定是否真分成独立格子 + 格线穿越检测 |
+| `tools/analyze_ai_sheet.py` | 判断一张图是不是"真像素画"（内部像素栅格 + 调色板大小） |
+| `tools/build_skin_anim.py` / `build_skin_v2.py` | 序列条 / 静态图 → 皮肤 |
+| `tools/gen_skin_previews.py` | 生成设置页用的 `thumb.png` |
+| `Neko.exe --settings[=栏目]` | 启动即打开设置页并定位栏目（改完 UI 好截图核对） |
+
+---
+
+## 2026-09-17（v0.1.82 大修：插件全丢的两个 P0 + 设置页一轮打磨 + AI 素材管线 v1→v3）
+
+### 0. 这一天的起点：灯灯问「插件那边现在为啥都没了」
+
+排查花了很久，值得完整记下来——**卡住的不是技术难点，是"看不见"**。
+
+#### 0.1 先排除假象（都验证过，全是好的）
+- 仓库 `plugins/` 19 个目录、`builtins/` 18 个工程、输出目录 19 个目录，**每个都含 DLL + plugin.toml** → 文件没丢
+- `data/config.json`：`DisabledPlugins` 空、`RadialMenu.MaxVisible=0`（0 = 不限制）→ 配置没丢
+- `git status` 无任何删除 → 仓库没被改坏
+- LoaderTest 全过（插件加载 / 权限 / 信任通道 / ALC 卸载）
+
+#### 0.2 转折点：把「看不见」变成「看得见」
+- **径向菜单判读**：读源码发现 `Width = 2*(OuterRadius+2)`、`Height = Width + (多页 ? 26 : 0)`
+  → **窗口高==宽 ⇔ 单页 ⇔ 总槽位 ≤8**；而 18 个插件应注册 28 槽位（4 页）。
+  实测窗口 **250×250 正方形** → 槽位 ≤8，与"全没了"吻合。
+  再补一刀：`all.Count == 0` 时源码**不画中心洞**、只显示"无快捷项" → 实测中心是实心盘面 → **槽位 = 0**。
+- **给 `PluginHost` 补错误日志**（`ReportErrors`）：此前 `_errors` 只收集不落盘，插件全挂了日志干净得像没事。
+  **这个改动一跑就打印出真因**：
+  `Dependency resolution failed for component ...Affection.dll with error code -2147450750`
+  （详细：`Hostpolicy must be initialized and corehost_main must have been called before calling corehost_resolve_component_dependencies`）
+
+#### 0.3 两个 P0
+1. **`SelfContained` 泄漏到构建期**（详见 CHANGELOG 缺陷 3）：对照实验一次定案——
+   同一份代码，`-p:SelfContained=false` 重建 → 12 个插件**全部加载成功**；不改 → 12 个全失败。
+   → 换 `PublishSelfContained`。**连带**：`UiProbe.csproj` 的 `SelfContained=true` 必须同步去掉
+   （否则 NETSDK1150）。这个连带是**改了 UiProbe 源码触发重建才暴露的**——之前"解决方案 0/0"里有缓存成分。
+2. **在 `Loaded` 回调里再挂 `Loaded`**（详见 CHANGELOG 缺陷 4）：`LoadDeferred()` 永不执行。
+   发布版同样中招（实跑 `publish/v0.1.73` 验证：`data/plugins/` 只有 11 个，缺 6 个延迟插件）。
+
+#### 0.4 一个反复咬人的环境坑：**DPI 125%**
+本机物理 2560×1440、逻辑 2048×1152（125% 缩放）。
+**非 DPI-aware 的 Python 进程**：`GetWindowRect`/`GetSystemMetrics` 返回**逻辑坐标**，
+而 Pillow `ImageGrab` 抓的是**物理像素** → 差 1.25 倍，所有裁剪都错位。
+我因此在前几轮把菜单判读错了（"盘面被裁掉、左上近黑"其实是抓偏了）。
+**解法**：进程启动时先 `shcore.SetProcessDpiAwareness(2)`，之后坐标全是物理像素，与抓屏一致。
+工具：`tools/probe_menu_count.py`（拿它对菜单做 ASCII 判读才第一次看清）。
+
+### 1. 设置页一轮打磨（灯灯连续三条反馈）
+
+| 反馈 | 根因 | 修法 |
+|---|---|---|
+| 选项按钮被拉成方块、下面留大片空白 | `BuildCard` 的 `Grid` 子元素默认 `Stretch`，行高 = max(左文字, 右控件)，文字一换行就把按钮顶高 | `control.VerticalAlignment = Center`（**通用修复**）+ `BuildWideCard`（会换行的控件独占整行） |
+| 皮肤标签挤成一团、看不出长相 | 8 套皮肤用 WrapPanel 标签 | 新增 `BuildSkinPicker`：一行一个 + 48px 缩略图 |
+| 设置窗永远压在所有窗口上 | **WPF 规则：被 Topmost 窗口拥有的窗口自身也是 Topmost**（桌宠是 Topmost） | 打开设置期间临时把桌宠 `Topmost=false`，`finally` 恢复 |
+
+**踩到的命名坑**：缩略图最初叫 `preview.png` → 被 csproj 的
+`<None Remove="..\..\neko-assets\**\*preview*" />`（早期排除临时预览图的规则）**一并排除，打不进输出目录**。
+改 `thumb.png`。**教训：往 neko-assets 放新素材前先看 csproj 的 `None Remove` 规则。**
+
+**高 DPI**：`SettingsWindow.UseLayoutRounding = true`，否则 125% 下 1px 描边/圆角落到半像素 → 发虚。
+
+### 2. AI 素材管线 v1 → v2 → v3（三次试错才找到对的路）
+
+#### v1：一张九宫格 → 9 状态 × 4 帧程序微动
+`tools/ai_sheet_to_skin.py`。**抠白底必须 flood-fill**（只抠与图像边缘连通的背景）——
+全局容差会把奶白肚皮一起抠掉（第一版就这么翻车的）。
+
+#### v2：豆包画「横向 N 格序列条」当动画帧 —— **这条路走不通**
+
+| 版本 | 格数 | 相邻帧差异 |
+|---|---|---|
+| v1 | 6 格 | 9~34% |
+| v2 | 8 格（prompt 明确写了"相邻格位移 ≤1/12 身高"） | **13~42%** |
+
+图像模型每画一格都会重新构形，**做不到帧间连贯**——这**不是 prompt 问题，是图像模型的固有限制**。
+（顺带证明：v2 素材是按 512 等分排的，硬切没问题；v1 素材位置会漂移、按格线切会切出"半只猫"。
+所以 `build_skin_v2.py` 的分段策略是**先试等分并校验**（无空格 + 内容高离散 <20%），不合格才退回孤岛切。）
+
+#### v3：改用「图生视频」+ 抽帧（已给灯灯指令，待出图）
+静态图 → 图生视频（3 秒循环动作）→ 我抽帧 → 真·逐帧。
+三条硬约束：**镜头必须固定 / 角色不能位移缩放 / 背景纯绿 #00FF00**（视频无 alpha，靠色键抠）。
+本机也有视频工具但**每 5 秒耗 50~100 积分**，所以让灯灯用豆包出。
+
+#### 附带踩坑：**眼球层不能跨素材差分**
+眼球层（眼神追踪用）从 `*_base_3x3.png` 与 `*_closed_3x3.png` 差分抠出，但 idle 帧现在来自**单独的 still 图**。
+实测两张画**不是同一张**（橘猫 idle 差 42.7 / sit 56.0；菲比 60~78）→ 瞳孔贴上去会错位成漂浮色斑。
+**结论：眼球层必须来自「同一张画的闭眼版」**。补救只需 4 张图（`{cat,phoebe}_still_{idle,sit}_closed.png`），已写进提示词块 12。
+
+另：`sleep/pet` 这类本就是闭眼/眯眼的状态，差分出来的瞳孔是畸形的（实测 112×14、15×32），
+已在 `build_skin_v2.py` 里加**离群校验**（小于中位数 0.35 倍就剔除）。
+
+#### 像素模式的调色板必须全皮肤共享
+逐帧各自 `quantize` → 每帧调色板不同 → 同一块毛色在帧间跳变（**动画发闪**）。实测逐帧量化产生 **728 色**；
+改成"所有状态×帧拼一张长图统一定调色板再套用"后降到 **22~23 色**。
+
+### 3. 静态态的正确表达：`fps = 0`
+落实灯灯「猫大部分时间不动、交互时才动」：待机/坐/睡用静态图 + `fps = 0`。
+`FrameAnimator.Tick` 里有 `if (fps <= 0) return false;` → **安全且帧永不推进**，正好当"静止"用。
+呼吸/眨眼后续由程序做（待灯灯的闭眼图）。
+
+### 4. UiProbe 的两个健壮性问题 + 一个沙箱坑
+- **不退出**：打印完结果后进程一直活着（QA 曾观察到 19 分钟不退出）。原因是测试里创建过真实 WPF 窗口，
+  Dispatcher / 全局钩子留下前台线程。已在收尾处加 `Console.Out.Flush()` 并注明用 `Environment.Exit` 强制退出。
+- **stdout 块缓冲**：重定向到文件时输出是缓冲的，进程不退出就**看不到结尾那行**，容易误判成"卡在最后一项"。
+  已在 `Main` 开头 `Console.SetOut(new StreamWriter(...) { AutoFlush = true })`。
+- ⚠️ **沙箱进程视图不一致（未解决）**：卡住的 UiProbe 进程用 `taskkill` 报"没有此任务的实例在运行"、
+  用 PS 的 `Stop-Process -Force` 报成功但进程仍在 tasklist 里，且**确实锁着输出目录的 Neko.dll**
+  （Python `open(..., 'r+b')` 报 Permission denied）。`rm -rf tests/UiProbe/bin` 也被 safe-delete 挡下（trash-failed）。
+  **绕法**：`-p:BaseOutputPath=bin_alt/` 换个输出目录构建、从那里跑。
+
+### 5. 新增工具（都可复用）
+
+| 工具 | 用途 |
+|---|---|
+| `tools/capture_pet.py` | PrintWindow 抓 WPF 分层窗口（GDI 常规方式抓不到） |
+| `tools/probe_menu_count.py` | **DPI-aware** 径向菜单槽位判读（开菜单 → 几何公式反推页数 → ASCII 判读） |
+| `tools/analyze_assets.py` | 批量体检 AI 素材：画布/透明通道/每格内容尺寸/一致性/贴边 |
+| `tools/find_grid.py` | 沿 X/Y 投影数"孤岛"，判定是否真分成独立格子 + 格线穿越检测 |
+| `tools/analyze_ai_sheet.py` | 判断一张图是不是"真像素画"（内部像素栅格 + 调色板大小） |
+| `tools/build_skin_anim.py` / `build_skin_v2.py` | 序列条 / 静态图 → 皮肤 |
+| `tools/gen_skin_previews.py` | 生成设置页用的 `thumb.png` |
+| `Neko.exe --settings[=栏目]` | 启动即打开设置页并定位栏目（改完 UI 好截图核对） |

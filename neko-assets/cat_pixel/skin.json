@@ -1,0 +1,58 @@
+{
+  "id": "cat_pixel",
+  "displayName": "像素猫（动态）",
+  "layout": "sheet",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "frames": 8,
+  "hasShadow": false,
+  "eyeLayers": [],
+  "recommendedScale": 4.0,
+  "states": [
+    {
+      "name": "idle",
+      "fps": 0,
+      "eyeLayer": null
+    },
+    {
+      "name": "walk",
+      "fps": 10,
+      "eyeLayer": null
+    },
+    {
+      "name": "sit",
+      "fps": 0,
+      "eyeLayer": null
+    },
+    {
+      "name": "sleep",
+      "fps": 0,
+      "eyeLayer": null
+    },
+    {
+      "name": "pet",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "drag",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "fall",
+      "fps": 12,
+      "eyeLayer": null
+    },
+    {
+      "name": "climb",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "work",
+      "fps": 8,
+      "eyeLayer": null
+    }
+  ]
+}
