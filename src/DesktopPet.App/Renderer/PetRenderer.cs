@@ -245,7 +245,15 @@ public sealed class PetRenderer
     /// v0.1.59(⑩)：新增 gain 参数——鼠标路过张望时放大偏移（增益 > 1），默认 1.0 行为不变。</summary>
     public void SetEyeOffset(Vector normalizedDirection, double gain = 1.0)
     {
-        _eyeOffset = normalizedDirection * 2 * gain; // 基础限幅 ±2px，按 gain 缩放
+        var next = normalizedDirection * 2 * gain; // 基础限幅 ±2px，按 gain 缩放
+        // v0.1.82：**偏移真的变了才重绘**。
+        // 坑：eye offset 只在 Draw 里被读，而重绘原先只由「动画帧推进 / 眨眼相位切换」触发。
+        // 静止皮肤（待机/坐/睡的 fps = 0）下动画永不推进 —— 于是眼神追踪会「算了但永远不画」，
+        // 表现为"鼠标动、眼睛不动"的静默失效（不报错、日志也干净）。
+        // 这里按子像素容差判断（<0.01）避免每 tick 都重绘，同时保证静止皮肤下眼神真的跟得上。
+        if (Math.Abs(next.X - _eyeOffset.X) < 0.01 && Math.Abs(next.Y - _eyeOffset.Y) < 0.01) return;
+        _eyeOffset = next;
+        RenderInvalidated?.Invoke();
     }
 
     /// <summary>键盘反应（BongoCat 借鉴）：短暂"瞪眼"——眼球层切到 scared，到期自动恢复</summary>

@@ -381,8 +381,12 @@ public sealed class RadialMenu : Window
     public void MoveTo(double centerX, double centerY)
     {
         if (!IsVisible) return;
-        Left = centerX - Width / 2;
-        Top = centerY - Height / 2;
+        // v0.1.82：同值短路。WPF 的 Window.Left/Top setter 不做同值判断，赋值即 SetWindowPos；
+        // 菜单跟随是 20Hz 主循环驱动的，猫不动时没必要每秒重设 20 次窗口位置。
+        double l = centerX - Width / 2, t = centerY - Height / 2;
+        if (Math.Abs(Left - l) < 0.01 && Math.Abs(Top - t) < 0.01) return;
+        Left = l;
+        Top = t;
     }
 
     /// <summary>

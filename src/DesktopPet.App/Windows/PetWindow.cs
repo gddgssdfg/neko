@@ -376,8 +376,7 @@ public sealed class PetWindow : Window
         if (my + _mirrorWindow.Height > work.Y + work.Height) my = Top - _mirrorWindow.Height - MirrorGap;
         mx = Math.Max(work.X, Math.Min(mx, work.X + work.Width - _mirrorWindow.Width));
         my = Math.Max(work.Y, Math.Min(my, work.Y + work.Height - _mirrorWindow.Height));
-        _mirrorWindow.Left = mx;
-        _mirrorWindow.Top = my;
+        MoveWindowIfNeeded(_mirrorWindow, mx, my);   // v0.1.82：同值短路，别再每 tick 空挪一次窗口
         // 同步位置记忆（只改内存不落盘）：否则下次切回 work 时映射窗会先在旧位置闪一帧再跳过来
         _config.MirrorPosX = mx;
         _config.MirrorPosY = my;
@@ -541,6 +540,21 @@ public sealed class PetWindow : Window
         SyncHeartPosition();   // v0.1.59(⑧)：爱心浮层随猫（头部锚点）
     }
 
+    /// <summary>
+    /// v0.1.82：**浮层窗口定位的同值短路**。
+    /// <para>为什么需要：WPF 的 <c>Window.Left/Top</c> setter **不做同值判断** —— 只要赋值就走一遍
+    /// Win32 `SetWindowPos`（会触发窗口重排/合成）。而主循环是 20Hz，<see cref="SyncFollowers"/>
+    /// 每 tick 都会调下面三个 Sync：猫不动的时候，键盘映射窗（work 模式下是个 600×200 的分层窗口）
+    /// 每秒被无意义地"挪"20 次。这里比上一次的位置，没变就直接返回。</para>
+    /// <para>容差 0.01 DIP：小于一个设备像素的差异不补，避免浮点噪声导致短路失效。</para>
+    /// </summary>
+    private static void MoveWindowIfNeeded(Window w, double left, double top)
+    {
+        if (Math.Abs(w.Left - left) < 0.01 && Math.Abs(w.Top - top) < 0.01) return;
+        w.Left = left;
+        w.Top = top;
+    }
+
     /// <summary>v0.1.59(⑧)：爱心浮层对齐到猫头顶上方——浮层中心 = 猫头中心略上。</summary>
     private void SyncHeartPosition()
     {
@@ -548,8 +562,9 @@ public sealed class PetWindow : Window
         // 头部锚点约在窗口上方 1/4 处（眼球层 HEAD_CY≈11/32）；浮层以自己的中心对齐该点
         double anchorX = Left + Width / 2;
         double anchorY = Top + Height * 0.30;
-        _hearts.Left = anchorX - _hearts.Width / 2;
-        _hearts.Top = anchorY - _hearts.Height / 2;
+        MoveWindowIfNeeded(_hearts,
+            anchorX - _hearts.Width / 2,
+            anchorY - _hearts.Height / 2);
     }
 
     /// <summary>
@@ -559,8 +574,9 @@ public sealed class PetWindow : Window
     private void SyncBubblePosition()
     {
         if (_bubble is not { IsVisible: true }) return;
-        _bubble.Left = Left + Width / 2 - _bubble.Width / 2;
-        _bubble.Top = Top - _bubble.Height - 4;
+        MoveWindowIfNeeded(_bubble,
+            Left + Width / 2 - _bubble.Width / 2,
+            Top - _bubble.Height - 4);
     }
 
     /// <summary>v0.1.40：插件 Say → 像素云朵气泡（所有插件通知统一走这里；开关关闭则静默）</summary>
