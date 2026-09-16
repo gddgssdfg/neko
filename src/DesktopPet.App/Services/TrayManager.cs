@@ -13,6 +13,9 @@ public sealed class TrayManager : IDisposable
     private readonly PetWindow _petWindow;
     private string _iconPath;
 
+    /// <summary>v0.1.82：当前打开的设置窗（单实例保护 + 重复点托盘时激活它）。</summary>
+    private SettingsWindow? _settingsWindow;
+
     public TrayManager(PetWindow petWindow)
     {
         _petWindow = petWindow;
@@ -142,26 +145,29 @@ public sealed class TrayManager : IDisposable
 
     /// <summary>
     /// 打开设置页；section 非空时直接定位到对应栏（如 "about"）。
-    /// <para>v0.1.82：设置窗必须在打开期间**临时取消桌宠的 Topmost**。
-    /// WPF 规则：<b>被 Topmost 窗口拥有的窗口自身也是 Topmost</b> —— 之前设置页因此永远压在
-    /// 所有应用窗口之上（灯灯反馈"为什么总是置于我所有窗口的最上面"）。
-    /// 取消 Topmost 后，设置页只保持"高于桌宠本体"（拥有者关系决定的 z 序），不会再压别的程序。
-    /// 关闭后恢复桌宠的 Topmost。</para>
+    /// <para>v0.1.82：设置窗**故意不设 Owner**。</para>
+    /// <para>原因：WPF / Win32 规则 —— <b>被 Topmost 窗口拥有的窗口自身也是 Topmost</b>。
+    /// 桌宠是 Topmost，一旦把桌宠当 owner，设置页就会永远压在所有应用之上（灯灯反馈"为什么总在最上面"）。
+    /// 早先的改法是"打开设置期间临时把桌宠 Topmost 置 false"，但那会让桌宠在设置打开期间被别的窗口盖住，
+    /// 与"桌宠要置顶"冲突。现在改成：<b>桌宠的 Topmost 完全不动（永久置顶），设置窗不带 owner 只做普通窗口</b>。
+    /// 代价：设置页会出现在任务栏 —— 这反而是好事，被别的程序盖住时能从任务栏点回来。</para>
+    /// <para>同时做单实例保护：重复点托盘只会激活已打开的那个（ShowDialog 的模态消息泵仍会派发托盘点击）。</para>
     /// </summary>
     private void OpenSettings(string? section = null)
     {
-        bool petTopmost = _petWindow.Topmost;
-        _petWindow.Topmost = false;
-        try
+        if (_settingsWindow is { IsVisible: true } open)
         {
-            var win = new SettingsWindow(_petWindow) { Owner = _petWindow };
-            if (section is not null) win.ShowSection(section);
-            win.ShowDialog();
+            if (section is not null) open.ShowSection(section);
+            if (open.WindowState == WindowState.Minimized) open.WindowState = WindowState.Normal;
+            open.Activate();
+            return;
         }
-        finally
-        {
-            _petWindow.Topmost = petTopmost;
-        }
+
+        var win = new SettingsWindow(_petWindow);      // 注意：不设 Owner（见上面注释）
+        _settingsWindow = win;
+        if (section is not null) win.ShowSection(section);
+        win.Closed += (_, _) => _settingsWindow = null;
+        win.ShowDialog();
     }
 
     /// <summary>
