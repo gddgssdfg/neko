@@ -47,6 +47,13 @@ public sealed class SpriteAtlas
     /// <summary>皮肤 id（来自 skin.json）。</summary>
     public string Skin { get; private set; } = SkinRegistry.DefaultSkinId;
 
+    /// <summary>
+    /// v0.1.81：皮肤作者建议的显示倍率（透传自 skin.json 的 <c>recommendedScale</c>）。
+    /// <para><c>&gt; 0</c> 时宿主在切换本皮肤后应把缩放套用到该值；
+    /// <c>&lt;= 0</c>（默认）表示未声明，宿主不得改用户缩放。</para>
+    /// </summary>
+    public double RecommendedScale { get; private set; }
+
     public IReadOnlyDictionary<string, SpriteState> States => _states;
 
     /// <summary>按皮肤 id 加载（向后兼容旧签名，内部走 <see cref="LoadSkin"/>）。</summary>
@@ -75,7 +82,7 @@ public sealed class SpriteAtlas
     /// </summary>
     private static SpriteAtlas LoadFromInfo(SkinInfo info, string skinDir)
     {
-        var atlas = new SpriteAtlas { Skin = info.Id };
+        var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale };
 
         foreach (var state in info.States)
         {

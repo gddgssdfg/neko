@@ -25,6 +25,14 @@ neko-assets/soft/preview.png
 # 托盘图标制作的中间产物（原始素材与抠图草稿）
 neko-assets/_icon_*
 
+# ===== AI 生图原图（v0.1.81：豆包等生成的高清原图，体积大、只作切图输入，不进仓库）=====
+neko-assets/_airaw/
+
+# ===== 真机验证截图临时产物（v0.1.81：tools/capture_pet.py 抓的图，仅本机调试用）=====
+# 只忽略仓库根的这两个前缀，不用 *.png 通配（neko-assets/ 下的素材 PNG 要进仓库）
+/_live_shot*.png
+/_win_*.png
+
 # ===== 编辑器 / 系统 =====
 .vscode/
 .workbuddy/

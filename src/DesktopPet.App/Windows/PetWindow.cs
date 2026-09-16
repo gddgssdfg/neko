@@ -634,7 +634,14 @@ public sealed class PetWindow : Window
         var newAtlas = SpriteAtlas.LoadSkin(Paths.Assets, skin);
         _renderer.SetAtlas(newAtlas);
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);   // 强制从新 atlas 重拉（避免 _animator 缓存旧 SpriteState）
-        SaveConfigFile();
+        // v0.1.81：皮肤可声明推荐缩放（recommendedScale）。>0 时自动套用——
+        // 否则高清皮肤（源图 256px）会被缩进 32×Scale 的逻辑框，用户必须手动把缩放开到 4 才 1:1。
+        // SetScale 内部已 clamp(1–8) 并落盘（此时 _config.Skin 已是新值，故 Save 也带上皮肤）；
+        // 未声明推荐缩放时保持用户缩放不动，只需在末尾落盘皮肤。
+        if (newAtlas.RecommendedScale > 0)
+            SetScale(newAtlas.RecommendedScale);
+        else
+            SaveConfigFile();
     }
 
     /// <summary>v0.1.33：运行时改附加热键（按 id 重注册即热更新，无需重启）</summary>

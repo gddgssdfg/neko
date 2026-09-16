@@ -4,6 +4,24 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.81] - 2026-09-16
+
+**hd 皮肤尺寸自适应（`recommendedScale`）+ 素材降采样省 53MB 内存**。
+
+### 素材侧：脚本支持尺寸自适应
+- `tools/ai_sheet_to_skin.py` 新增 `--max-frame`（默认 **256**，超限按比例 **LANCZOS** 高质量下采样）、`--recommended-scale`（默认 **4.0**，写入 skin.json）。
+- 重生成 `neko-assets/hd`：单帧 **677×668 → 256×252**，每状态 sheet = 1024×252（4 帧 × 256px）；位图常驻 **62MB → ~9MB（省 ~53MB）**，进程内存回落红线内。
+- `skin.json` 的 `frameWidth/frameHeight` 写**实际输出**单帧尺寸（下采样后 = 总宽 / frames），并新增 `recommendedScale: 4`。
+
+### 宿主侧：皮肤可声明「推荐缩放」，切换时自动套用
+- `SkinRegistry.SkinInfo` 新增 `RecommendedScale`（默认 0 = 未声明）：解析 `recommendedScale`，仅接受 **1.0–8.0**；缺失 / NaN / 越界 / 负数一律落回 0（**绝不影响皮肤可用性**，`BuiltinFallback` 保持 0）。
+- `SpriteAtlas.RecommendedScale` 透传；`PetWindow.SetSkin` 在装载后若 `> 0` 则调用已有的 `SetScale(...)`（clamp + 改窗口尺寸 + 落盘），让高清皮肤**开箱即 1:1**，无需用户手动把缩放开到 4。
+- ⚠️ 修设置页一致性：`BuildStepperCard` 改为可刷新句柄，切换皮肤后同步「缩放倍率」卡片显示（否则自动套用改了 Scale，卡片文案与实际不符）。
+- **不改** `SpriteAtlas.FrameW/FrameH` 常量与任何绘制逻辑（改常量会波及 pixel/soft 与全部依赖 32 的几何计算，回归面过大）。
+
+### 验证
+构建 0 警告 0 错误；LoaderTest 全过；UiProbe 全过（新增第 29 项）；真机 `Neko.exe --dev` 确认 `Skin=hd` 时窗口 **128×128**（32 × 4），截图渲染正常。
+
 ## [0.1.80] - 2026-09-16
 
 **审计 P0-4：内置插件信任通道（权限细分 + 受控豁免）+ 修 v0.1.79 素材摊平 P0 回归**。

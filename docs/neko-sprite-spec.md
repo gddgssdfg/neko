@@ -253,3 +253,27 @@ neko_idle.png  →  [帧0][帧1][帧2][帧3]
 **建议顺序**：`idle` → `walk` → `sit` → `sleep` → 眼球层 → `pet` → `drag`/`fall` → `climb` → `tray.ico`
 
 先画 idle 和 walk 两个，我就能把渲染管线和状态机跑通了，剩下的可以边开发边补。
+
+---
+
+## 十一、皮肤清单可选字段：`recommendedScale`（v0.1.81）
+
+除了 `id / displayName / layout / frameWidth / frameHeight / frames / hasShadow / eyeLayers / states`，
+每个皮肤目录的 `skin.json` 还支持一个**可选**字段 `recommendedScale`：
+
+| 字段 | 类型 | 取值范围 | 缺省 | 语义 |
+|---|---|---|---|---|
+| `recommendedScale` | number | **1.0 – 8.0** | 缺省 = **不声明** | **作者建议的显示倍率**；宿主在用户**切换本皮肤时**自动套用（走宿主的 `SetScale`：clamp 1–8、窗口中心不动、持久化） |
+
+**为什么需要它**：宿主的绘制尺寸恒为 `32 × Scale` 逻辑单位，皮肤源图会被缩放进这个逻辑框。
+像素皮肤（32px 源图）本来 1:1；但高清皮肤（如 256px 源图）若不声明推荐缩放，用户得自己把缩放开到 4 才 1:1 不糊。
+声明 `recommendedScale: 4` 后，**用户一切到这皮肤就自动 4×**，开箱即用。
+
+**约定与边界**：
+- **缺省 / ≤ 0** = 该皮肤**不声明**推荐缩放 → 宿主**不得**改动用户当前缩放（用户手动调的还是用户的）。
+- 只接受 1.0–8.0 区间；**越界 / NaN / 负数一律被忽略并落回「不声明」**（越界时宿主记 warning）。
+- 该字段**解析失败不会让皮肤判为损坏**——皮肤照常可用，只是不自动套用推荐缩放。
+- 高清素材建议同时调小源图（用 `tools/ai_sheet_to_skin.py --max-frame 256`），避免位图常驻内存过大。
+
+`frameWidth / frameHeight` **必须是实际输出图的单帧尺寸**（若做过下采样，写**下采样后**的值），且等于「雪碧图总宽 ÷ frames」——否则宿主按 `frameIndex × frameWidth` 裁帧会错位。
+

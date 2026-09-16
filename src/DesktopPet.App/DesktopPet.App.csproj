@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.1.80</Version>
+    <Version>0.1.81</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -59,6 +59,8 @@
     <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mirror" />
     <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel" />
     <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
+    <!-- v0.1.81：AI 高清皮肤（由 tools/ai_sheet_to_skin.py 生成） -->
+    <None Include="..\..\neko-assets\hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\hd" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
     <None Remove="..\..\neko-assets\**\*preview*" />

@@ -2030,3 +2030,32 @@ App 自 v0.1.60 起 `SelfContained=true` + `RID=win-x64`，而 UiProbe 非自包
 
 ### 验证汇总（v0.1.70–v0.1.77）
 每版均：`build sln` 0 警告 0 错误 + LoaderTest 全过 + UiProbe 全过（新增断言逐版累加：Resolver 六场景/配置三项/皮肤两项/损坏回退/skin.json 唯一权威/自动更新两项）。
+
+---
+
+## 2026-09-16（v0.1.81：hd 皮肤尺寸自适应 —— 推荐缩放 recommendedScale + 素材降采样省 53MB）
+
+### 1. 问题：FrameW/FrameH 硬编码把「皮肤尺寸」关死在 32
+- 根因：`SpriteAtlas.FrameW/FrameH = 32` 是**编译期常量**，被这些地方直接引用：`PetWindow` 的初始尺寸 / `SetScale` / 落体贴底计算，`PetRenderer` 的绘制目标 Rect / 眼球层 Rect / 影子定位，`DrawingVisualHost` 渲染尺寸。skin.json 的 `frameWidth/frameHeight` **只用来把 sheet 切成帧，不参与任何尺寸计算**。
+- 后果：任何皮肤源图都会被缩进 `32 × Scale` 的逻辑框。现有 `soft`（128px 源图）靠用户**自己把 Scale 开到 4** 才 1:1；hd 源图（677×668）同理——**没有任何机制告诉用户/宿主「这套皮肤推荐多大」**。
+- 附带内存问题：hd 位图常驻 = 677×668 × 4 帧 × 9 状态 × 4B ≈ **62 MiB**，把进程内存从像素版基线 ~177MB 推到 **245MB**，超 <200MB 红线。
+
+### 2. 决策：加「推荐缩放」旁路，而不是改 FrameW 常量
+- ⚠️ **为什么不改 `FrameW/FrameH` 常量**：这两个常量被窗口尺寸、绘制 Rect、眼球层、影子、贴底、落体边界等**一大票依赖 32 的几何计算**引用；改成随皮肤变化，等于**同时影响 pixel/soft 与全部几何路径**，回归面太大、风险不成比例。而且 pixel 是 32 像素风，本来就该 32。
+- **改用一个「皮肤声明、宿主套用」的旁路**：skin.json 新增可选字段 `recommendedScale`（1.0–8.0，缺省=不声明），宿主在**用户切换皮肤时**套用（复用已有的 `SetScale`：clamp 1–8、中心不动、改窗口尺寸、落盘）。**不动 FrameW 常量、不动任何绘制逻辑**，回归面可控。
+- **校验策略**：仅接受 1.0–8.0；缺失 / NaN / 越界 / 负数一律落回 0（未声明，宿主不得改用户缩放）。解析失败**绝不**把整张皮肤判为损坏——皮肤仍可用，只是不自动套用。`BuiltinFallback` 保持 0。
+- **只加在 hd 上**：pixel/soft 未声明 `recommendedScale` → 切换它们**不改变用户缩放**，行为与旧版完全一致；只有 hd 声明 4。
+
+### 3. 素材侧：脚本加 --max-frame / --recommended-scale
+- `tools/ai_sheet_to_skin.py` 新增 `--max-frame`（默认 256，超限按比例 **LANCZOS** 下采样）、`--recommended-scale`（默认 4.0，写进 skin.json）。
+- ⚠️ **踩坑/要点**：下采样时**受限（较长）边要精确置为 max-frame**，不能用 `int(w*scale)` 直接截断——浮点误差会把 `677*(256/677)=255.999…` 截成 **255**，导致 skin.json 写 255 而断言期望 256。修法：先按 max(w,h) 定 scale，再把较长边**显式赋值为 max_frame**，另一边按比例取整。
+- ⚠️ **要点**：skin.json 的 `frameWidth/frameHeight` 必须写**下采样后、实际输出图**的单帧尺寸，且必须是 `总宽 / frames`（每帧等宽）。否则宿主按 `frameIndex × frameWidth` 裁帧会错位。
+- 重生成 hd：`677×668 → 256×252`（LANCZOS），每状态 sheet = **1024×252**（4 帧 × 256px）。位图常驻 62MiB → ~8.9MiB，**省 ~53MiB**。
+
+### 4. 宿主侧
+- `SkinRegistry.SkinInfo` 加 `RecommendedScale`（默认 0）；`TryLoad` 解析 + 校验（越界 `Log.Warn`，缺失/NaN/越界/负数落 0，不 return null）；`SpriteAtlas.RecommendedScale` 在 `LoadFromInfo` 透传。
+- `PetWindow.SetSkin`：`SetAtlas` 后若 `RecommendedScale > 0` → `SetScale(推荐值)`；否则末尾 `SaveConfigFile()`。注意 `SetScale` 内部已 `ConfigManager.Save`（此刻 `_config.Skin` 已是新值，Save 也带上皮肤）——**不重复无意义落盘**（用 if/else 二选一）。
+- ⚠️ **设置页一致性坑（易漏）**：`BuildStepperCard` 的显示值在**构建时固定**；皮肤回调里 `SetSkin` 可能改 `_config.Scale`，导致「缩放倍率」卡片显示值与真实值不一致。修法：`BuildStepperCard` 返回 `(Border, Action refresh)` 句柄，`refresh` 从 `() => _config.Scale` **重读真实值**（既刷文案，也把步进器内部基准值拉回，否则之后按 ± 会从旧值起算），皮肤回调 `SetSkin` 后调 `refresh()`。
+
+### 5. 验证汇总（v0.1.81）
+构建 0 警告 0 错误 + LoaderTest 全过 + UiProbe 全过（新增第 29 项：Scan 到 hd 且 RecommendedScale=4 / pixel·soft=0；`LoadSkin(hd)` 9 状态 × 4 帧 × 256px；端到端 `SetSkin(hd)`→Scale=4·窗口 32×4，`SetSkin(pixel)`→Scale 不变）+ 真机 `Neko.exe --dev` 窗口 128×128 + 截图渲染正常 + 内存实测回落。

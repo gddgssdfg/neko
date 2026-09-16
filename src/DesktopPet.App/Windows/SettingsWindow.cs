@@ -273,7 +273,8 @@ public sealed class SettingsWindow : Window
                 _pet.SetScale(v);
                 Save();
             },
-            val => $"{val:F1}x  ({32 * val:F0}px)"));
+            val => $"{val:F1}x  ({32 * val:F0}px)",
+            () => _config.Scale, out var refreshScaleCard));
 
         // 透明度（+ - 步进 0.1）
         stack.Children.Add(BuildStepperCard(
@@ -302,6 +303,9 @@ public sealed class SettingsWindow : Window
                 _pet.SetSkin(s);
                 _config.Skin = s;
                 Save();
+                // v0.1.81：切换皮肤可能自动套用推荐缩放（改了 _config.Scale）——
+                // 同步「缩放倍率」卡片显示，避免设置页显示值与真实值不一致。
+                refreshScaleCard();
             }));
         stack.Children.Add(BuildButtonCard(
             "皮肤目录", "打开 neko-assets/，放入自制皮肤目录（skin.json + 帧 PNG）后重开本页即可选用",
@@ -849,7 +853,15 @@ public sealed class SettingsWindow : Window
         return BuildCard(title, desc, sp);
     }
 
-    private Border BuildStepperCard(string title, string? desc, double initial, double min, double max, double step, Action<double> onChange, Func<double, string> formatter)
+    /// <summary>
+    /// v0.1.81：构建「+ / −」步进卡片，并返回可刷新句柄 <paramref name="refresh"/>。
+    /// <para>场景：切换皮肤可能自动套用 recommendedScale 从而改变 <c>Config.Scale</c>，
+    /// 但卡片文案是构建时算好的——必须能外部刷新，否则设置页显示值与真实值不一致。</para>
+    /// <para>传入 <paramref name="readCurrent"/> 时，refresh 会从该委托重读真实值：
+    /// 既刷新文案，也把步进器的内部基准值拉回真实值（否则之后按 ± 会从旧值起算）。</para>
+    /// </summary>
+    private Border BuildStepperCard(string title, string? desc, double initial, double min, double max, double step,
+        Action<double> onChange, Func<double, string> formatter, Func<double>? readCurrent, out Action refresh)
     {
         var valueText = new TextBlock
         {
@@ -859,16 +871,28 @@ public sealed class SettingsWindow : Window
         };
         var sp = new StackPanel { Orientation = Orientation.Horizontal };
         sp.Children.Add(valueText);
+        double value = initial;
         var (decBtn, incBtn) = MakeStepperButtons(initial, step, v =>
         {
             var clamped = Math.Clamp(v, min, max);
+            value = clamped;
             valueText.Text = formatter(clamped);
             onChange(clamped);
         });
         sp.Children.Add(decBtn);
         sp.Children.Add(incBtn);
+        refresh = () =>
+        {
+            if (readCurrent is not null) value = Math.Clamp(readCurrent(), min, max);
+            valueText.Text = formatter(value);
+        };
         return BuildCard(title, desc, sp);
     }
+
+    /// <summary>无需外部刷新的步进卡片（透明度 / 径向菜单数量等）。</summary>
+    private Border BuildStepperCard(string title, string? desc, double initial, double min, double max, double step,
+        Action<double> onChange, Func<double, string> formatter)
+        => BuildStepperCard(title, desc, initial, min, max, step, onChange, formatter, null, out _);
 
     private (Border, Border) MakeStepperButtons(double initial, double step, Action<double> onChange)
     {

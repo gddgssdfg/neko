@@ -27,6 +27,8 @@
     <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mirror" />
     <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel" />
     <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
+    <!-- v0.1.81：AI 高清皮肤（与 App 侧同步） -->
+    <None Include="..\..\neko-assets\hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\hd" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Remove="..\..\neko-assets\**\*preview*" />
     <None Remove="..\..\neko-assets\**\*.bak-*" />

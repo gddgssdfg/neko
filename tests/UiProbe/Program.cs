@@ -1484,6 +1484,75 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.81 第 29 项：hd 皮肤尺寸自适应（recommendedScale 声明 + 切换自动套用）----
+        Check("v0.1.81：hd 皮肤 recommendedScale 声明 + 切换自动套用（pixel/soft 未声明不改用户缩放）", () =>
+        {
+            // 0) hd 素材必须已部署（未部署 → throw，绝不静默 pass）——本断言的意义就是防「素材没进输出目录」
+            var hdDir = Path.Combine(Paths.Assets, "hd");
+            if (!Directory.Exists(hdDir))
+                throw new Exception($"hd 皮肤目录不存在（素材未进输出目录？）：{hdDir}");
+
+            // 1) 元数据层：Scan 扫到 hd，其 RecommendedScale=4；pixel/soft 未声明=0
+            var skins = SkinRegistry.Scan(Paths.Assets);
+            var hd = skins.FirstOrDefault(s => s.Id == "hd") ?? throw new Exception("Scan 未扫到 hd 皮肤");
+            if (Math.Abs(hd.RecommendedScale - 4) > 1e-9)
+                throw new Exception($"hd.RecommendedScale 应=4，实际 {hd.RecommendedScale}");
+            var pixelInfo = skins.FirstOrDefault(s => s.Id == "pixel") ?? throw new Exception("未扫到 pixel 皮肤");
+            var softInfo = skins.FirstOrDefault(s => s.Id == "soft") ?? throw new Exception("未扫到 soft 皮肤");
+            if (pixelInfo.RecommendedScale != 0)
+                throw new Exception($"pixel 未声明 recommendedScale 应=0，实际 {pixelInfo.RecommendedScale}");
+            if (softInfo.RecommendedScale != 0)
+                throw new Exception($"soft 未声明 recommendedScale 应=0，实际 {softInfo.RecommendedScale}");
+
+            // 2) 渲染层：LoadSkin(hd) → 9 状态 × 4 帧，每帧位图宽=256（下采样后的单帧尺寸）
+            var atlas = SpriteAtlas.LoadSkin(Paths.Assets, "hd");
+            if (atlas.Skin != "hd") throw new Exception($"hd Skin 应='hd'，实际='{atlas.Skin}'");
+            if (atlas.States.Count != 9) throw new Exception($"hd 应有 9 状态，实际 {atlas.States.Count}");
+            if (Math.Abs(atlas.RecommendedScale - 4) > 1e-9)
+                throw new Exception($"atlas.RecommendedScale 应=4（skin.json 透传失败？），实际 {atlas.RecommendedScale}");
+            foreach (var st in atlas.States.Values)
+            {
+                if (st.Frames.Length != 4) throw new Exception($"hd.{st.Name} 应 4 帧，实际 {st.Frames.Length}");
+                foreach (var fr in st.Frames)
+                    if (fr.Bitmap.PixelWidth != 256)
+                        throw new Exception($"hd.{st.Name} 帧位图宽应=256（下采样后），实际 {fr.Bitmap.PixelWidth}");
+            }
+
+            // 3) 端到端：真实 PetWindow 切换皮肤 → 自动套用推荐缩放 / 未声明则不改
+            var probeCfg = new AppConfig { Skin = "pixel", Scale = 1.0 };
+            var probeWin = new PetWindow(probeCfg);
+            probeWin.Show();
+            probeWin.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            string enterSkin = probeWin.Config.Skin;
+            double enterScale = probeWin.CurrentScale;
+            try
+            {
+                // 切 hd（声明 recommendedScale=4）→ 自动套用：Scale=4，窗口宽 = 32 × 4
+                probeWin.SetSkin("hd");
+                if (probeWin.Config.Skin != "hd")
+                    throw new Exception($"SetSkin('hd') 后 Config.Skin 应='hd'，实际='{probeWin.Config.Skin}'");
+                if (Math.Abs(probeWin.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"SetSkin('hd') 应自动套用推荐缩放 4，实际 CurrentScale={probeWin.CurrentScale}");
+                if (Math.Abs(probeWin.Width - 32 * 4) > 0.5)
+                    throw new Exception($"SetSkin('hd') 后窗口宽应=32×4=128，实际 {probeWin.Width}");
+
+                // 再切 pixel（未声明推荐缩放）→ Scale 必须保持上一步的 4 不变
+                probeWin.SetSkin("pixel");
+                if (probeWin.Config.Skin != "pixel")
+                    throw new Exception($"SetSkin('pixel') 后 Config.Skin 应='pixel'，实际='{probeWin.Config.Skin}'");
+                if (Math.Abs(probeWin.CurrentScale - 4) > 1e-9)
+                    throw new Exception($"pixel 未声明推荐缩放，Scale 应保持 4 不变，实际 {probeWin.CurrentScale}");
+            }
+            finally
+            {
+                // 还原进入时的皮肤 / 缩放
+                probeWin.SetSkin(enterSkin);
+                probeWin.SetScale(enterScale);
+                probeWin.Dispose();
+                probeWin.Close();
+            }
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Environment.Exit(_fail == 0 ? 0 : 1);
     }

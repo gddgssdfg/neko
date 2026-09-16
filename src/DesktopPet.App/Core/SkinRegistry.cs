@@ -61,6 +61,15 @@ public sealed class SkinInfo
     /// <summary>状态表。</summary>
     public IReadOnlyList<SkinState> States { get; init; } = Array.Empty<SkinState>();
 
+    /// <summary>
+    /// v0.1.81：作者建议的显示倍率（来自 skin.json 的 <c>recommendedScale</c>）。
+    /// <para>语义：<c>&gt; 0</c> 表示皮肤作者建议宿主在用户切换到本皮肤时把缩放套用到该值，
+    /// 让高清皮肤开箱即 1:1 显示（无需用户手动把缩放开到 4）；
+    /// <c>&lt;= 0</c>（默认）表示未声明推荐缩放，宿主<b>不得</b>改动用户当前缩放。</para>
+    /// <para>仅接受 1.0–8.0；缺失 / NaN / 越界 / 负数一律落回 0（不影响皮肤可用性）。</para>
+    /// </summary>
+    public double RecommendedScale { get; init; }
+
     /// <summary>是否来自内置兜底（skin.json 缺失/损坏时的最后手段），供诊断使用。</summary>
     public bool IsBuiltinFallback { get; init; }
 }
@@ -223,6 +232,16 @@ public static class SkinRegistry
 
             bool hasShadow = GetBool(root, "hasShadow", false);
 
+            // v0.1.81：推荐缩放（可选字段）。校验仅在 1.0–8.0 内接受；
+            // 缺失 / NaN / 越界 / 负数一律落回 0（未声明）——绝不让它把整张皮肤判为损坏。
+            double recommendedScale = 0;
+            double recRaw = GetDouble(root, "recommendedScale", 0);
+            if (!double.IsNaN(recRaw) && recRaw > 0)
+            {
+                if (recRaw >= 1.0 && recRaw <= 8.0) recommendedScale = recRaw;
+                else Log.Warn($"[皮肤] {manifestPath} 的 recommendedScale={recRaw} 越界（有效范围 1.0–8.0），已忽略。");
+            }
+
             var eyeLayers = new List<string>();
             if (root.TryGetProperty("eyeLayers", out var eyes) && eyes.ValueKind == JsonValueKind.Array)
             {
@@ -264,6 +283,7 @@ public static class SkinRegistry
                 HasShadow = hasShadow,
                 EyeLayers = eyeLayers,
                 States = states,
+                RecommendedScale = recommendedScale,
             };
         }
         catch (Exception ex)
