@@ -43,6 +43,8 @@ neko-assets/_airaw/
 /_qa_*.png
 /_radial_shot.png
 /_settings_*.png
+/_scroll_*.png
+/_icons_ports*.png
 /_preview_skins.html
 
 # ===== 测试备用输出目录（v0.1.82：沙箱里旧 UiProbe 进程锁住 bin/ 时的绕法，见 dev-log）=====
