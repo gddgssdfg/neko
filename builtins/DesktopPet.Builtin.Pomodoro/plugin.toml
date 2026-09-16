@@ -10,11 +10,12 @@ description = "25 分钟专注计时：开始后猫会提醒你休息"
 [permissions]
 pet = ["animate"]
 ui = ["register"]
+storage = ["local"]
 other = ["scheduler", "notify"]
 
 [ui]
 radial = true
-settings = false
+settings = true
 
 [resources]
 maxMemoryMB = 16

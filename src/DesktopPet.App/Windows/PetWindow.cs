@@ -170,7 +170,8 @@ public sealed class PetWindow : Window
             _renderer,
             () => new Point(Left, Top),
             p => { Left = p.X; Top = p.Y; },
-            () => GetWorkArea());
+            () => GetWorkArea(),
+            ui: Dispatcher);
 
         // 状态机
         _stateMachine = new PetStateMachine(petApi);

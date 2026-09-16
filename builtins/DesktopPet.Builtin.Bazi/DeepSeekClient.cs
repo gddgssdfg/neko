@@ -31,8 +31,32 @@ public static class DeepSeekClient
     private const string Endpoint = "https://api.deepseek.com/chat/completions";
     private const string ModelName = "deepseek-chat";
 
-    /// <summary>进程内唯一 HttpClient（连接池复用，避免 socket 耗尽）。</summary>
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    /// <summary>
+    /// 进程内唯一 HttpClient（连接池复用，避免 socket 耗尽）。
+    /// <para>⚠️ <b>v0.1.82：改为可释放</b>。插件程序集跑在**可回收 ALC** 里，而 SocketsHttpHandler 的
+    /// 连接池清理定时器会从**进程级根**钉住这个类型 → 整个 ALC 收不掉。
+    /// 实测：一次 load/unload 残留 <b>~8.5MB</b>，且跳过 OnLoad 就能回收 →
+    /// 根确实是 OnLoad 期间建立的（本插件的自检会首次触碰这个单例）。
+    /// 现在由 <see cref="DisposeShared"/> 在插件 OnUnload 时释放。</para>
+    /// </summary>
+    private static readonly object HttpLock = new();
+    private static HttpClient? _http;
+
+    private static HttpClient Http
+    {
+        get
+        {
+            if (_http is not null) return _http;
+            lock (HttpLock) return _http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        }
+    }
+
+    /// <summary>v0.1.82：释放共享 HttpClient。<b>必须由插件 OnUnload 调用</b>，否则 ALC 无法回收。</summary>
+    public static void DisposeShared()
+    {
+        try { _http?.Dispose(); } catch { /* 释放失败不该拖垮卸载 */ }
+        _http = null;
+    }
 
     /// <summary>最近一次 <see cref="SelfCheck"/> 的结果（"OK" 或 "FAIL: ..."）。供加载器回归读取。</summary>
     public static string LastSelfTest { get; private set; } = "未运行";

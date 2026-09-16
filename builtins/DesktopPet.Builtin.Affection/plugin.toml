@@ -14,4 +14,4 @@ storage = ["local"]
 
 [ui]
 radial = true
-settings = false
+settings = true

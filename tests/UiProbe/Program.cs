@@ -1729,6 +1729,63 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.82 第 32 项：插件定时器回调（线程池）里调 Pet.Say 必须真的弹出气泡 ----
+        // 背景：SchedulerImpl 用 System.Threading.Timer，回调跑在**线程池**；而 PetApiImpl 原先
+        // 直接把调用转给渲染器 → 触到有线程亲和性的气泡窗口 → 抛异常 → 被 SchedulerImpl 吞掉。
+        // 症状是「到点系统通知弹了、猫的气泡不弹」，而且连续失败 5 次还会把该定时器自动停用。
+        // 修法：PetApiImpl 统一封送到 UI 线程（Dispatcher 由 PetWindow 显式注入）。
+        Check("v0.1.82：线程池调 Pet.Say 能弹出气泡（插件定时器跨线程路径）", () =>
+        {
+            var cfg = new AppConfig { Skin = "pixel", Scale = 3.2, ChatEnabled = true };
+            var win = new PetWindow(cfg);
+            win.Show();
+            win.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            try
+            {
+                // 走真实插件路径：PluginHost 持有插件上下文用的那个 IPetApi
+                var hostField = typeof(PetWindow).GetField("_pluginHost",
+                    BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new Exception("找不到 PetWindow._pluginHost（反射定位失败）");
+                var host = hostField.GetValue(win);
+                var apiField = host!.GetType().GetField("_petApi",
+                    BindingFlags.NonPublic | BindingFlags.Instance)
+                    ?? throw new Exception("找不到 PluginHost._petApi（反射定位失败）");
+                var api = (DesktopPet.Core.IPetApi)apiField.GetValue(host)!;
+
+                // 复刻 SchedulerImpl 的回调线程：从线程池调用
+                Exception? crossErr = null;
+                var task = Task.Run(() =>
+                {
+                    try { api.Say("跨线程气泡", 8000); }
+                    catch (Exception ex) { crossErr = ex; }
+                });
+                if (!task.Wait(3000))
+                    throw new Exception("Pet.Say 在 3 秒内未返回 —— 封送疑似死锁");
+                if (crossErr is not null)
+                    throw new Exception($"Pet.Say 从线程池调用抛异常：{crossErr.Message}");
+
+                // 泵一下消息，让封送进来的调用真正执行
+                for (int i = 0; i < 12; i++)
+                {
+                    win.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+                    System.Threading.Thread.Sleep(40);
+                }
+
+                var bubbleField = typeof(PetWindow).GetField("_bubble",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                var bubble = bubbleField?.GetValue(win) as Window;
+                if (bubble is null)
+                    throw new Exception("气泡窗口从未被创建 —— Say 的跨线程调用没有真正执行");
+                if (!bubble.IsVisible)
+                    throw new Exception("气泡窗口存在但不可见 —— 跨线程 Say 静默失效");
+            }
+            finally
+            {
+                win.Dispose();
+                win.Close();
+            }
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Console.Out.Flush();
         // v0.1.82：用 Environment.Exit 强制退出。测试里创建过真实 WPF 窗口（PetWindow/RadialMenu），

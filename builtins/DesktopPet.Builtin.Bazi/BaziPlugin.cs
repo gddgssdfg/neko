@@ -70,6 +70,9 @@ public sealed class BaziPlugin : PluginBase
         // 铁律 2：必须 Dispose 定时器句柄，否则热重载会重复注册
         _broadcastTimer?.Dispose();
         _broadcastTimer = null;
+        // v0.1.82：释放共享 HttpClient —— 否则它的连接池定时器会从进程级根钉住本插件类型，
+        // 导致整个 ALC 无法回收（实测每次热重载泄漏 ~8.5MB）。
+        DeepSeekClient.DisposeShared();
     }
 
     /// <summary>定时回调（线程池线程）：到点则播报。失败静默降级，绝不拖垮宿主（铁律 7）。</summary>

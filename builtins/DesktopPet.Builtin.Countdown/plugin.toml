@@ -10,11 +10,12 @@ description = "快捷倒计时：5 分钟 / 10 分钟，结束系统提醒"
 [permissions]
 pet = ["animate"]
 ui = ["register"]
+storage = ["local"]
 other = ["scheduler", "notify"]
 
 [ui]
 radial = true
-settings = false
+settings = true
 
 [resources]
 maxMemoryMB = 16

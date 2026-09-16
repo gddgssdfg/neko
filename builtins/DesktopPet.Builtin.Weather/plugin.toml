@@ -10,11 +10,12 @@ description = "天气速报：右键菜单查询佛山当前天气（Open-Meteo 
 [permissions]
 pet = ["animate"]
 ui = ["register"]
+storage = ["local"]
 other = ["network"]
 
 [ui]
 radial = true
-settings = false
+settings = true
 
 [resources]
 maxMemoryMB = 16

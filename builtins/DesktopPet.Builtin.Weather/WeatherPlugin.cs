@@ -34,6 +34,23 @@ public sealed class WeatherPlugin : PluginBase
         ["西安"] = (34.34, 108.94),
     };
 
+    /// <summary>
+    /// v0.1.82：共享 HttpClient。原先三处各自 `using var http = new HttpClient{...}` ——
+    /// 每次调用都新建+销毁 → 频繁查询会耗尽本地端口（TIME_WAIT 堆积）。
+    /// <para>⚠️ 但**不能**写成 `static readonly`：插件跑在**可回收 ALC** 里，
+    /// SocketsHttpHandler 的连接池定时器会从进程级根钉住类型 → ALC 收不掉（Bazi 就是这么泄漏 8.5MB 的）。
+    /// 折中：实例级延迟创建 + <see cref="OnUnload"/> 里 Dispose —— 既复用连接池，又能让 ALC 回收。</para>
+    /// </summary>
+    private HttpClient? _http;
+    private HttpClient Http => _http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+
+    public override void OnUnload()
+    {
+        // v0.1.82：释放共享 HttpClient（见字段注释），否则 ALC 无法回收
+        try { _http?.Dispose(); } catch { }
+        _http = null;
+    }
+
     public override string Id => "com.lantern.weather";
     public override string Name => "天气";
 
@@ -72,7 +89,7 @@ public sealed class WeatherPlugin : PluginBase
             var city = Capability.Storage.Get<string>(CityKey) ?? DefaultCity;
             var (lat, lon) = await ResolveCityAsync(city);
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            var http = Http;
             var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code";
             var json = await http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
@@ -87,13 +104,14 @@ public sealed class WeatherPlugin : PluginBase
         }
     }
 
-    /// <summary>城市名 → 坐标：先查内置表，未命中走 Open-Meteo 地理编码 API，失败回退佛山</summary>
-    private static async Task<(double Lat, double Lon)> ResolveCityAsync(string city)
+    /// <summary>城市名 → 坐标：先查内置表，未命中走 Open-Meteo 地理编码 API，失败回退佛山
+    /// <para>v0.1.82：由 static 改为实例方法 —— 共享 HttpClient 是实例字段（见 <c>_http</c> 注释）。</para></summary>
+    private async Task<(double Lat, double Lon)> ResolveCityAsync(string city)
     {
         if (KnownCities.TryGetValue(city.Trim(), out var known)) return known;
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
+            var http = Http;
             var url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(city)}&count=1&language=zh";
             var json = await http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
@@ -115,7 +133,7 @@ public sealed class WeatherPlugin : PluginBase
             var city = Capability.Storage.Get<string>(CityKey) ?? DefaultCity;
             var (lat, lon) = await ResolveCityAsync(city);
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+            var http = Http;
             var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
                       $"&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=3&timezone=auto";
             var json = await http.GetStringAsync(url);

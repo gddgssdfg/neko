@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    插件冒烟工具（审计用，独立工程）。
+    - 用真实的 DesktopPet.Runtime.PluginLoader + 真实 ALC，逐个加载 App 输出目录里的全部内置插件，
+      每个插件「OnLoad → 空闲运行 N 秒 → OnUnload」，输出一张人类可读的结果表。
+    - 只读/独立：不引用任何 builtins 工程，避免把插件类型混进默认 ALC；
+      Core / Runtime / Sdk 走默认 ALC（与宿主一致），插件 dll 走各自可回收 ALC。
+    - 不修改 UiProbe / LoaderTest / 任何 builtins 源码。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Tests.PluginSmoke</RootNamespace>
+    <AssemblyName>PluginSmoke</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <!-- 引用 Sdk 仅为让 DesktopPet.Sdk.dll 落到输出目录并在默认 ALC 中加载：
+         插件 ALC 需要把 DesktopPet.Sdk 解析回宿主侧实例（否则 IPetPlugin 类型分裂）。 -->
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

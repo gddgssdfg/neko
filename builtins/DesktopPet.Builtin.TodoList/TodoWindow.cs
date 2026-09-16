@@ -8,11 +8,19 @@ namespace DesktopPet.Builtin.TodoList;
 /// <summary>待办清单窗口：添加（输入 + 回车/按钮）、勾选完成、删除。任何变化实时保存。</summary>
 public sealed class TodoWindow : Window
 {
-    private static readonly Brush Bg = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x2F));
-    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
-    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
-    private static readonly Brush CardBg = new SolidColorBrush(Color.FromRgb(0x2B, 0x36, 0x47));
-    private static readonly Brush CardBorder = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x55));
+    /// <summary>v0.1.82：冻结画刷 —— 冻结后可跨线程共享、省渲染开销；未冻结的 Freezable 在跨线程或高频渲染时是纯损耗。</summary>
+    private static SolidColorBrush Frozen(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static readonly Brush Bg = Frozen(0x1E, 0x26, 0x2F);
+    private static readonly Brush TextMain = Frozen(0xE5, 0xE7, 0xEB);
+    private static readonly Brush TextSub = Frozen(0x9C, 0xA3, 0xAF);
+    private static readonly Brush CardBg = Frozen(0x2B, 0x36, 0x47);
+    private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
 
     private readonly List<TodoItem> _items;
     private readonly Action<List<TodoItem>> _save;

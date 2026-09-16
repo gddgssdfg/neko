@@ -28,14 +28,44 @@ public sealed class SystemImpl : ISystem
 
     public string? ReadClipboard()
     {
-        try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
-        catch (Exception ex) { Log.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
+        // v0.1.82：**必须封送到 UI 线程**。System.Windows.Clipboard 要求 STA，
+        // 而插件定时器回调在线程池（MTA）——原先直接调用 + catch 吞掉，
+        // 结果是剪贴板历史插件的 1.5s 轮询静默失败、历史**永远是空的**且毫无提示。
+        return OnUi(() =>
+        {
+            try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
+            catch (Exception ex) { Log.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
+        }, null);
     }
 
     public void WriteClipboard(string text)
     {
-        try { Clipboard.SetText(text); }
-        catch (Exception ex) { Log.Warn($"剪贴板写入失败: {ex.Message}"); }
+        OnUi(() =>
+        {
+            try { Clipboard.SetText(text); }
+            catch (Exception ex) { Log.Warn($"剪贴板写入失败: {ex.Message}"); }
+        });
+    }
+
+    /// <summary>v0.1.82：剪贴板等 STA/WPF 亲和操作统一封送到 UI 线程（无 App 时直接执行，便于测试）。</summary>
+    private static void OnUi(Action action)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) { action(); return; }
+        try { d.Invoke(action); }
+        catch (Exception ex) { Log.Warn($"[System] UI 线程执行失败: {ex.Message}"); }
+    }
+
+    private static T OnUi<T>(Func<T> f, T fallback)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) return f();
+        try { return d.Invoke(f); }
+        catch (Exception ex)
+        {
+            Log.Warn($"[System] UI 线程执行失败: {ex.Message}");
+            return fallback;
+        }
     }
 
     public void OpenUrl(string url)

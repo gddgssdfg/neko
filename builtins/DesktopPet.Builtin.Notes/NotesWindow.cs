@@ -9,11 +9,19 @@ namespace DesktopPet.Builtin.Notes;
 /// <summary>桌面便签窗口：多行输入，停顿 800ms 自动保存 + 手动保存按钮 + 关窗保存。</summary>
 public sealed class NotesWindow : Window
 {
-    private static readonly Brush Bg = new SolidColorBrush(Color.FromRgb(0x1E, 0x26, 0x2F));
-    private static readonly Brush TextMain = new SolidColorBrush(Color.FromRgb(0xE5, 0xE7, 0xEB));
-    private static readonly Brush TextSub = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
-    private static readonly Brush CardBg = new SolidColorBrush(Color.FromRgb(0x2B, 0x36, 0x47));
-    private static readonly Brush CardBorder = new SolidColorBrush(Color.FromRgb(0x3A, 0x47, 0x55));
+    /// <summary>v0.1.82：冻结画刷 —— 冻结后可跨线程共享、省渲染开销；未冻结的 Freezable 在跨线程或高频渲染时是纯损耗。</summary>
+    private static SolidColorBrush Frozen(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static readonly Brush Bg = Frozen(0x1E, 0x26, 0x2F);
+    private static readonly Brush TextMain = Frozen(0xE5, 0xE7, 0xEB);
+    private static readonly Brush TextSub = Frozen(0x9C, 0xA3, 0xAF);
+    private static readonly Brush CardBg = Frozen(0x2B, 0x36, 0x47);
+    private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
 
     private readonly Action<string> _onSave;
     private readonly TextBox _editor;

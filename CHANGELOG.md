@@ -132,6 +132,55 @@ WPF 默认滚动条是浅色带箭头的，在深色页面里很突兀。`WrapPa
 
 均远低于红线（空闲 CPU < 0.5%、常驻 < 200MB）。静止待机（`fps=0`）+ 只在帧推进时重绘，是这个数字的主要来源。
 
+### 插件打磨（基于对 18 个内置插件的逐个审计）
+
+#### P0-1｜插件定时器回调里调 `Pet.Say` → **气泡静默失效**（同时影响 4 个插件）
+- **调用链**：`SchedulerImpl` 用 `System.Threading.Timer`（回调在**线程池**）→ `PetApiImpl.Say` **无封送**直接转渲染器 →
+  `BubbleWindow` 改 `Width/Height`、`Children`、`Show()`（**全是 UI 线程亲和**）→ 抛异常 → 被 `SchedulerImpl` 吞掉。
+  症状：**到点系统通知会弹、猫的气泡不弹**；连续失败 5 次还会把该定时器**自动停用**。
+  受影响：`Countdown` / `Pomodoro` / `SleepReminder` / `HourlyChime` / `Bazi`。
+- **修法**：在 `PetApiImpl` **统一封送**（本类是插件影响宠物的唯一入口，一处修好全部受益）。
+  - `Dispatcher` **由 PetWindow 显式注入**，不查 `Application.Current` —— 后者在无 App 场景（测试/LoaderTest）
+    为 null，会让封送静默退化成直接调用，跨线程 bug 在测试里就测不出来。
+  - 发后不理的方法（`Say`/`SetMood`/`PlayAnimation`）用 **`BeginInvoke` 不阻塞**：
+    原先用 `Invoke` 会让线程池线程傻等 UI 线程，多插件同时定时会**线程池饥饿**；
+    异步路径上没人接异常（会直接崩进程）→ 在回调内 try/catch 兜住。
+  - 需要返回值的方法（`GetPosition`/`GetWorkArea`）仍用阻塞 `Invoke`。
+- **断言（第 32 项）**：从**线程池**走**真实插件路径**（反射取 `PluginHost._petApi`）调 `Say`，
+  断言气泡窗口真的创建且可见。**TDD 价值**：第一版用 `Invoke` 时该断言直接报
+  "Pet.Say 在 3 秒内未返回 —— 封送疑似死锁"（主线程没泵消息），正是这个失败促成了上面的 `BeginInvoke` 决策。
+
+#### P0-2｜剪贴板在**线程池（MTA）**上读 → 剪贴板历史可能永远是空的
+- `SystemImpl.ReadClipboard/WriteClipboard` 用 `System.Windows.Clipboard`（**要求 STA**），
+  而插件回调在线程池 → 抛异常 → 插件里 `catch {}` **全吞** → 剪贴板历史静默为空且毫无提示。
+- **修法**：`SystemImpl` 两个方法统一封送到 UI 线程。
+
+#### P1-1｜6 个 manifest 与代码不符
+- 4 个插件用了 `Capability.Storage` 却没声明 `storage`：**Countdown / Pomodoro / SleepReminder / Weather**。
+- 6 个注册了设置页却写 `ui.settings = false`：**Affection / Countdown / HourlyChime / Pomodoro / SleepReminder / Weather**。
+- （注：宿主当前不按 manifest 过滤 `Storage` 能力，所以**功能上没坏**；但声明失真会让"按声明授权"落地时突然失效，属契约正确性。）
+- **修法**：补齐 `storage = ["local"]` 与 `settings = true`。
+
+#### P1-5｜3 个插件窗口的静态画刷未 `Freeze()`（共 **16 处**）
+`NotesWindow`(5) / `TodoWindow`(5) / `ClipboardWindow`(6) 的 `static readonly Brush` 全是裸 `new SolidColorBrush(...)`；
+对照 `DesktopPet.Sdk/PluginUi.cs` 的 `Frozen()` 是正确写法。已统一改为 `Frozen(r,g,b)`。
+
+#### P0-3｜Bazi 卸载后 ALC 回收不了（**未解决，已如实标注**）
+- 现象：`--only bazi` 冒烟实测 `alc = N`、残留 `rPriv ≈ 9.2MB`；对照 `--skip-onload` 则为 `Y`
+  → **根因在 OnLoad 期间建立的进程级强引用**。
+- 已排除：定时器句柄（Clipboard 也有活动定时器却可回收）、UI 注册（Affection 也注册却可回收）。
+- **已证伪**：把 `DeepSeekClient` 的 `static readonly HttpClient` 改成可释放的延迟单例（并在 `OnUnload` 里 Dispose）
+  后复测 **ALC 仍为 N** → **static HttpClient 不是根因**（该改动本身是对的，保留）。
+- 现存最大嫌疑：**`lunar.dll` 的第三方静态缓存**（唯一第三方程序集，且首次调用发生在 OnLoad 的自检里）。
+  已交由审计继续二分定位。
+- 影响面：仅插件**禁用/启用**或热重载时每次泄漏 ~9MB，常规使用不受影响。
+
+### 新增：插件冒烟工具 `tests/PluginSmoke/`
+用**真实** `PluginLoader` + 可回收 ALC 加载**全部 18 个**插件：`OnLoad → 空闲 3.2s（让定时器 tick）→ OnUnload → 强制 GC`，
+输出两张表（加载/内存/CPU/卸载 + 注册与闲置行为）与问题清单。
+替身全部为纯内存，**不碰真实剪贴板/不发通知/不开浏览器/不截图/不发媒体键/不联网、不调用任何槽位回调**。
+实测结论：**18/18 加载成功、OnLoad/OnUnload 零异常、0 定时器泄漏、0 事件未解绑**；唯一异常项是上面的 Bazi ALC。
+
 ### 验证
 - 构建 **0 警告 0 错误**（解决方案级）
 - **LoaderTest 40 PASS / 0 FAIL**

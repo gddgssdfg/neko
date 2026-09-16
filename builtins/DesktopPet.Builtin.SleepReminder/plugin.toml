@@ -10,11 +10,12 @@ description = "到点提醒睡觉，猫劝你早睡"
 [permissions]
 pet = ["animate"]
 ui = ["register"]
+storage = ["local"]
 other = ["scheduler", "notify"]
 
 [ui]
 radial = true
-settings = false
+settings = true
 
 [resources]
 maxMemoryMB = 16
