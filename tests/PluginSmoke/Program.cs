@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using DesktopPet.Core;
 using DesktopPet.Runtime;
 
@@ -57,7 +58,7 @@ public static class Program
         //                        清单 = all | none | 逗号分隔 <lunar,fortune,api,mbti,prompt,client>
         //   --probe <模式>       不调 OnLoad，改为对「插件自定义类型」做一次 JSON 序列化，验证
         //                        System.Text.Json 全局反射缓存的钉根机理。
-        //                        模式 = none | default（用全局默认 options） | owned（用新建 options）
+        //                        模式 = none | typeonly | default | owned | ownresolver | writer | store
         var only = ExtractOption(args, "--only");
         var selfTestSpec = ExtractOption(args, "--selftest");
         var probeSpec = ExtractOption(args, "--probe");
@@ -248,7 +249,7 @@ public static class Program
                 r.OnLoadOk = true;
                 r.OnLoadSkipped = true;
                 r.ProbeSpec = probeSpec;
-                r.ProbeSummary = RunStjProbe(lp.Instance.GetType().Assembly, probeSpec);
+                r.ProbeSummary = RunStjProbe(lp.Instance.GetType().Assembly, probeSpec, storage);
             }
             else if (skipOnLoad) { r.OnLoadOk = true; r.OnLoadSkipped = true; }
             else { lp.Instance.OnLoad(ctx); r.OnLoadOk = true; }
@@ -521,18 +522,25 @@ public static class Program
     }
 
     /// <summary>
-    /// STJ 钉根机理探针：对**插件 ALC 里的自定义类型**做一次 JSON 序列化，对比两种 options 来源。
+    /// STJ 钉根机理探针：对**插件 ALC 里的自定义类型**做一次 JSON 序列化，逐级收紧 options 来源，
+    /// 定位到底是「哪一层全局状态」钉住了插件 ALC。
     /// <list type="bullet">
     ///   <item><c>none</c> —— 不序列化（基线）。</item>
-    ///   <item><c>default</c> —— 用 <c>JsonSerializerOptions.Default</c>（进程全局静态，位于默认 ALC）。</item>
-    ///   <item><c>owned</c> —— 用插件自己 new 出来的 <c>JsonSerializerOptions</c>（随插件一起被回收）。</item>
+    ///   <item><c>typeonly</c> —— 只 GetType + Activator.CreateInstance，不序列化（排除「反射建实例」本身钉根）。</item>
+    ///   <item><c>default</c> —— <c>JsonSerializerOptions.Default</c>（进程全局静态）。</item>
+    ///   <item><c>owned</c> —— 新建 options，但 <c>TypeInfoResolver</c> 仍为 null（会落到进程全局默认 resolver）。</item>
+    ///   <item><c>ownresolver</c> —— 新建 options + 新建 <c>DefaultJsonTypeInfoResolver</c>（resolver 随插件自持）。</item>
+    ///   <item><c>writer</c> —— 用 <c>Utf8JsonWriter</c> 手写同样 JSON（完全绕开 STJ 反射，验证修复方向）。</item>
+    ///   <item><c>store</c> —— 走宿主同款存储路径 <c>IPluginStorage.Set&lt;T&gt;</c>（= <c>JsonPluginStorage.cs:32</c> 的
+    ///         <c>Serialize(value, _opts)</c>），验证「插件把自定义类型存盘」是否同样钉根。</item>
     /// </list>
-    /// 这是把「<c>--selftest client=N</c>」的相关性升级为因果性的对照实验：
-    /// 若 default=N 而 owned=Y、none=Y，则钉根就是 STJ 的<b>全局反射缓存</b>。
+    /// 期望：none/typeonly/writer=Y，default/owned/ownresolver=N ⇒ 钉根是「STJ 反射式序列化的进程级共享缓存」，
+    /// 只能用 <c>Utf8JsonWriter</c> / 源生成等<b>绕开反射</b>的手段修复。
     /// </summary>
-    private static string RunStjProbe(Assembly asm, string mode)
+    private static string RunStjProbe(Assembly asm, string mode, IPluginStorage storage)
     {
-        if (mode.Equals("none", StringComparison.OrdinalIgnoreCase))
+        mode = (mode ?? "").Trim().ToLowerInvariant();
+        if (mode.Length == 0 || mode == "none")
             return "未序列化（基线）";
 
         var cmType = asm.GetType("DesktopPet.Builtin.Bazi.ChatMessage", throwOnError: false);
@@ -540,11 +548,51 @@ public static class Program
             return $"未找到 ChatMessage 类型（{asm.GetName().Name} 无此类型，跳过）";
 
         var instance = Activator.CreateInstance(cmType, "user", "你好");
-        var owned = mode.Equals("owned", StringComparison.OrdinalIgnoreCase);
-        var options = owned ? new JsonSerializerOptions() : null;
+
+        if (mode == "store")
+        {
+            // 走「宿主同款存储路径」：IPluginStorage.Set<T> → JsonSerializer.Serialize(value, 实例 options)
+            // （宿主 JsonPluginStorage.cs:32 即此写法）。验证「插件把自定义类型存盘」是否也会钉住 ALC。
+            var setMethod = typeof(IPluginStorage).GetMethod("Set")!.MakeGenericMethod(cmType);
+            setMethod.Invoke(storage, new object[] { "__probe_store", instance! });
+            return "Storage.Set<ChatMessage>（= 宿主 JsonPluginStorage 的同款 STJ 反射路径）";
+        }
+
+        if (mode == "typeonly")
+            return $"仅 GetType + Activator.CreateInstance（不序列化）→ {cmType.FullName}";
+
+        if (mode == "writer")
+        {
+            // 模拟「修复方向」：用手写 Utf8JsonWriter 产出同样的 JSON，全程不经 STJ 的类型反射缓存。
+            var role = cmType.GetProperty("Role")?.GetValue(instance) as string ?? "";
+            var content = cmType.GetProperty("Content")?.GetValue(instance) as string ?? "";
+            using var ms = new MemoryStream();
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteString("Role", role);
+                w.WriteString("Content", content);
+                w.WriteEndObject();
+            }
+            return $"Utf8JsonWriter 手写 JSON（不经 STJ 反射）→ {Encoding.UTF8.GetString(ms.ToArray())}";
+        }
+
+        JsonSerializerOptions? options = mode switch
+        {
+            "default" => null,
+            "owned" => new JsonSerializerOptions(),
+            "ownresolver" => new JsonSerializerOptions { TypeInfoResolver = new DefaultJsonTypeInfoResolver() },
+            _ => null,
+        };
         var json = JsonSerializer.Serialize(instance, cmType, options);
-        var which = owned ? "新建 JsonSerializerOptions（插件自持）" : "JsonSerializerOptions.Default（进程全局）";
-        return $"序列化 ChatMessage via {which} → {json}";
+        var label = mode switch
+        {
+            "default" => "JsonSerializerOptions.Default（进程全局 options）",
+            "owned" => "新建 options（resolver 仍为 null → 进程全局默认 resolver）",
+            "ownresolver" => "新建 options + 新建 DefaultJsonTypeInfoResolver（resolver 随插件自持）",
+            _ => mode,
+        };
+        return $"序列化 ChatMessage via {label} → {json}";
     }
 
     /// <summary>解析 <c>--selftest</c> 清单：none（空集）/ all（全部 6 项）/ 逗号分隔的 key 子集。</summary>

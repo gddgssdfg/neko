@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- QA 独立证伪夹具（software-qa-engineer-2 / v0.1.82）。
+       直接引用 Affection 插件工程（同程序集身份，无需 ALC/反射），驱动真实 OnLoad/事件，
+       验证好感度「内存即时更新 + 去抖落盘」的语义、trailing timer、OnUnload flush 与并发安全。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>AffectionProbe</AssemblyName>
+    <RootNamespace>AffectionProbe</RootNamespace>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Affection\DesktopPet.Builtin.Affection.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

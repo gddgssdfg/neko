@@ -2357,3 +2357,179 @@ slack 模式 30 秒 CPU 增量 **0.000s（0.00%）**、work 模式 0.016s（**0.
 | `tools/build_skin_anim.py` / `build_skin_v2.py` | 序列条 / 静态图 → 皮肤 |
 | `tools/gen_skin_previews.py` | 生成设置页用的 `thumb.png` |
 | `Neko.exe --settings[=栏目]` | 启动即打开设置页并定位栏目（改完 UI 好截图核对） |
+
+---
+
+## 2026-09-18（插件深度打磨：把「插件全丢」之后的所有坑挖到底 + 产出标准开发文档）
+
+灯灯：「继续前面没做完的 然后在插件和皮肤的后续开发上 是否可以输出标准文档 对后续有其他用户或者我使用其他agent去做开发皮肤以及插件上 可以直接使用」
+
+### 一、这一轮最有价值的产出：**一个"假设被证伪两次才找到真凶"的排查过程**
+
+#### 1. 起点：Bazi 插件卸载后 ALC 收不掉，每次泄漏 ~9MB
+- **假设 A（审计提出）**：`static readonly HttpClient` 的连接池定时器从进程级根钉住类型。
+- **实验证伪**：改成「可释放延迟单例 + `OnUnload` 里 `Dispose`」后复测 —— **ALC 仍然 N**。
+  （该改动本身是对的，保留；但它**不解决**这个问题。）
+- **假设 B（退而求其次的猜测）**：第三方 `lunar.dll` 的静态缓存。
+- **实验证伪**：`--selftest lunar` 单独跑 → `alc = Y`。**排除了 lunar**。
+- **真正的定位手段：二分 6 项 OnLoad 自检**（给 `PluginSmoke` 加 `--selftest <清单>`）：
+  `none/lunar/fortune/api/mbti/prompt` 全是 Y，**只有 `client` 是 N**。
+- **再往机理缩（`--probe`）**——这张表的读法决定了结论：
+  | 做法 | ALC |
+  |---|---|
+  | 只 `GetType()`+`Activator.CreateInstance()`（不序列化） | **Y** → 排除"反射建对象"本身 |
+  | 新建 `JsonSerializerOptions` | **N** |
+  | 换 `DefaultJsonTypeInfoResolver` | **N** |
+  | `Serialize(List<string>)`（BCL 泛型对照） | **Y** → 证明 BCL 类型安全 |
+  | **`Utf8JsonWriter` 手写** | **Y** ✅ |
+  **「换 options / 换 resolver 都无效」是关键信息** —— 它说明钉根在 STJ **反射路径的进程级共享状态**上，
+  任何"options 级"的改法都够不着；只有绕开反射才行。
+- **真凶**：`DeepSeekClient.BuildRequestBody()` 用 `JsonSerializer.Serialize(匿名类型)` 序列化**插件程序集内定义的类型**。
+
+#### 2. 教训：**"改对了但没解决问题"必须如实记录**
+第一次修完（HttpClient）我在 CHANGELOG 里写的是「已证伪，保留该改动」而不是含糊过去。
+如果当时写「已修复」，后面就不会有人继续挖，真凶会一直留着。
+**"假设被证伪"本身是有价值的结论**，它把搜索空间缩小了一层。
+
+### 二、**测试覆盖的路径 ≠ 真实使用的路径**（本轮第二课）
+工程师修完两个调用点后自测全绿（`--only bazi` → `alc = Y`），但 **QA 用单变量探针证伪了"修复彻底"**：
+
+| 探针 case | ALC |
+|---|---|
+| `buildbody` / `chatappend` / `sdkload`（已修） | Y |
+| **`profileload` / `profilesave`（`BaziProfile`）** | **N** ← 漏修 |
+| **`todolistsave`（`List<TodoItem>`）** | **N** ← 漏修 |
+
+**为什么冒烟没抓到**：`PluginSmoke --only bazi` 只跑 OnLoad，而 **OnLoad 读不到档案 → `BaziProfile.Load` 提前 return → 压根没碰到 STJ**。
+杀伤力还很大：`BaziPlugin.CheckBroadcast` 由 `Every(60s)` 驱动、**每 tick 都调 `BaziProfile.Load`** ⇒
+**用户一旦存过命理档案，60 秒内 ALC 必被重新钉住**。
+
+→ **可复用的检查法**：一个修复"改在哪个函数"不重要，重要的是**"哪些真实使用路径会走到它"**。
+只跑初始化路径的冒烟，天然测不到"运行期才会建立的状态"。
+
+### 三、**探针设计**：机制探针 vs 真实路径探针（QA 自我修正，很值得记）
+QA 最初的 `todolistsave` case 是**机制探针**：直接反射序列化插件类型 ——
+它**永远返回 N**，无论插件怎么改，**不能当回归判据**。
+修正后的设计：**走插件真实 Save/Load 路径**的 case（→Y）+ **保留一个机制对照 case**（→N）。
+**一 N 一 Y 才构成有效的回归门**：N 证明"探针有敏感度、不是恒 Y 的假绿"，Y 证明"修复真的生效"。
+
+### 四、**取证不要依赖被验证方的自述**
+QA 复验时没有直接相信工程师说"我改好了"，而是：
+- 核对被测 DLL 的 **mtime 晚于源码 mtime**
+- 用 `grep -a` 在**二进制**里搜新生成的符号名（`BaziJsonContext` / `TodoJsonContext`）
+→ 确认"我测的确实是修复后的代码"。
+这一步成本极低、价值极高 —— **避免"测了旧二进制却以为验证通过了"**（本项目此前就踩过 `sln` 不含 `tests/` 导致跑到陈旧断言上的坑）。
+
+### 五、**"设计好了但从未接线"是一类隐蔽 bug**
+`PluginTrustSet`（内置插件信任清单）机制**完整实现**：清单格式、SHA-256 摘要校验、缺失/损坏的安全兜底、LoaderTest 里的信任通道测试全都有。
+**但生产代码 `PluginHost` 从来只是 `new PluginLoader(pluginsRoot)` —— 没传信任集** ⇒ 运行时信任集恒为 `Empty` ⇒
+**任何声明 `file`/`process` 的插件都会被一律拒载**（含随包发布的官方内置）。
+目前没暴露，只因为当前没有任何内置插件声明高危权限（已细分成 `file.own`/`media`）。
+
+**教训**：**"机制存在" ≠ "机制生效"**。测试用例覆盖了机制（LoaderTest 用夹具构造 trust），
+但**没有任何测试断言"生产代码真的把清单传进去了"** —— 这是"单测绿 + 生产死"的经典缺口。
+补法是端到端：让构建期产物（`builtins.lock.json`）+ 真机日志（"已载入内置插件信任清单"）进入验收集合。
+
+### 六、标准开发文档（这次的另一个主要交付）
+产出 `docs/plugin-development-guide.md`（1151 行）与 `docs/skin-development-guide.md`（551 行）+ `templates/plugin-skeleton/`。
+
+**一个值得记的流程教训**：文档初稿里「踩坑 2」的根因还写着**上一轮的推测**（"疑似 `lunar.dll` 静态缓存"）——
+而那时真凶已经用实验钉死了。**我核验时发现并打回重写**。
+→ **写"避坑文档"时，如果某条坑的根因还在演进中，要么等结论稳定再写，要么显式标注"本文写作时的结论/后续已更新"**；
+**在标准文档里写错根因，比不写更糟**——它会主动把后来者引到错误方向。
+
+另外文档里记录的一致性缺口本身很有价值（`IPluginContext` 没有 `Log` 入口 / manifest 权限"解析但不强制" /
+`ui.settings` 不参与判定但 `ISettingsPage.Title` 必须等于插件 Id 或 Name / `maxMemoryMB` 未强制），
+这些都写进了附录，供后续决策。
+
+### 七、发布形态注意
+`TodoList` 的磁盘格式由「裸数组」改为「JSON 字符串」（为绕开宿主 STJ 反射）。
+**升级兼容已验证；降级不兼容**（旧版读 JSON 字符串会失败 → 显示空清单，数据文件本身未丢）。已记入 CHANGELOG。
+
+---
+
+## 2026-09-18（插件深度打磨：把「插件全丢」之后的所有坑挖到底 + 产出标准开发文档）
+
+灯灯：「继续前面没做完的 然后在插件和皮肤的后续开发上 是否可以输出标准文档 对后续有其他用户或者我使用其他agent去做开发皮肤以及插件上 可以直接使用」
+
+### 一、这一轮最有价值的产出：**一个"假设被证伪两次才找到真凶"的排查过程**
+
+#### 1. 起点：Bazi 插件卸载后 ALC 收不掉，每次泄漏 ~9MB
+- **假设 A（审计提出）**：`static readonly HttpClient` 的连接池定时器从进程级根钉住类型。
+- **实验证伪**：改成「可释放延迟单例 + `OnUnload` 里 `Dispose`」后复测 —— **ALC 仍然 N**。
+  （该改动本身是对的，保留；但它**不解决**这个问题。）
+- **假设 B（退而求其次的猜测）**：第三方 `lunar.dll` 的静态缓存。
+- **实验证伪**：`--selftest lunar` 单独跑 → `alc = Y`。**排除了 lunar**。
+- **真正的定位手段：二分 6 项 OnLoad 自检**（给 `PluginSmoke` 加 `--selftest <清单>`）：
+  `none/lunar/fortune/api/mbti/prompt` 全是 Y，**只有 `client` 是 N**。
+- **再往机理缩（`--probe`）**——这张表的读法决定了结论：
+  | 做法 | ALC |
+  |---|---|
+  | 只 `GetType()`+`Activator.CreateInstance()`（不序列化） | **Y** → 排除"反射建对象"本身 |
+  | 新建 `JsonSerializerOptions` | **N** |
+  | 换 `DefaultJsonTypeInfoResolver` | **N** |
+  | `Serialize(List<string>)`（BCL 泛型对照） | **Y** → 证明 BCL 类型安全 |
+  | **`Utf8JsonWriter` 手写** | **Y** ✅ |
+  **「换 options / 换 resolver 都无效」是关键信息** —— 它说明钉根在 STJ **反射路径的进程级共享状态**上，
+  任何"options 级"的改法都够不着；只有绕开反射才行。
+- **真凶**：`DeepSeekClient.BuildRequestBody()` 用 `JsonSerializer.Serialize(匿名类型)` 序列化**插件程序集内定义的类型**。
+
+#### 2. 教训：**"改对了但没解决问题"必须如实记录**
+第一次修完（HttpClient）我在 CHANGELOG 里写的是「已证伪，保留该改动」而不是含糊过去。
+如果当时写「已修复」，后面就不会有人继续挖，真凶会一直留着。
+**"假设被证伪"本身是有价值的结论**，它把搜索空间缩小了一层。
+
+### 二、**测试覆盖的路径 ≠ 真实使用的路径**（本轮第二课）
+工程师修完两个调用点后自测全绿（`--only bazi` → `alc = Y`），但 **QA 用单变量探针证伪了"修复彻底"**：
+
+| 探针 case | ALC |
+|---|---|
+| `buildbody` / `chatappend` / `sdkload`（已修） | Y |
+| **`profileload` / `profilesave`（`BaziProfile`）** | **N** ← 漏修 |
+| **`todolistsave`（`List<TodoItem>`）** | **N** ← 漏修 |
+
+**为什么冒烟没抓到**：`PluginSmoke --only bazi` 只跑 OnLoad，而 **OnLoad 读不到档案 → `BaziProfile.Load` 提前 return → 压根没碰到 STJ**。
+杀伤力还很大：`BaziPlugin.CheckBroadcast` 由 `Every(60s)` 驱动、**每 tick 都调 `BaziProfile.Load`** ⇒
+**用户一旦存过命理档案，60 秒内 ALC 必被重新钉住**。
+
+→ **可复用的检查法**：一个修复"改在哪个函数"不重要，重要的是**"哪些真实使用路径会走到它"**。
+只跑初始化路径的冒烟，天然测不到"运行期才会建立的状态"。
+
+### 三、**探针设计**：机制探针 vs 真实路径探针（QA 自我修正，很值得记）
+QA 最初的 `todolistsave` case 是**机制探针**：直接反射序列化插件类型 ——
+它**永远返回 N**，无论插件怎么改，**不能当回归判据**。
+修正后的设计：**走插件真实 Save/Load 路径**的 case（→Y）+ **保留一个机制对照 case**（→N）。
+**一 N 一 Y 才构成有效的回归门**：N 证明"探针有敏感度、不是恒 Y 的假绿"，Y 证明"修复真的生效"。
+
+### 四、**取证不要依赖被验证方的自述**
+QA 复验时没有直接相信工程师说"我改好了"，而是：
+- 核对被测 DLL 的 **mtime 晚于源码 mtime**
+- 用 `grep -a` 在**二进制**里搜新生成的符号名（`BaziJsonContext` / `TodoJsonContext`）
+→ 确认"我测的确实是修复后的代码"。
+这一步成本极低、价值极高 —— **避免"测了旧二进制却以为验证通过了"**（本项目此前就踩过 `sln` 不含 `tests/` 导致跑到陈旧断言上的坑）。
+
+### 五、**"设计好了但从未接线"是一类隐蔽 bug**
+`PluginTrustSet`（内置插件信任清单）机制**完整实现**：清单格式、SHA-256 摘要校验、缺失/损坏的安全兜底、LoaderTest 里的信任通道测试全都有。
+**但生产代码 `PluginHost` 从来只是 `new PluginLoader(pluginsRoot)` —— 没传信任集** ⇒ 运行时信任集恒为 `Empty` ⇒
+**任何声明 `file`/`process` 的插件都会被一律拒载**（含随包发布的官方内置）。
+目前没暴露，只因为当前没有任何内置插件声明高危权限（已细分成 `file.own`/`media`）。
+
+**教训**：**"机制存在" ≠ "机制生效"**。测试用例覆盖了机制（LoaderTest 用夹具构造 trust），
+但**没有任何测试断言"生产代码真的把清单传进去了"** —— 这是"单测绿 + 生产死"的经典缺口。
+补法是端到端：让构建期产物（`builtins.lock.json`）+ 真机日志（"已载入内置插件信任清单"）进入验收集合。
+
+### 六、标准开发文档（这次的另一个主要交付）
+产出 `docs/plugin-development-guide.md`（1151 行）与 `docs/skin-development-guide.md`（551 行）+ `templates/plugin-skeleton/`。
+
+**一个值得记的流程教训**：文档初稿里「踩坑 2」的根因还写着**上一轮的推测**（"疑似 `lunar.dll` 静态缓存"）——
+而那时真凶已经用实验钉死了。**我核验时发现并打回重写**。
+→ **写"避坑文档"时，如果某条坑的根因还在演进中，要么等结论稳定再写，要么显式标注"本文写作时的结论/后续已更新"**；
+**在标准文档里写错根因，比不写更糟**——它会主动把后来者引到错误方向。
+
+另外文档里记录的一致性缺口本身很有价值（`IPluginContext` 没有 `Log` 入口 / manifest 权限"解析但不强制" /
+`ui.settings` 不参与判定但 `ISettingsPage.Title` 必须等于插件 Id 或 Name / `maxMemoryMB` 未强制），
+这些都写进了附录，供后续决策。
+
+### 七、发布形态注意
+`TodoList` 的磁盘格式由「裸数组」改为「JSON 字符串」（为绕开宿主 STJ 反射）。
+**升级兼容已验证；降级不兼容**（旧版读 JSON 字符串会失败 → 显示空清单，数据文件本身未丢）。已记入 CHANGELOG。

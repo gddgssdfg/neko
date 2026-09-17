@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -110,15 +111,38 @@ public static class DeepSeekClient
     }
 
     /// <summary>组装 OpenAI 兼容的请求体 JSON（纯函数，供自检断言结构）。</summary>
+    /// <remarks>
+    /// v0.1.82（P0 修复）：<b>不再</b>用 <c>JsonSerializer.Serialize</c> 序列化一个定义在插件程序集内的匿名类型，
+    /// 改为用 <see cref="Utf8JsonWriter"/> 手写请求体。
+    /// <para><b>为什么</b>：System.Text.Json 的反射式序列化路径会把「插件自定义类型」的元数据写入
+    /// <b>进程级共享缓存</b>，从而从默认 ALC 侧强引用该类型 → 插件卸载后整个可回收 ALC 收不回来
+    /// （实测每次 load/unload 残留 ~8.9MB）。换 options / 换 resolver 均无效，唯有绕开 STJ 反射。</para>
+    /// <para>本方法产出的 JSON 与原实现<b>逐字节等价</b>：同样的字段名、字段顺序、紧凑格式与默认转义。</para>
+    /// </remarks>
     internal static string BuildRequestBody(IReadOnlyList<ChatMessage> messages)
     {
-        var payload = new
+        // 默认 Utf8JsonWriter 的编码器 = JavaScriptEncoder.Default，与 JsonSerializer.Serialize 默认一致，
+        // 因此非 ASCII（中文）与需要转义的字符处理结果完全相同。
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
         {
-            model = ModelName,
-            messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
-            stream = false,
-        };
-        return JsonSerializer.Serialize(payload);
+            writer.WriteStartObject();
+            writer.WriteString("model", ModelName);
+
+            writer.WriteStartArray("messages");
+            foreach (var m in messages)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("role", m.Role);
+                writer.WriteString("content", m.Content);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+
+            writer.WriteBoolean("stream", false);
+            writer.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     /// <summary>从响应 JSON 里取 <c>choices[0].message.content</c>；解析失败返回 null。</summary>

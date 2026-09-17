@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- QA 独立证伪夹具（software-qa-engineer-2 / v0.1.82）。
+       用真实 PluginLoader + 可回收 ALC，测「调用插件内某个静态方法后，ALC 还能否被回收」，
+       以独立验证 P0「STJ 反射钉住 ALC」的修复是否**彻底**（不依赖工程师的 PluginSmoke 结论）。
+       只加载/卸载，不调槽位回调、不写盘。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>AlcPinProbe</AssemblyName>
+    <RootNamespace>AlcPinProbe</RootNamespace>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

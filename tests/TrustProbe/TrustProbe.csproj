@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- QA 独立证伪夹具（software-qa-engineer-2 / v0.1.82）。
+       独立重测「内置插件信任清单」安全不变式：高危插件在各式清单状态下必须**只在摘要匹配时**放行，
+       缺失 / 损坏 / 未知 schema / 缺字段一律**拒载且不崩**。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TrustProbe</AssemblyName>
+    <RootNamespace>TrustProbe</RootNamespace>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+  </ItemGroup>
+
+</Project>

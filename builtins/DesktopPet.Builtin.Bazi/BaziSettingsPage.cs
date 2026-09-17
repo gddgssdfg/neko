@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using DesktopPet.Core;
 using DesktopPet.Sdk;
 
@@ -14,6 +15,13 @@ namespace DesktopPet.Builtin.Bazi;
 public sealed class BaziSettingsPage : ISettingsPage
 {
     private readonly IPluginStorage _storage;
+
+    /// <summary>
+    /// v0.1.82：出生字段预览的输入去抖计时器（300ms）。
+    /// <para>避免逐键触发同步排盘（<see cref="BaziEngine.ComputeProfile"/> 是同步天文 / 历法计算）导致输入卡顿。
+    /// 在 <see cref="BuildContent"/> 内创建，内容卸载（<c>Unloaded</c>）时停止并释放。</para>
+    /// </summary>
+    private DispatcherTimer? _previewDebounce;
 
     public BaziSettingsPage(IPluginStorage storage) => _storage = storage;
 
@@ -311,20 +319,40 @@ public sealed class BaziSettingsPage : ISettingsPage
             }
         }
 
-        // ==== 事件接线 ====
-        yearBox.TextChanged += (_, _) => RefreshPreview();
-        monthBox.TextChanged += (_, _) => RefreshPreview();
-        dayBox.TextChanged += (_, _) => RefreshPreview();
-        hourBox.TextChanged += (_, _) => RefreshPreview();
-        minuteBox.TextChanged += (_, _) => RefreshPreview();
+        // ==== 输入去抖（300ms）====
+        // RefreshPreview 里会同步跑 BaziEngine.ComputeProfile（天文/历法计算），逐键触发会卡输入。
+        // 用 DispatcherTimer 去抖：每次输入都重置计时器，停手 300ms 后才真正重算一次 ——
+        // 保证「最终值一定会被计算并预览」（不会出现停手了却不刷新）。
+        // 说明：DispatcherTimer 未实现 IDisposable，Stop() 即会将其从 Dispatcher 队列移除；
+        //       卸载时 Stop() + 置空即可解除对闭包（含控件引用）的持有，等价于释放。
+        _previewDebounce?.Stop();
+        _previewDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _previewDebounce.Tick += (_, _) =>
+        {
+            _previewDebounce?.Stop();
+            RefreshPreview();
+        };
+
+        void ScheduleRefresh()
+        {
+            _previewDebounce!.Stop();
+            _previewDebounce!.Start();
+        }
+
+        // ==== 事件接线：任一出生命盘字段变化 → 去抖后重算四柱 ====
+        yearBox.TextChanged += (_, _) => ScheduleRefresh();
+        monthBox.TextChanged += (_, _) => ScheduleRefresh();
+        dayBox.TextChanged += (_, _) => ScheduleRefresh();
+        hourBox.TextChanged += (_, _) => ScheduleRefresh();
+        minuteBox.TextChanged += (_, _) => ScheduleRefresh();
         calCombo.SelectionChanged += (_, _) =>
         {
             leapCheck.IsEnabled = calLunar.IsSelected;
-            RefreshPreview();
+            ScheduleRefresh();
         };
-        leapCheck.Checked += (_, _) => RefreshPreview();
-        leapCheck.Unchecked += (_, _) => RefreshPreview();
-        genderCombo.SelectionChanged += (_, _) => RefreshPreview();
+        leapCheck.Checked += (_, _) => ScheduleRefresh();
+        leapCheck.Unchecked += (_, _) => ScheduleRefresh();
+        genderCombo.SelectionChanged += (_, _) => ScheduleRefresh();
 
         saveBtn.Click += (_, _) =>
         {
@@ -335,13 +363,20 @@ public sealed class BaziSettingsPage : ISettingsPage
         RefreshPreview();
 
         // 内容较长：整体可滚动，避免撑爆宿主设置窗口
-        return new ScrollViewer
+        var scroller = new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Padding = new Thickness(0),
             Content = root,
         };
+        // 页面关闭 / 卸载时停止并释放去抖计时器（DispatcherTimer 无 IDisposable，详见上方说明）。
+        scroller.Unloaded += (_, _) =>
+        {
+            _previewDebounce?.Stop();
+            _previewDebounce = null;
+        };
+        return scroller;
     }
 
     /// <summary>MBTI 状态文案。</summary>

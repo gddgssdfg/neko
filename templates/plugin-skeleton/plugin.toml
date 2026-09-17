@@ -1,0 +1,39 @@
+# Neko 插件清单（骨架）
+#
+# 复制后改：id / name / entry（entry 必须等于 csproj 的 <AssemblyName> + ".dll"）
+# 文件夹名必须与 id 完全一致（忽略大小写）。
+
+[plugin]
+id = "com.yourname.myplugin"
+name = "我的插件"
+version = "0.1.0"
+api = 1
+entry = "MyPlugin.dll"
+author = "你的名字"
+description = "一句话说明这个插件做什么"
+
+# 可选：主页 / 仓库
+# homepage = "https://..."
+
+[permissions]
+# 每段的 token 会自动加前缀（见开发文档 §3.2）：
+#   pet 段     → "pet.xxx"       可选： animate / move / read
+#   ui 段      → "ui.xxx"        可选： register
+#   storage 段 → "storage.xxx"   可选： local
+#   other 段   → 原样（不加前缀）  可选： scheduler / notify / clipboard / network
+#                                       file / process（高风险，会被拒载，勿用）
+#                                       file.own / media（v0.1.80 低危细分）
+pet     = ["animate"]      # → pet.animate
+ui      = ["register"]     # → ui.register
+storage = ["local"]        # → storage.local
+other   = ["scheduler"]    # scheduler / notify 等必须写在 other
+
+[ui]
+# 是否占用径向菜单槽位
+radial = true
+# 是否在设置窗口提供配置页（注册了 ISettingsPage 就必须写 true）
+settings = false
+
+[resources]
+# 插件内存上限声明（MB）—— 当前宿主未强制，仅声明
+maxMemoryMB = 16

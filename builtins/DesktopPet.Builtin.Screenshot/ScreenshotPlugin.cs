@@ -41,23 +41,35 @@ public sealed class ScreenshotPlugin : PluginBase
         });
     }
 
+    /// <summary>
+    /// 截图并保存到插件数据目录。
+    /// <para>v0.1.82：把「采集 + 编码 + 写盘」整体挪到线程池（<see cref="Task.Run(Action)"/>），
+    /// 避免 4K 全屏截图在 UI 线程同步执行 <c>CopyFromScreen</c> + PNG 编码而卡住猫动画。</para>
+    /// <para>完成后用 <c>Pet.Say</c> 提示；<c>IPetApi</c> 在宿主侧已统一封送到 UI 线程
+    /// （见 src/DesktopPet.App/Services/PetApiImpl.cs），故可放心从线程池调用。</para>
+    /// </summary>
     private void TakeScreenshot()
     {
-        try
+        // 采集/编码/写盘都在后台线程；异常绝不静默吞（失败也要给用户可读提示）。
+        _ = Task.Run(() =>
         {
-            var w = GetSystemMetrics(SM_CXSCREEN);
-            var h = GetSystemMetrics(SM_CYSCREEN);
-            using var bmp = new Bitmap(w, h);
-            using var g = Graphics.FromImage(bmp);
-            g.CopyFromScreen(0, 0, 0, 0, bmp.Size);
+            try
+            {
+                var w = GetSystemMetrics(SM_CXSCREEN);
+                var h = GetSystemMetrics(SM_CYSCREEN);
+                using var bmp = new Bitmap(w, h);
+                using var g = Graphics.FromImage(bmp);
+                g.CopyFromScreen(0, 0, 0, 0, bmp.Size);
 
-            var path = Path.Combine(_dataDir, $"shot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
-            bmp.Save(path, ImageFormat.Png);
-            Pet.Say($"截图已保存：{path}", 4000);
-        }
-        catch (Exception ex)
-        {
-            Pet.Say($"截图失败：{ex.Message}", 3000);
-        }
+                // 保持原有文件命名 / 保存目录逻辑不变
+                var path = Path.Combine(_dataDir, $"shot_{DateTime.Now:yyyyMMdd_HHmmss}.png");
+                bmp.Save(path, ImageFormat.Png);
+                Pet.Say($"截图已保存：{path}", 4000);   // 宿主侧已封送到 UI 线程，安全
+            }
+            catch (Exception ex)
+            {
+                Pet.Say($"截图失败：{ex.Message}", 3000);
+            }
+        });
     }
 }

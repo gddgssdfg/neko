@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    插件工程骨架。
+    复制到 plugins/<your-id>/ 后使用；<AssemblyName> 必须等于 plugin.toml 的 entry（去掉 .dll）。
+    ⚠️ 本模板不要加进 src/DesktopPet.sln，也不要被其它工程引用。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <!-- 改这里：产物文件名，必须 == plugin.toml 的 entry（不含 .dll） -->
+    <AssemblyName>MyPlugin</AssemblyName>
+    <RootNamespace>MyPlugin</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 只依赖 SDK（SDK 内部再依赖 Core）。不要直接引用 App / Runtime。 -->
+    <!-- 路径假设本工程位于 <repo>/plugins/<id>/ ；若放别处请相应调整。 -->
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="plugin.toml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    可选：构建后把「自己的 dll + plugin.toml」拷到 plugins/<id>/。
+    若你的工程本就在 plugins/<id>/ 下，目标目录 = $(ProjectDir) 本身。
+    注意：**只拷自己的 dll 和 plugin.toml**，不要拷 Core/Sdk 的 dll（宿主 ALC 会复用宿主实例）。
+  -->
+  <Target Name="DeployToPlugins" AfterTargets="Build">
+    <PropertyGroup>
+      <_PluginDir>$(ProjectDir)</_PluginDir>
+    </PropertyGroup>
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)plugin.toml" DestinationFolder="$(_PluginDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -181,6 +181,101 @@ WPF 默认滚动条是浅色带箭头的，在深色页面里很突兀。`WrapPa
 替身全部为纯内存，**不碰真实剪贴板/不发通知/不开浏览器/不截图/不发媒体键/不联网、不调用任何槽位回调**。
 实测结论：**18/18 加载成功、OnLoad/OnUnload 零异常、0 定时器泄漏、0 事件未解绑**；唯一异常项是上面的 Bazi ALC。
 
+### 插件打磨（第二轮：审计定位 + 对抗式 QA 复验收口）
+
+#### P0-3 真根因锁定：`System.Text.Json` 反射序列化会**钉住插件 ALC**
+上一轮曾怀疑 `static HttpClient`（**已被实验证伪**）、次疑第三方 `lunar.dll`（**也已排除**）。最终用二分实验钉死：
+**STJ 的反射式序列化路径在进程级共享缓存里留下对「插件程序集内定义的类型」的强引用** → 插件类型被钉住 → 整个可回收 ALC 收不掉（实测每次 load/unload 残留 **~9MB**，重复禁用/启用持续累加）。
+
+**决定性实验（换 options / 换 resolver 都无效，只有绕开反射才行）**：
+
+| 做法 | ALC 可回收 |
+|---|---|
+| 新建 `JsonSerializerOptions` / 换 `DefaultJsonTypeInfoResolver` | **仍 N** |
+| 只 `GetType()` + `Activator.CreateInstance()`（不序列化） | **Y**（排除"反射建对象"本身） |
+| **`Utf8JsonWriter` 手写 / 源生成 `JsonSerializerContext`** | **Y** ✅ |
+| `Serialize(List<string>)`（BCL 泛型对照） | Y（证明 BCL 类型安全） |
+
+**修复（4 处，覆盖全部命中点）**：
+- `Bazi/DeepSeekClient.cs` `BuildRequestBody` → `Utf8JsonWriter` 手写（字段名/顺序/编码器与原匿名类型**逐字节一致**）
+- `Bazi/ChatHistory.cs` `Load/Append` → `JsonDocument` + `Utf8JsonWriter`（旧存档可读）
+- `Bazi/BaziProfile.cs` `Load/Save` → **源生成 `BaziJsonContext`**（⚠️ 保留 `EncryptedApiKeyConverter` 的 DPAPI 语义，旧档案含密文仍可读）
+- `TodoList/TodoListPlugin.cs` → 插件侧源生成序列化成**字符串**再 `Store`（宿主只见 BCL 的 `string`）；`Load` 兼容旧格式（裸 JSON 数组）
+> 触发点很热：`BaziPlugin.CheckBroadcast` 由 `Every(60s)` 驱动，**每 tick 都调 `BaziProfile.Load`** ——
+> 用户一旦存过档案，60 秒内 ALC 必被重新钉住。这也是 `--only bazi` 冒烟**测不出来**的原因
+> （OnLoad 读不到档案 → 提前 return → 压根没碰到 STJ）：**测试覆盖的路径 ≠ 真实使用的路径**。
+
+#### 修复：并行构建竞态 `MSB3030`（**影响"别人拿到仓库第一次构建"**）
+- **现象**：`dotnet build src/DesktopPet.sln -c Debug` **偶发**
+  `MSB3030: 无法复制文件 ..\..\plugins\com.lantern.X\X.dll，原因是找不到该文件`，
+  且**报错插件每次都不一样**（QA 报 notes/todo，主理人复现为 screenshot）。
+- **根因**：`DeployPluginsToOutput` / `DeployPluginsToPublish` 读取【仓库根 `plugins/`】，
+  而该目录由 18 个内置插件的 `DeployToPlugins`（各自 `AfterTargets=Build`）**并发写入**。
+  `.sln` 并行构建下 App 与内置插件之间**没有构建依赖**，App 可能在某个插件正被并发覆盖的瞬间去读它
+  → 源文件瞬时不可用即报错。**与具体插件无关，故报错插件随机**。
+  （注：这不是"冷构建"才有的问题 —— 普通增量构建同样会中。）
+- **修法**：在 `DesktopPet.App.csproj` 用 **18 条 `ProjectReference`**（`ReferenceOutputAssembly=false` + `Private=false`）
+  在宿主与全部内置插件之间建立**构建顺序依赖** → App 的 `AfterTargets=Build` 必然在**全部**插件构建+部署完成后才执行
+  → 读 `plugins/` 时目录已静止，**竞态从构造上消除**，与"Win32 具体怎么把文件变没的"无关。
+  - `ReferenceOutputAssembly=false` 保证插件 dll **不**成为 App 的编译/运行时引用 → 不进 `PublishSingleFile` 单文件包，
+    不改变插件按 ALC 隔离加载的形态；`Private=false` 双保险
+  - 连带收益：单独 `dotnet build/publish src/DesktopPet.App` 现在也会先把全部内置插件构建并部署好，
+    不再依赖"先构建过 sln"的隐含前置
+  - **未**用 `ContinueOnError` 吞掉 Copy 失败（那会导致输出目录**静默缺插件**，比构建失败更糟）
+- **验证**：在**能复现该竞态的机器上**（修复前约 2 次中 1 次）**连跑 6 次全部 0 警告 0 错误、MSB3030 = 0**；
+  工程师侧另有 14 次连续构建（6 普通 + 8 强制重建）全绿。输出目录 `plugins/` **18 个目录 / 40 个文件**与仓库根逐项一致；
+  `builtins.lock.json` 仍为 18 条。
+  （诚实标注：工程师本机 22 次未能复现该竞态，A/B 对照为"零结果"；主理人侧复现成功并验证修复后消失。）
+
+#### ⚠️ 已知限制：`TodoList` 磁盘格式变更 → **不支持降级**
+`TodoList` 的落盘格式由「裸 JSON 数组」改为「JSON 字符串」（与 `ChatHistory` 同款，为绕开宿主 STJ 反射）。
+- **升级**：已内置兼容（能读回旧裸数组），老数据不丢
+- **降级**（装回旧版本）：旧版 `Get<List<TodoItem>>` 对 JSON 字符串反序列化会失败 → 旧版界面**显示空清单**
+  （**数据文件仍在，未丢失**，重新升级即可恢复）
+- 属一次性的格式迁移，**发布说明需标注**
+
+#### 已知限制：宿主 `JsonPluginStorage` 同属这条反射路径（无法通用修复）
+`Services/JsonPluginStorage.cs:32` 的 `Get<T>/Set<T>` 同样走 STJ 反射 ⇒ **插件若把"自定义类型"交给宿主存储，就会阻止自身 ALC 回收**。
+宿主不可能为未知的插件类型提供源生成上下文，故只能靠约定：**优先持久化 BCL 类型**；
+需要复杂结构时由插件自行序列化成字符串再存（`TodoList` 即按此改）。
+
+#### 其余 7 项修复
+| 项 | 内容 |
+|---|---|
+| 定时器"静默禁用"无日志 | `SchedulerImpl` 补失败可观测性：每次回调失败记录来源标识 + 异常 + 「连续第 N/5 次」；触发停表时明确告警。**保留原行为**，`DescribeCallback` 仅在装配期反射一次、不在 tick 路径 |
+| 截图卡 UI | `ScreenshotPlugin` 的采集+编码+写盘移入 `Task.Run`，失败也 `Pet.Say` 提示（不静默） |
+| 设置页输入卡顿 | `BaziSettingsPage` 加 300ms 去抖（`DispatcherTimer`；⚠️ 该类**未实现 `IDisposable`**，用 `Stop()`+置空释放），保证最终值一定被计算 |
+| 整点报时每 tick 读盘 4 次 | 改为内存缓存，仅在 OnLoad 与设置页保存时刷新；tick 路径零读盘 |
+| 好感度每次抚摸同步写盘（UI 线程） | 内存即时更新 + **去抖落盘（5s）** + `OnUnload` 强制 flush；新增 `public void FlushNow()`。代价：进程被强杀最多丢 ≤5s 好感度（已接受并写入注释） |
+| 剪贴板 1.5s 轮询 | 降到 3000ms（注：理想方案是 `AddClipboardFormatListener` 事件驱动，需消息窗口，留待后续） |
+| 内置信任清单**从未接线**（潜伏 P0） | `PluginHost` 此前 `new PluginLoader(pluginsRoot)` 未传 trust → 恒为 `Empty`，**任何 `file`/`process` 声明都会被拒载**（含官方内置）；而全仓无生成器、清单也没随包。现补：`PluginHost` 载入 exe 同级 `builtins.lock.json` + 新增 `tools/gen_builtins_lock.py` + `AfterTargets=Build` 自动生成（**`ContinueOnError=WarnAndContinue`，没装 Python 也不阻断构建**）。**安全不变式：清单缺失/损坏 → 行为与旧版逐字节一致（一律不信任）** |
+
+#### 对抗式 QA 复验（本轮的真正把关）
+QA 先**证伪**了"P0 已修好"的结论（抓到 `BaziProfile`/`TodoList` 两处漏修），收口后**第二轮复验 PASS**。其取证方式值得记录：
+- **不依赖工程师自述**：核对被测 DLL 的 mtime（晚于源码）+ 二进制里 `grep -a` 命中 `BaziJsonContext`/`TodoJsonContext`，确认测的是修复后代码
+- **收紧了自己的探针**：旧的"机制探针"（直接反射序列化插件类型）**永远返回 N、不能当回归判据** → 改为走插件真实路径 + 保留一个敏感度对照 case（**一 N 一 Y 才构成有效回归门**）
+- 承认方法学边界：ApiKey 非 null 时 DPAPI 密文随机，**只能做语义断言、无法逐字节比对**
+
+#### 验证汇总（本轮）
+- 构建 **0 警告 0 错误**
+- **LoaderTest 全绿**（含新增的"去抖落盘"与 `ChatHistory` 兼容断言）
+- **PluginSmoke 18/18 加载、ALC 未回收 0 个**（表 A `alc` 列全 Y）
+- **AlcPinProbe 11 个 case 全 OK**（`profileload`/`profilesave` 由 N 转 Y；`todosave`/`todoload`/`todoroundtrip` 带功能断言，排除静默 catch 假 Y）
+- **BaziJsonDiff 53/53 PASS**（6 边界样例 + **2 万例随机模糊**逐字节一致；旧存档兼容；畸形输入不崩）
+- **TrustProbe 20/20 PASS**（缺文件/坏 JSON/schema 异常一律拒载且不抛；摘要不匹配拒载；摘要匹配放行）
+- **AffectionProbe 11/11 PASS**（含 **5000 次并发抚摸 + 高频 `FlushNow` → 0 异常、内存=磁盘不丢**）
+- 真机：日志 `[插件] 已载入内置插件信任清单：...\builtins.lock.json`，**18 个插件全部加载**
+
+#### 新增测试工具（均可复用）
+`tests/PluginSmoke`（真加载 18 插件，报告加载/内存/CPU/ALC/定时器泄漏；带 `--only`/`--skip-onload`/`--selftest`/`--probe` 二分开关）、
+`tests/AlcPinProbe`（单变量 ALC 钉根诊断）、`tests/BaziJsonDiff`（序列化逐字节差分 + 模糊测试）、
+`tests/TrustProbe`（信任清单安全底线）、`tests/AffectionProbe`（去抖/并发落盘）。
+
+#### 新增开发文档
+- `docs/plugin-development-guide.md` —— 插件开发标准文档（契约全签名 / `plugin.toml` 与权限表 / **线程规则** / 生命周期铁律 / 存储规范 / 调试验证 / **踩坑清单** / 附录一致性核对）
+- `docs/skin-development-guide.md` —— 皮肤开发标准文档（`skin.json` 字段与校验 / **`fps=0` 语义** / 帧布局与帧数一致性 / 眼球层铁律 / `thumb.png` 命名禁忌 / CSProj 白名单与 `LinkBase` / **AI 生图已被证伪的路线** / 常见错误速查表）
+- `templates/plugin-skeleton/` —— 可复制的最小插件骨架（**未加入 .sln**，纯模板）
+
 ### 验证
 - 构建 **0 警告 0 错误**（解决方案级）
 - **LoaderTest 40 PASS / 0 FAIL**

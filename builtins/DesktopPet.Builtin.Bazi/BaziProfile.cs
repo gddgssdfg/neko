@@ -69,7 +69,10 @@ public sealed class BaziProfile
         {
             var json = storage.Get<string>(StorageKey);
             if (string.IsNullOrWhiteSpace(json)) return new BaziProfile();
-            return JsonSerializer.Deserialize<BaziProfile>(json) ?? new BaziProfile();
+            // v0.1.82（P0 / ALC 钉根收口）：改走**源生成** JsonTypeInfo（编译期元数据）。
+            // 原 JsonSerializer.Deserialize<BaziProfile>(json) 走反射 resolver，会把插件类型元数据
+            // 写进 STJ 的进程级共享缓存 → 钉住可回收 ALC（AlcPinProbe: profileload = PINNED(N)）。
+            return JsonSerializer.Deserialize(json, BaziJsonContext.Default.BaziProfile) ?? new BaziProfile();
         }
         catch
         {
@@ -82,11 +85,26 @@ public sealed class BaziProfile
     {
         try
         {
-            storage.Set(StorageKey, JsonSerializer.Serialize(this));
+            // v0.1.82（P0 / ALC 钉根收口）：同 Load —— 用源生成 JsonTypeInfo 序列化，绕开 STJ 反射
+            // （AlcPinProbe: profilesave = PINNED(N)）。输出与旧版反射路径逐字节一致，旧存档仍可读。
+            storage.Set(StorageKey, JsonSerializer.Serialize(this, BaziJsonContext.Default.BaziProfile));
         }
         catch
         {
             // 持久化失败不拖垮宿主（手册铁律 7）；P5 打磨阶段接入统一日志。
         }
     }
+}
+
+/// <summary>
+/// v0.1.82（P0 / ALC 钉根收口）：<see cref="BaziProfile"/> 的**源生成**序列化上下文。
+/// <para>用编译期生成的 <c>JsonTypeInfo</c> 取代运行期反射：<c>JsonSerializer.Serialize/Deserialize&lt;T&gt;</c>
+/// 的默认（反射）resolver 会把插件类型元数据写入 <b>进程级共享缓存</b>，从而钉住可回收 ALC
+/// （实测 profileload / profilesave 均为 PINNED(N)）。源生成的上下文类型随插件 ALC 一起卸载，不产生跨 ALC 根。</para>
+/// <para>语义与反射路径一致（同样的默认 options / PascalCase 属性命名 / <see cref="EncryptedApiKeyConverter"/>
+/// 的 DPAPI 加密与明文兼容），故旧存档仍可读、写出的 JSON 与旧版逐字节一致。</para>
+/// </summary>
+[JsonSerializable(typeof(BaziProfile))]
+internal partial class BaziJsonContext : JsonSerializerContext
+{
 }

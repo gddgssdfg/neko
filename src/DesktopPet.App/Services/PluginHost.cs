@@ -42,7 +42,8 @@ public sealed class PluginHost : IDisposable
         ICapabilityApi capability,
         IReadOnlySet<string>? deferredIds = null)  // v0.1.34：可选；null = 全部立即加载（向后兼容）
     {
-        _loader = new PluginLoader(pluginsRoot);
+        // v0.1.82：接线内置插件信任清单（见 LoadBuiltinTrust 注释）。
+        _loader = new PluginLoader(pluginsRoot, LoadBuiltinTrust());
         _deferredIds = deferredIds ?? (IReadOnlySet<string>)new HashSet<string>(0);
         _hostVersion = hostVersion;
         _dataRoot = dataRoot;
@@ -78,6 +79,28 @@ public sealed class PluginHost : IDisposable
         _errors.AddRange(errors);
         ReportErrors("LoadDeferred", errors);
         OnLoadAll(loaded);
+    }
+
+    /// <summary>
+    /// v0.1.82：载入 exe 同级的 <c>builtins.lock.json</c>（内置插件信任清单），交给
+    /// <see cref="PluginLoader"/> 以放行「随包发布的官方内置插件」的高风险权限声明。
+    /// <para><b>为什么补这一步</b>：此前 <c>PluginHost</c> 直接 <c>new PluginLoader(pluginsRoot)</c>，
+    /// 未传 trust → 落回 <see cref="PluginTrustSet.Empty"/>，于是所有声明高危权限的内置插件
+    /// （如 com.lantern.music）在<em>任何</em>环境下都被一律拒载——内置信任通道「设计好了从未接线」。
+    /// 清单由构建期 <c>tools/gen_builtins_lock.py</c> 生成并置于 App 输出目录（exe 同级）。</para>
+    /// <para><b>安全不变式</b>：清单缺失 / 损坏 / schema 不符时 <see cref="PluginTrustSet.Load"/> 返回
+    /// <see cref="PluginTrustSet.Empty"/> 并给出 warning，行为与旧版<b>逐字节一致</b>（一律不信任），
+    /// 不引入任何新风险；此处只是把 warning 落到日志，便于排查「内置高危插件没加载」。</para>
+    /// </summary>
+    private static PluginTrustSet LoadBuiltinTrust()
+    {
+        var lockPath = System.IO.Path.Combine(AppContext.BaseDirectory, PluginTrustSet.DefaultFileName);
+        var trust = PluginTrustSet.Load(lockPath, out var warning);
+        if (!string.IsNullOrEmpty(warning))
+            Log.Warn($"[插件] {warning}");
+        else
+            Log.Info($"[插件] 已载入内置插件信任清单：{lockPath}");
+        return trust;
     }
 
     /// <summary>

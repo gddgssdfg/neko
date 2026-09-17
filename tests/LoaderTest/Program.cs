@@ -119,9 +119,19 @@ public static class Program
 
             // 模拟 11 次抚摸 → 好感度增长到 11（第 10 次升级到「熟悉」，触发升级反应）
             for (int i = 0; i < 11; i++) events.Emit(PetEvents.PetPetted, null);
+
+            // v0.1.82：好感度改为「内存计数 + 去抖落盘（最多每 5s 落一次）」后，会有一段时间
+            // 磁盘上的 score 落后于内存值。先断言「FlushNow() 之前的磁盘值 < 11」，
+            // 用来锁住新行为（证明并非每次抚摸都同步写盘），再显式 FlushNow() 落盘后断言 == 11。
+            var beforeFlush = affectionStorage.Get<int>("score");
+            Check(beforeFlush < 11,
+                $"去抖生效：FlushNow() 前磁盘 score = {beforeFlush}（< 11，未每次都写盘）",
+                $"去抖未生效：FlushNow() 前磁盘 score 已 = {beforeFlush}（期望 < 11）");
+
+            FlushAffection(affection.Instance);
             var storedScore = affectionStorage.Get<int>("score");
             Check(storedScore == 11,
-                $"11 次抚摸后好感度持久化 = {storedScore}",
+                $"11 次抚摸 + FlushNow() 后好感度持久化 = {storedScore}",
                 $"期望好感度 11，实际 {storedScore}");
 
             // 升级反应：第 10 次抚摸从「陌生」升到「熟悉」，应触发升级 Say
@@ -213,6 +223,21 @@ public static class Program
     }
 
     /// <summary>加载「真实 App 输出目录」的插件，验证发布形态下的完整链路（加载 + OnLoad + Storage）。</summary>
+    /// <summary>
+    /// 反射调用插件实例的 public <c>FlushNow()</c>（好感度「去抖落盘」的显式落盘点）。
+    /// <para><b>为什么用反射而非转型</b>：插件运行在<b>可回收 ALC</b> 里，其 AffectionPlugin 类型与测试进程
+    /// 默认 ALC 里的同名类型是<b>两个类型身份</b>，即便 csproj 引用了 Affection 工程，直接
+    /// <c>(AffectionPlugin)</c> 转型仍会 InvalidCastException —— 本项目测试探插件内部一律走反射
+    /// （见命理插件自检那几处）。</para>
+    /// </summary>
+    private static void FlushAffection(IPetPlugin instance)
+    {
+        var mi = instance.GetType().GetMethod("FlushNow",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+        if (mi is null) { Bad("AffectionPlugin 未提供 public FlushNow()（去抖落盘的显式入口）"); return; }
+        mi.Invoke(instance, null);
+    }
+
     private static void TestAppOutputPlugins()
     {
         // App 输出目录：从 LoaderTest 输出向上定位（兼容 RID 子目录 win-x64 与无 RID 两种布局）
@@ -251,9 +276,18 @@ public static class Program
             "OnLoad 未创建数据目录");
 
         for (int i = 0; i < 11; i++) events.Emit(PetEvents.PetPetted, null);
-        var score = new TestStorage(Path.Combine(dataDir, "plugins", "com.lantern.affection")).Get<int>("score");
+
+        // v0.1.82：同测试 2 —— 先断言「FlushNow() 前磁盘值 < 11」（去抖生效），再显式落盘断言 == 11。
+        var appStorage = new TestStorage(Path.Combine(dataDir, "plugins", "com.lantern.affection"));
+        var beforeFlush = appStorage.Get<int>("score");
+        Check(beforeFlush < 11,
+            $"发布形态去抖生效：FlushNow() 前磁盘 score = {beforeFlush}（< 11）",
+            $"发布形态去抖未生效：FlushNow() 前磁盘 score 已 = {beforeFlush}（期望 < 11）");
+
+        FlushAffection(affection.Instance);
+        var score = appStorage.Get<int>("score");
         Check(score == 11,
-            $"发布形态插件 11 次抚摸后好感度 = {score}",
+            $"发布形态插件 11 次抚摸 + FlushNow() 后好感度 = {score}",
             $"期望 11，实际 {score}");
 
         foreach (var p in loaded) p.Dispose();
@@ -420,6 +454,48 @@ public static class Program
             "DeepSeekClient 自检通过（空 Key 返回可读错误而非抛异常）",
             $"DeepSeekClient 自检未通过：{dself ?? "(属性未读到)"}");
 
+        // P0 同源修复回归（v0.1.82）：ChatHistory 原用 JsonSerializer.Serialize/Deserialize<List<ChatMessage>>
+        // —— ChatMessage 是**插件程序集**里的类型，STJ 反射路径会把其元数据钉进进程级共享缓存 → 钉住整个 ALC。
+        // 现改为 Utf8JsonWriter 写 / JsonDocument 读。此处反射调用插件内的 ChatHistory.Append/Load 验证：
+        //   1) 落盘格式与旧版 STJ 默认逐字节一致（紧凑 + PascalCase ⇒ 旧存档仍可读）
+        //   2) 往返能读回 2 条
+        //   3) 旧版（STJ）写出的存档，新 Load 仍能读出（向后兼容）
+        var chatType = bazi.Instance.GetType().Assembly.GetType("DesktopPet.Builtin.Bazi.ChatHistory");
+        var appendMi = chatType?.GetMethod("Append",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        var loadMi = chatType?.GetMethod("Load",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        if (chatType is null || appendMi is null || loadMi is null)
+        {
+            Bad("未找到插件 ChatHistory.Append/Load（P0 同源修复回归无法执行）");
+        }
+        else
+        {
+            try
+            {
+                var chatStorage = ctx.Capability.Storage;
+                chatStorage.Remove("chatHistory");
+                appendMi.Invoke(null, new object[] { chatStorage, "q1", "a1" });
+                var raw = chatStorage.Get<string>("chatHistory");
+                // 期望 = 旧版 JsonSerializer.Serialize(List<ChatMessage>) 的默认输出（紧凑 + PascalCase）
+                const string expectedRaw = "[{\"Role\":\"user\",\"Content\":\"q1\"},{\"Role\":\"assistant\",\"Content\":\"a1\"}]";
+                Check(raw == expectedRaw,
+                    $"ChatHistory 落盘与旧版 STJ 默认逐字节一致（{raw}）",
+                    $"ChatHistory 落盘格式不符：期望 {expectedRaw}，实际 {raw}");
+
+                // 向后兼容：旧版（STJ）写出的存档，新 Load 仍能读出
+                chatStorage.Set("chatHistory", expectedRaw);
+                var oldList = loadMi.Invoke(null, new object[] { chatStorage }) as System.Collections.IList;
+                Check(oldList is { Count: 2 },
+                    $"ChatHistory 向后兼容：旧版 STJ 存档读回 {oldList?.Count} 条",
+                    $"ChatHistory 向后兼容失败：读回 {oldList?.Count} 条（期望 2）");
+            }
+            catch (Exception ex)
+            {
+                Bad($"ChatHistory 反射回归调用抛异常：{ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
         // P3：无 Key 点「问问猫」→ 可读提示、不抛异常、不开窗（走 Key 校验前置分支）
         ctx.Capability.Storage.Set("profile",
             "{\"Year\":1981,\"Month\":1,\"Day\":29,\"Hour\":23,\"Minute\":37,\"Gender\":0}");
@@ -453,7 +529,8 @@ public static class Program
     ///   2) 信任清单含该 id → 放行
     ///   3) 清单损坏 / 缺失 → 返回 Empty 且不抛
     ///   4) 摘要不匹配 → 不受信 → 仍拒载
-    /// 另加端到端：真实内置插件 com.lantern.music 在受信清单下放行。
+    /// 另加端到端【弱验证】：真实非高危内置插件 com.lantern.music 在带信任清单时不被误拒
+    /// （非高危不经信任闸门，故该断言恒真；高危信任强验证见 tests/TrustProbe）。
     /// </summary>
     private static void TestTrustChannel()
     {
@@ -559,7 +636,7 @@ public static class Program
                 $"断言4c（正向对照）: 摘要匹配 → 受信放行（{rGood}）",
                 $"断言4c 失败: 摘要正确却不受信（{rGood}）");
 
-            // ---- 端到端：真实内置插件在受信清单下放行 ----
+            // ---- 端到端（弱验证）：带信任清单时非高危内置插件不被误拒（高危强验证见 tests/TrustProbe）----
             TestRealBuiltinUnderTrust();
         }
         finally
@@ -568,7 +645,14 @@ public static class Program
         }
     }
 
-    /// <summary>真实内置插件 com.lantern.music 在受信清单下被放行——证明 T02 修复「内置高危从未加载」。</summary>
+    /// <summary>
+    /// 端到端【弱验证 / 非高危路径回护栏】：在真实 App 产物目录上确认「带信任清单时，非高危内置插件仍能正常加载」——
+    /// 即引入信任机制不会误伤普通插件。
+    /// ⚠️ com.lantern.music 当前的权限声明**并非高危**，因此其加载根本不经过信任清单闸门——
+    /// 本用例对「受信 → 放行」而言恒为真（vacuous），**不能**用来证明高危内置插件被信任放行。
+    /// 真正的高危 / 信任强验证在 tests/TrustProbe（合成高危 fixture，覆盖放行 / 拒载 / 摘要绑定，20/20）。
+    /// 本用例仅作回归护栏：确保真实产物目录结构 + 清单解析 + 非高危加载路径未被破坏。
+    /// </summary>
     private static void TestRealBuiltinUnderTrust()
     {
         var appOut = FindAppOutputDir();
@@ -599,7 +683,8 @@ public static class Program
         }
         else
         {
-            Console.WriteLine($"  [信息] com.lantern.music 当前已非高危（{declared}），无清单拒载断言跳过");
+            Console.WriteLine($"  [信息/弱验证] com.lantern.music 当前声明非高危（{declared}）→ 不受信任清单约束，"
+                + "下方「受信后放行」断言对非高危插件恒真；高危信任强用例见 tests/TrustProbe");
         }
 
         var lockDir = Path.Combine(Path.GetTempPath(), "neko-trust-real-" + Guid.NewGuid().ToString("N"));
@@ -617,8 +702,8 @@ public static class Program
             var loader = new PluginLoader(pluginsDir, trust);
             var q = loader.LoadOne(musicDir, out var err);
             Check(q is not null,
-                $"端到端: 受信清单下 com.lantern.music 被放行（实例 {q?.Instance.GetType().FullName}）",
-                $"端到端 失败: 受信后仍未放行，err={err}");
+                $"端到端（弱验证）: 带信任清单时非高危 com.lantern.music 仍可加载（实例 {q?.Instance.GetType().FullName}）",
+                $"端到端（弱验证）失败: 非高危插件被误拒，err={err}");
             q?.Dispose();
         }
         finally

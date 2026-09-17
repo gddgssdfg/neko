@@ -50,6 +50,8 @@ neko-assets/_airaw/
 
 # ===== 测试备用输出目录（v0.1.82：沙箱里旧 UiProbe 进程锁住 bin/ 时的绕法，见 dev-log）=====
 bin_alt*/
+bin_final*/
+bin_smoke*/
 
 # ===== 编辑器 / 系统 =====
 .vscode/

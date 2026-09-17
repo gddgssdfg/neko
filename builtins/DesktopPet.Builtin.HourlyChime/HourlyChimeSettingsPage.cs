@@ -8,6 +8,7 @@ namespace DesktopPet.Builtin.HourlyChime;
 /// <summary>
 /// 整点报时设置页：开关 + 提醒时段（开始/结束小时 0-23），持久化到 Storage。
 /// 开关通过回调同步到插件实例（_enabled），并触发计时器启停。
+/// v0.1.82：保存后通过 <c>onSaved</c> 回调通知插件刷新内存配置缓存（时段立即生效，tick 不再读盘）。
 /// UI 统一走 SDK 的 <see cref="PluginUi"/> 深色控件工厂（v0.1.63）。
 /// </summary>
 public sealed class HourlyChimeSettingsPage : ISettingsPage
@@ -15,6 +16,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
     private readonly IPluginStorage _storage;
     private readonly Func<bool> _getEnabled;
     private readonly Action<bool> _setEnabled;
+    private readonly Action _onSaved;
 
     private const string EnabledKey = "enabled";
     private const string StartHourKey = "startHour";
@@ -22,11 +24,12 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
     private const int DefaultStartHour = 9;
     private const int DefaultEndHour = 18;
 
-    public HourlyChimeSettingsPage(IPluginStorage storage, Func<bool> getEnabled, Action<bool> setEnabled)
+    public HourlyChimeSettingsPage(IPluginStorage storage, Func<bool> getEnabled, Action<bool> setEnabled, Action onSaved)
     {
         _storage = storage;
         _getEnabled = getEnabled;
         _setEnabled = setEnabled;
+        _onSaved = onSaved;
     }
 
     public string Id => "com.lantern.hourly";
@@ -71,6 +74,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
             _storage.Set(StartHourKey, start);
             _storage.Set(EndHourKey, end);
             _setEnabled(newEnabled);
+            _onSaved();   // v0.1.82：通知插件刷新内存配置缓存（时段立即生效，tick 不再读盘）
             toggle.Content = $"整点报时已{(newEnabled ? "开启" : "关闭")}";
             MessageBox.Show("已保存", "整点报时设置", MessageBoxButton.OK, MessageBoxImage.Information);
         };

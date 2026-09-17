@@ -47,6 +47,48 @@
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
   </ItemGroup>
 
+  <!-- ===== v0.1.82 修复：Debug/Publish 构建竞态 MSB3030 ============================================
+       现象：`dotnet build src/DesktopPet.sln -c Debug` 偶发
+             MSB3030「无法复制文件 ..\..\plugins\com.lantern.X\X.dll，原因是找不到该文件」，
+             且报错插件每次都不同（screenshot / notes / todo …）。
+       根因：下方 DeployPluginsToOutput / DeployPluginsToPublish 会读取【仓库根 plugins/】，而该目录由
+             18 个内置插件的 DeployToPlugins（AfterTargets=Build）在各自构建后并发写入。在 .sln 并行构建中
+             App 与各内置插件之间【没有】构建依赖，App 可能在某个插件正被并发覆盖的瞬间去读它，
+             源文件瞬时不可用即触发 MSB3030。这是「读者读一个写者正在写的目录」的经典竞态，与具体插件无关
+             （故报错插件随机）。
+       修复：用 ProjectReference(ReferenceOutputAssembly=false) 在本宿主与全部内置插件之间建立【构建顺序依赖】：
+             App（含其 AfterTargets=Build 的 DeployPluginsToOutput）必然在【全部】内置插件构建（及其
+             DeployToPlugins）完成之后才执行，App 读 plugins/ 时目录已静止，竞态从根上消除。
+             · ReferenceOutputAssembly=false：只建立顺序依赖，【不】把插件 dll 当作 App 的编译/运行时引用，
+               因此不会进入 PublishSingleFile 的单文件包，也不改变插件按 ALC 隔离加载的形态。
+             · Private=false：即便误加引用也不本地复制，双保险。
+             · 不改 DeployPluginsToOutput 的语义（plugins/ 仍是唯一部署源，loader 扫描位置不变）。
+             · 连带收益：单独 `dotnet build/publish src/DesktopPet.App` 现在也会先把全部内置插件构建并部署好，
+               不再依赖「先构建过 sln」的隐含前置。
+       注：本机 22 次连续构建（A/B 对照，含强制重建）未复现 MSB3030，故此改动为【按构造根治】，
+           以本机多次连续全绿 + 功能回归（LoaderTest / PluginSmoke 18/18 alc 全 Y / 真机 18 插件）验证。
+       =============================================================================================== -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Affection\DesktopPet.Builtin.Affection.csproj"                 ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Bazi\DesktopPet.Builtin.Bazi.csproj"                             ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.ClipboardHistory\DesktopPet.Builtin.ClipboardHistory.csproj"     ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.ColorPicker\DesktopPet.Builtin.ColorPicker.csproj"               ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Countdown\DesktopPet.Builtin.Countdown.csproj"                   ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Fortune\DesktopPet.Builtin.Fortune.csproj"                       ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.HourlyChime\DesktopPet.Builtin.HourlyChime.csproj"               ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.MusicControl\DesktopPet.Builtin.MusicControl.csproj"             ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Notes\DesktopPet.Builtin.Notes.csproj"                           ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Pomodoro\DesktopPet.Builtin.Pomodoro.csproj"                     ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.QuickSearch\DesktopPet.Builtin.QuickSearch.csproj"               ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Quote\DesktopPet.Builtin.Quote.csproj"                           ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Screenshot\DesktopPet.Builtin.Screenshot.csproj"                 ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.SleepReminder\DesktopPet.Builtin.SleepReminder.csproj"           ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.SystemInfo\DesktopPet.Builtin.SystemInfo.csproj"                 ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.TodoList\DesktopPet.Builtin.TodoList.csproj"                     ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.Weather\DesktopPet.Builtin.Weather.csproj"                       ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.WordCard\DesktopPet.Builtin.WordCard.csproj"                     ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- v0.1.78 P2-3：素材复制改「白名单」——只复制真运行时素材目录 + 托盘图标。
          旧实现用 ..\..\neko-assets\**\*.png 通配，把 _icon_clean.png(1.1MB)、*_preview*.png、
@@ -101,6 +143,27 @@
     <Copy SourceFiles="@(_PluginFiles)"
           DestinationFiles="@(_PluginFiles->'$(PublishDir)plugins\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- v0.1.82：把「内置插件信任清单」接线到构建——
+       构建后扫描**已部署**的 plugins/，生成 exe 同级的 builtins.lock.json（schema:1 + 各插件的
+       plugin.toml / 入口 dll 的 SHA-256），供宿主 PluginTrustSet 放行官方内置插件的高风险权限声明。
+       依赖 DeployPluginsToOutput（先有插件目录才扫描得到）。
+       ⚠️ 必须 fail-safe：环境没有 Python / 脚本报错时只 WarnAndContinue，**绝不阻断构建**——
+       清单缺失时宿主行为与旧版一致（一律不信任，安全兜底）。
+       Python 解释器可用 -p:PythonExe=<path> 覆盖（缺省取 PATH 上的 python）。 -->
+  <PropertyGroup>
+    <PythonExe Condition="'$(PythonExe)' == ''">python</PythonExe>
+  </PropertyGroup>
+
+  <Target Name="GenerateBuiltinsLock" AfterTargets="Build" DependsOnTargets="DeployPluginsToOutput">
+    <Exec Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildThisFileDirectory)..\..\tools\gen_builtins_lock.py&quot; --plugins-dir &quot;$(OutDir)plugins&quot; --output &quot;$(OutDir)builtins.lock.json&quot;"
+          ContinueOnError="WarnAndContinue" />
+  </Target>
+
+  <Target Name="GenerateBuiltinsLockForPublish" AfterTargets="Publish" DependsOnTargets="DeployPluginsToPublish">
+    <Exec Command="&quot;$(PythonExe)&quot; &quot;$(MSBuildThisFileDirectory)..\..\tools\gen_builtins_lock.py&quot; --plugins-dir &quot;$(PublishDir)plugins&quot; --output &quot;$(PublishDir)builtins.lock.json&quot;"
+          ContinueOnError="WarnAndContinue" />
   </Target>
 
 </Project>

@@ -4,7 +4,7 @@ using DesktopPet.Sdk;
 namespace DesktopPet.Builtin.ClipboardHistory;
 
 /// <summary>
-/// 剪贴板历史插件：IScheduler 轮询剪贴板（1500ms），文本变化时入栈到 Storage（最近 20 条）。
+/// 剪贴板历史插件：IScheduler 轮询剪贴板（3000ms），文本变化时入栈到 Storage（最近 20 条）。
 /// 右键菜单「剪贴板」打开历史窗口，双击条目复制回剪贴板。
 /// 展示 ISystem.ReadClipboard / WriteClipboard + Scheduler 轮询。
 /// </summary>
@@ -12,9 +12,12 @@ public sealed class ClipboardHistoryPlugin : PluginBase
 {
     public const string HistoryKey = "history";
     private const int MaxItems = 20;
-    // v0.1.59(P2)：轮询间隔 800→1500ms。剪贴板历史对实时性要求低，1.5s 足够，
-    // 减少 ReadClipboard（跨进程 Win32 调用）在闲置态的调用频次。
-    private const int PollIntervalMs = 1500;
+    // v0.1.59(P2)：轮询间隔 800→1500ms。剪贴板历史对实时性要求低，减少 ReadClipboard
+    //   （跨进程 Win32 调用）在闲置态的调用频次。
+    // v0.1.82：1500→3000ms。审计实测轮询剪贴板仍是「闲置 CPU」第 2 名，进一步降频。
+    //   理想方案是 AddClipboardFormatListener(WM_CLIPBOARDUPDATE) 事件驱动，但需要常驻消息窗口，
+    //   本轮不扩大改动面，先降频缓解。
+    private const int PollIntervalMs = 3000;
 
     private IScheduleHandle? _poller;
     private string _last = "";
