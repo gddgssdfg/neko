@@ -159,7 +159,11 @@ public sealed class RadialMenu : Window
                 bmp.Freeze();
                 _iconCache[name] = bmp;
             }
-            catch { /* 单个图标加载失败不影响其他 */ }
+            catch (Exception ex)
+            {
+                // v0.1.82 P1-8：图标损坏/权限等问题会导致该项永远缺图标（用户可见），不能再静默吞
+                Log.Warn($"[径向菜单] 图标加载失败，该项降级为「•」文字：{path} - {ex.Message}");
+            }
         }
     }
 
@@ -444,7 +448,7 @@ public sealed class RadialMenu : Window
             };
             MouseLeftButtonUp += (_, _) =>
             {
-                try { Slot.OnInvoke?.Invoke(); } catch { }
+                try { Slot.OnInvoke?.Invoke(); } catch (Exception ex) { Log.Warn($"[径向菜单] 槽位「{Slot.Label}」回调异常：{ex.GetType().Name}: {ex.Message}"); }
                 // 点击后隐藏菜单（复用单例，不销毁窗口）
                 if (Window.GetWindow(this) is RadialMenu menu) menu.HideMenu();
             };

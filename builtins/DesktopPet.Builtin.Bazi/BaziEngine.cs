@@ -119,7 +119,9 @@ public sealed record BaziToday
 /// <summary>
 /// lunar-csharp 的薄封装：命盘计算 + 已知用例自检。
 /// 历法一律本地算，绝不交给 AI（规格铁律）。全部为同步纯计算，无 IO / 无网络。
-/// <para><b>严禁在 OnTick 里调用</b>（OnTick 约 10Hz，会拖慢宠物动画）。</para>
+/// <para><b>禁止在周期回调里调用</b>：周期逻辑应走 <c>Capability.Scheduler.Every/At</c>，回调按间隔触发，
+/// 命盘重计算会拖慢宠物。<br/>
+/// 注意：<c>IPetPlugin.OnTick</c> 宿主当前<b>不会调用</b>（见接口注释），不要依赖它做周期逻辑。</para>
 /// </summary>
 public static class BaziEngine
 {

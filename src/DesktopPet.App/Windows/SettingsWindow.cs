@@ -683,7 +683,12 @@ public sealed class SettingsWindow : Window
             {
                 if (page.Title == p.Manifest.Id || page.Title == p.Manifest.Name)
                 {
-                    try { if (page.BuildContent() is FrameworkElement u) { u.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(u); } } catch { }
+                    try { if (page.BuildContent() is FrameworkElement u) { u.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(u); } }
+                    catch (Exception ex)
+                    {
+                        // v0.1.82 P1-8：插件设置页构建失败（插件 bug）会让该页整块消失，必须留痕以便定位
+                        Log.Warn($"[设置] 插件设置页构建失败：「{page.Title}」- {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
             }
 

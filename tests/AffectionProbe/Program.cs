@@ -271,6 +271,7 @@ internal static class Program
         public void WriteClipboard(string text) { }
         public void OpenUrl(string url) { }
         public string? PickFile(string filter = "") => null;
+        public void Log(PluginLogLevel level, string message, Exception? exception = null) { }
     }
 
     private sealed class Cap : ICapabilityApi

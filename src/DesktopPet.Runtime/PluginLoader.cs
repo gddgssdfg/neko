@@ -57,7 +57,7 @@ public sealed class LoadedPlugin : IDisposable
     public void Dispose()
     {
         try { Instance.OnUnload(); } catch { /* 卸载回调失败不影响卸载 */ }
-        try { Instance.Dispose(); } catch { }
+        try { Instance.Dispose(); } catch { /* 插件 Dispose 失败不影响 ALC 卸载（最后防线，Runtime 无宿主 Log 可用）*/ }
         Context.Unload();
     }
 }

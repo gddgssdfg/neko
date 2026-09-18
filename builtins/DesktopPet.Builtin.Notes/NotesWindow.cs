@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using DesktopPet.Core;
 
 namespace DesktopPet.Builtin.Notes;
 
@@ -24,12 +25,14 @@ public sealed class NotesWindow : Window
     private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
 
     private readonly Action<string> _onSave;
+    private readonly ISystem _sys;
     private readonly TextBox _editor;
     private readonly DispatcherTimer _autoSave;
 
-    public NotesWindow(string current, Action<string> onSave)
+    public NotesWindow(string current, Action<string> onSave, ISystem system)
     {
         _onSave = onSave;
+        _sys = system;
         Title = "Neko 备忘录";
         Width = 380;
         Height = 340;
@@ -90,6 +93,7 @@ public sealed class NotesWindow : Window
 
     private void Save()
     {
-        try { _onSave(_editor.Text); } catch { }
+        // v0.1.83：落盘失败是真故障——经插件日志通道上报（宿主会加 [插件:<id>] 前缀）；绝不外抛（铁律 7）
+        try { _onSave(_editor.Text); } catch (Exception ex) { _sys.Log(PluginLogLevel.Warn, $"备忘录落盘失败：{ex.Message}"); }
     }
 }

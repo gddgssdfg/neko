@@ -344,7 +344,7 @@ public sealed class PetWindow : Window
         if (mode != "work" && mode != "slack") mode = "slack";
         _config.AppMode = mode;
         _config.KeyboardMirrorEnabled = mode == "work";
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
 
         if (mode == "work")
         {
@@ -388,7 +388,7 @@ public sealed class PetWindow : Window
     {
         _config.KeyboardMirrorFlipped = flipped;
         _mirrorWindow?.SetMirrored(flipped);   // 映射窗未创建时忽略，创建时会自己读配置
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>
@@ -593,7 +593,7 @@ public sealed class PetWindow : Window
     public void ApplyChatEnabled(bool enabled)
     {
         _config.ChatEnabled = enabled;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
         if (!enabled)
         {
             _chatScheduler?.Stop();
@@ -639,7 +639,8 @@ public sealed class PetWindow : Window
 
     private void SaveConfigFile()
     {
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        // v0.1.82 P1-8：ConfigManager.Save 内部已 try/catch（见 Core/Config.cs），永不抛 → 外层 try/catch 纯冗余，去掉
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>v0.1.74：运行时切换皮肤（支持任意已注册皮肤，含用户自制；未知 id 回退默认 pixel）。</summary>
@@ -689,7 +690,7 @@ public sealed class PetWindow : Window
             case "reset_pos":    _config.ResetPosHotKey = hk; break;
             default: return;
         }
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
         // 2) 重注册（按 id 覆盖，GlobalInput 同 id 二次注册会替换）
         var hotkey = ToHotKey(hk);
         Action cb = id switch
@@ -709,7 +710,7 @@ public sealed class PetWindow : Window
     {
         _config.PosX = Left;
         _config.PosY = Top;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>回到默认位置（右下角）：托盘调用；清除记忆，避免下次启动又回到旧位置</summary>
@@ -719,7 +720,7 @@ public sealed class PetWindow : Window
         _config.PosY = null;
         Left = SystemParameters.WorkArea.Right - Width - 20;
         Top = SystemParameters.WorkArea.Bottom - Height - 40;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     // ============================ v0.1.27 游戏模式（BongoCat 借鉴） ============================
@@ -737,7 +738,7 @@ public sealed class PetWindow : Window
         }
         if (enabled && !_gameTimer.IsEnabled) _gameTimer.Start();
         if (!enabled) _gameTimer.Stop();
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>每秒轮询：前台是全屏应用 → 低干扰（藏猫/穿透）；退出全屏 → 恢复现场</summary>
@@ -1128,7 +1129,7 @@ public sealed class PetWindow : Window
             _renderer.SetTypingActive(TimeSpan.FromSeconds(1));   // v0.1.47：保持打字活跃 1s
             RequestActiveLoop();                                  // v0.1.57：闲置 → 活动立即唤醒一次主循环
         }
-        catch { }
+        catch { /* 打字/点击反应只是视觉点缀：失败绝不能污染输入响应链（fire-and-forget，最后防线）*/ }
     }
 
     /// <summary>抚摸：播放抚摸动画 + 冒爱心粒子 + 广播 pet:petted 事件（供好感度等插件消费）</summary>
@@ -1219,14 +1220,14 @@ public sealed class PetWindow : Window
         Top = cy - Height / 2;
         SyncFollowers();   // v0.1.39：尺寸变了，浮层重新对齐
         SavePosition(); // v0.1.26 位置记忆：缩放后中心不动，位置随尺寸变化也落盘
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>设置开机自启（决策 14）：写注册表 + 持久化到 config.json（App.OnStartup 启动时与注册表同步）</summary>
     public void SetStartWithWindows(bool enable)
     {
         _config.StartWithWindows = enable;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>设置径向菜单热键（v0.1.5：设置窗口编辑，立即生效 + 持久化）</summary>
@@ -1235,7 +1236,7 @@ public sealed class PetWindow : Window
         var k = string.IsNullOrEmpty(key) ? "N" : key[..1];
         _config.MenuHotKey = new HotKeyConfig { Ctrl = ctrl, Alt = alt, Shift = shift, Key = k };
         _globalInput.MenuHotKey = ToHotKey(_config.MenuHotKey);
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>设置显隐老板键（v0.1.26：设置窗口编辑，立即生效 + 持久化）</summary>
@@ -1244,7 +1245,7 @@ public sealed class PetWindow : Window
         var k = string.IsNullOrEmpty(key) ? "H" : key[..1];
         _config.TogglePetHotKey = new HotKeyConfig { Ctrl = ctrl, Alt = alt, Shift = shift, Key = k };
         _globalInput.SecondaryHotKey = ToHotKey(_config.TogglePetHotKey);
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     /// <summary>设置窗口透明度（BongoCat window.opacity 借鉴），clamp 0.2-1.0（低于 0.2 鼠标点击透到下层会失灵）</summary>
@@ -1253,7 +1254,7 @@ public sealed class PetWindow : Window
         opacity = Math.Clamp(opacity, 0.2, 1.0);
         _config.Opacity = opacity;
         this.Opacity = opacity;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -1392,7 +1393,11 @@ public sealed class PetWindow : Window
             if (before != after)
                 ConfigManager.Save(Paths.ConfigFile, _config);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // v0.1.82 P1-8：清理失效槽位的逻辑异常（如配置结构损坏）会导致脏槽位残留，需留痕
+            Log.Warn($"[径向菜单] 清理失效槽位失败：{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     // ---- 多显示器工作区（v0.1.26，BongoCat 借鉴）----

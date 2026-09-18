@@ -35,7 +35,8 @@ public sealed class NotesPlugin : PluginBase
     {
         var win = new NotesWindow(
             current: Capability.Storage.Get<string>(NotesKey) ?? "",
-            onSave: text => Capability.Storage.Set(NotesKey, text));
+            onSave: text => Capability.Storage.Set(NotesKey, text),
+            system: Capability.System);
         win.Show();
     }
 }

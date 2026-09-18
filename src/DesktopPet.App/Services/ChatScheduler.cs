@@ -69,7 +69,7 @@ public sealed class ChatScheduler
     /// <summary>从档位数组里抽一条，用称呼/猫名填充 {0}/{1} 占位符</summary>
     private string Pick(string[] arr) => string.Format(arr[_rng.Next(arr.Length)], _ownerTitle, _catName);
 
-    private void Say(string text, int ms) { try { _say(text, ms); } catch { } }
+    private void Say(string text, int ms) { try { _say(text, ms); } catch { /* 闲聊气泡纯点缀：说失败也绝不外抛拖垮调度 */ } }
 
     /// <summary>读好感度等级 0..3（文件缺失/解析失败 → 0 陌生）。对齐 AffectionPlugin 的分档阈值。
     /// v0.1.59(⑨)：逻辑提取到 AffectionReader，与 PetWindow 心情驱动动画共用单一数据源。</summary>

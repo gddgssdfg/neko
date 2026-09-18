@@ -856,6 +856,10 @@ public sealed class NullSystem : ISystem
     public void WriteClipboard(string t) { }
     public void OpenUrl(string u) { }
     public string? PickFile(string f = "") => null;
+
+    /// <summary>v0.1.83：新增 ISystem.Log 的替身实现（记录日志供断言）。</summary>
+    public List<(PluginLogLevel Level, string Message)> Logs { get; } = new();
+    public void Log(PluginLogLevel level, string message, Exception? exception = null) => Logs.Add((level, message));
 }
 
 public sealed class TestContext : IPluginContext

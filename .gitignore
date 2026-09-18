@@ -53,6 +53,17 @@ bin_alt*/
 bin_final*/
 bin_smoke*/
 
+# ===== 本地一键 CI 产物（tools/ci.py 用 -p:BaseOutputPath=bin_ci/ 隔离，避免锁住常规 bin/）=====
+bin_ci*/
+
+# ===== Python 工具链缓存（项目在 tools/、installer/ 下用 Python 脚本）=====
+__pycache__/
+*.pyc
+
+# ===== 安装器生成物（gen_setup_wxs.py 每次出包重写，不入库）=====
+installer/*.wxs
+installer/*.wixpdb
+
 # ===== 编辑器 / 系统 =====
 .vscode/
 .workbuddy/

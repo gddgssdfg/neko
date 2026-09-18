@@ -197,7 +197,7 @@ public interface IPetPlugin : IDisposable
     Version ApiVersion { get; }                     // 依赖的 Core API 版本
     PluginPermissions RequiredPermissions { get; }  // 声明所需权限
     void OnLoad(IPluginContext ctx);                // 装载时调用
-    void OnTick(TimeSpan delta);                    // 主循环 tick（宿主低频驱动，约 10Hz）
+    void OnTick(TimeSpan delta);                    // ⚠️ 宿主当前【未调用】——别依赖它（见 §2.2 注）
     void OnUnload();                                // 卸载时调用
 }
 ```
@@ -232,10 +232,15 @@ public abstract class PluginBase : IPetPlugin
 > ⚠️ 覆盖 `OnLoad` 时**第一行必须 `base.OnLoad(ctx)`**——`Pet`/`UI`/`Capability` 三个快捷属性靠它赋值。
 > 不调用 → 三者在后续访问时抛 `NullReferenceException`。
 
-### 2.3 `IPluginContext` —— 四个入口，全部方法签名
+> 🔴 **`OnTick` 是「声明了但宿主未接线」的 API（v0.1.82 核对）**：契约（`IPetPlugin`）与 `PluginBase` 都保留了它，
+> 但宿主 `PluginHost` **没有任何调用点**——`OnLoad` 之后只会被调 `OnUnload` / `Dispose`，**不存在 ~10Hz 的 tick 循环**。
+> **故不要用 `OnTick` 做周期逻辑**（写了不会跑）。周期任务一律用 **`Capability.Scheduler.Every/At`**。
 
-`src/DesktopPet.Core/IPetPlugin.cs` 定义上下文，`src/DesktopPet.Core/IPetApi.cs`、
-`IUIApi.cs`、`ICapabilityApi.cs` 定义四个入口。
+### 2.3 `IPluginContext` —— 能力入口与全部方法签名
+
+`src/DesktopPet.Core/IPetPlugin.cs` 定义上下文；`IPetApi.cs`、`IUIApi.cs`、`ICapabilityApi.cs`
+定义**三个能力入口**（`Pet` / `UI` / `Capability`）。历史文档称之为「四个入口」（第 4 个是 `Log`），
+`Log` 的实际落点见本节下方说明（落到 `Capability.System.Log`）。
 
 ```csharp
 public interface IPluginContext
@@ -246,14 +251,15 @@ public interface IPluginContext
     IPetApi         Pet { get; }        // 入口 1：宠物控制
     IUIApi          UI { get; }         // 入口 2：界面注册
     ICapabilityApi  Capability { get; } // 入口 3：能力（存储/调度/系统/事件）
-    // 入口 4 = Capability.Log？—— 见下方说明
+    // 入口 4 = 日志？—— 未做成 IPluginContext 成员，v0.1.83 起落在 Capability.System.Log（见下）
 }
 ```
 
-> 📌 **关于「`Log` 入口」**：`IPluginContext` **没有** `Log` 成员（这是任务书里的说法与实现不一致之处）。
-> 插件侧没有独立的日志 API——日志由宿主统一写入 `data/logs/`（见 §8.1）。插件若要落日志，
-> 现行做法是通过 `Capability.System.Notify` 或自定义埋点，**没有** `Log.Info` 这样的插件面 API。
-> 若你需要结构化插件日志，请在【附录 B】记一笔，交给宿主侧评估。**
+> 📌 **关于「第 4 入口 `Log`」**：立项规划里的第 4 个入口是 `Log`，但它**始终没有**做成 `IPluginContext` 成员。
+> **v0.1.83 起，插件日志能力已补齐** —— 通过**既有的** `Capability.System.Log(...)` 暴露（遵守「Core API 只增不改」，未动 `IPluginContext`）。
+> 所以：**`IPluginContext` 只有 `Pet` / `UI` / `Capability` 三个能力入口**（+ `HostVersion` / `DataRoot` / `PluginDataDir` 三个属性）这一结构与 v0.1.82 前一致、**未变**；
+> 变的是：插件**现在有了宿主日志通道**（别再以为"插件没有 `Log` 这样的公开 API"了——见下方入口 3 的 `ISystem.Log` 与 §8.1）。
+> （历史：v0.1.82 及以前确实无插件日志 API，只能用 `Debug.WriteLine` —— **Release 无监听器时等于静默**，这正是本次补 `Log` 的动因，见 §9 踩坑 3。）
 
 #### 入口 1：`IPetApi`（宠物控制）
 
@@ -327,11 +333,14 @@ public interface IScheduleHandle : IDisposable { bool IsActive { get; } }
 
 public interface ISystem
 {
-    void Notify(string title, string body);
+    void Notify(string title, string body);            // 真实 Windows 通知
     string? ReadClipboard();
     void WriteClipboard(string text);
     void OpenUrl(string url);
     string? PickFile(string filter = "");
+
+    // v0.1.83 新增（🔴 只增不改，上面 5 个成员一字未动）：写一条插件日志
+    void Log(PluginLogLevel level, string message, Exception? exception = null);
 }
 
 public interface IEventBus
@@ -340,6 +349,48 @@ public interface IEventBus
     void Emit(string evt, object? payload = null);
 }
 ```
+
+##### 入口 3 补充：`ISystem.Log` —— 插件日志（v0.1.83 新增）
+
+`src/DesktopPet.Core/PluginLogLevel.cs`（新文件）+ `ISystem.Log`：
+
+```csharp
+public enum PluginLogLevel { Debug, Info, Warn, Error }
+
+// ISystem 上的新成员（签名精确）：
+void Log(PluginLogLevel level, string message, Exception? exception = null);
+```
+
+**语义（务必按此理解）：**
+
+| 要点 | 说明 |
+|---|---|
+| **宿主自动加前缀** | 宿主会拼上 **`[插件:<id>]`**（如 `[插件:com.lantern.weather]`）便于定位是哪个插件在报。**你**不要自己拼这个前缀。 |
+| **级别映射** | 与宿主日志一一对应：`Debug→Debug`、`Info→Info`、`Warn→Warn`、`Error→Error`。 |
+| **默认不落盘** | 宿主默认级别 `warn` → **`Debug` / `Info` 默认不落盘**（只有用户把 `data/config.json` 的 `logLevel` 调成 `debug`/`info` 才会写出）。`Warn` / `Error` 默认落盘。 |
+| **异常堆栈** | 只有 `Error` 级别会带上 `exception` 的堆栈；其它级别忽略该参数。 |
+| **永不抛** | 实现**保证不抛异常**（宿主日志设施内部 try/catch 兜底）——可以放心在 `catch` 里调用它。 |
+| **隐私** | 日志**会落盘**，**不要把用户隐私内容**（剪贴板正文、待办标题、API Key…）写进 `message`。 |
+
+**用法（常见于 `catch` 里留痕，替代原先的静默 `catch{}`）：**
+
+```csharp
+try
+{
+    DoSomethingRisky();
+}
+catch (Exception ex)
+{
+    // ✅ 走宿主日志：带 [插件:<你的id>] 前缀，Warn/Error 默认落盘
+    Capability.System.Log(PluginLogLevel.Warn, "抓取失败，已跳过本轮", ex);
+}
+
+// ✅ Info/Debug 适合高频埋点（默认不落盘，调试时才开 logLevel）
+Capability.System.Log(PluginLogLevel.Debug, $"tick 完成，缓存 {n} 条");
+```
+
+> 🔴 **不要再用 `Debug.WriteLine` 记插件日志**：Release 构建下**没有调试器监听**时它等同于**静默丢弃**——这正是本次把日志通道补进 `Capability.System` 的直接原因（与「`catch{}` 全吞」是同一类"静默失败"病根，见 §9 踩坑 3）。
+> `Debug.WriteLine` 仅适合**本地调试**（VS 附加时看「输出」窗口）；**任何"要让用户/你事后能查"的日志，都走 `Capability.System.Log`。**
 
 ---
 
@@ -478,9 +529,12 @@ if (PermissionChecker.IsHighRisk(declared) &&
 宿主对每个插件的完整生命周期（`PluginHost` / `LoadedPlugin`）：
 
 ```
-加载(ALC 隔离) → 构造实例 → OnLoad(ctx) → [OnTick(delta) × N，宿主 ~10Hz]
+加载(ALC 隔离) → 构造实例 → OnLoad(ctx) → [运行中：由你注册的事件订阅 / Scheduler 定时器 / UI 回调驱动]
               → 禁用/退出时：UnregisterAll(id) → Instance.OnUnload() → Instance.Dispose() → ALC.Unload()
 ```
+
+> ⚠️ **没有 `OnTick` 主循环**：`IPetPlugin.OnTick` 存在但宿主从未调用（见 §2.1）。运行期的所有权都靠
+> `Capability.Events.On` / `Capability.Scheduler.Every/At` / `UI.RegisterRadialSlot(...).OnInvoke` 这三类回调。
 
 `LoadedPlugin.Dispose()` 的真实顺序：
 
@@ -771,7 +825,7 @@ stack.Children.Add(PluginUi.Button("保存"));
 |---|---|
 | 禁用 | `PluginHost.DisablePlugin(id)`：`OnUnload` → `UnregisterAll(id)` → `Dispose`（卸载 ALC）→ 记入 `_disabled` |
 | 启用 | `PluginHost.EnablePlugin(id)`：重新 `LoadOne` → `OnLoad` → 移出 `_disabled` |
-| 持久化 | 禁用清单存 `data/config.json` 的 `disabledPlugins`（**不移动、不改名文件夹**） |
+| 持久化 | 禁用清单存 `data/config.json` 的 **`DisabledPlugins`**（PascalCase——`ConfigManager` 未设命名策略；**不移动、不改名文件夹**） |
 
 ---
 
@@ -784,7 +838,8 @@ stack.Children.Add(PluginUi.Button("保存"));
 - 行格式：`[时间] [级别] [ManagedThreadId] 消息`。**`[ThreadId]` 对排查线程问题极有用**。
 - 默认级别 `Warning`；`Debug` / `Info` **需在配置里开启**才会落盘（避免频繁刷盘）。
   - 配置：`data/config.json` 的日志级别项（`Log.Initialize(level)`；接受 `off/debug/info/warn/error`）。
-- `Log.Error` 会**同时**追加到 `data/error.log`（兼容旧名）。
+- `Log.Error` 会**同时**追加到 `data/errors.log`（兼容旧名；⚠️ 是 `errors.log` 复数，见 `Log.cs:26`）。
+- **插件写日志**（v0.1.83）：用 **`Capability.System.Log(PluginLogLevel.<级>, msg, ex?)`** —— 宿主自动加 `[插件:<id>]` 前缀，`Warn/Error` 默认落盘、`Debug/Info` 默认不落盘、永不抛。签名与语义见 §2.3 入口 3。**不要再靠 `Debug.WriteLine`**（Release 下静默）。
 - v0.1.82 起，插件**加载失败**会写明原因（`PluginHost.ReportErrors`）：
 
   ```
@@ -799,8 +854,8 @@ stack.Children.Add(PluginUi.Button("保存"));
 ```bash
 # 1) 找今天的日志
 ls data/logs/
-# 2) 只看插件相关
-grep -a "\[插件\]" data/logs/neko-*.log
+# 2) 只看插件相关（含插件自报日志 [插件:<id>] 与宿主加载日志 [插件]）
+grep -a "\[插件" data/logs/neko-*.log
 # 3) 看是否有跨线程 "调用线程无法访问此对象"（→ §5）
 grep -a "调用线程无法访问\|InvalidOperationException" data/logs/neko-*.log
 ```
@@ -955,9 +1010,10 @@ B) 机理对照（`--probe`，对插件自定义类型做一次序列化）：
 - **根因**：`System.Windows.Clipboard` 要求 STA，而插件定时器回调在线程池（MTA）→ 抛
   「调用线程无法访问此对象」；插件里 `catch {}` **全吞** → 静默失效，长期没被发现。
 - **正确做法**：
-  1. **不要裸 `catch {}`**——至少 `Log`/`Notify` 记一笔，或向用户冒泡。静默失效最难查。
-  2. 剪贴板/窗口等 STA/UI 亲和操作，**统一封送到 UI 线程**（§5.3）。
-  3. 用「功能上必须能看到变化」的方式验证（气泡/眼睛/像素变化），而不是「没报错就算过」。
+  1. **不要裸 `catch {}`**——至少用 **`Capability.System.Log(PluginLogLevel.Warn, "…", ex)`**（v0.1.83 新增，见 §2.3）或 `Notify` 记一笔，或向用户冒泡。静默失效最难查。
+  2. **别用 `Debug.WriteLine` 当插件日志**——Release 构建无调试器监听时它**完全静默**（与 `catch{}` 是同一「留不下痕」的病根）。要"事后能查"就必须走 `Capability.System.Log`（宿主落 `data/logs/`）。
+  3. 剪贴板/窗口等 STA/UI 亲和操作，**统一封送到 UI 线程**（§5.3）。
+  4. 用「功能上必须能看到变化」的方式验证（气泡/眼睛/像素变化），而不是「没报错就算过」。
 
 ### 踩坑 4 —— 静态画刷不 `Freeze()` → 跨线程/高频渲染纯损耗
 
@@ -1106,19 +1162,20 @@ public readonly record struct Rect2(double X, double Y, double Width, double Hei
 
 ### B.2 发现的不一致 / 需宿主决策项（重要）
 
-1. **`IPluginContext` 没有 `Log` 入口**。
-   任务描述提到「四个入口 `Pet` / `UI` / `Capability` / `Log`」，但源码里
-   `IPluginContext` 只有 `Pet` / `UI` / `Capability` 三个 API 入口（外加 `HostVersion` /
-   `DataRoot` / `PluginDataDir` 三个属性）。**插件侧没有 `Log.Info/Warn/Debug` 这样的公开 API**——
-   `Log` 是宿主内部的静态类（`src/DesktopPet.App/Core/Log.cs`），不在 Core/Sdk 里。
-   → 若确需给插件暴露日志，需要在 Core/Sdk 新增 API（属「只增不改」范畴）。
+1. ~~**`IPluginContext` 没有 `Log` 入口**~~ → **✅ 已于 v0.1.83 补齐**（以 `Capability.System.Log` 形式暴露，**未动 `IPluginContext`**）。
+   <br>（历史，v0.1.82 及以前）任务描述提到「四个入口 `Pet`/`UI`/`Capability`/`Log`」，但源码里
+   `IPluginContext` 只有 `Pet`/`UI`/`Capability` 三个 API 入口（外加 `HostVersion`/`DataRoot`/`PluginDataDir` 三个属性）；
+   `Log` 当时是宿主**内部**静态类（`src/DesktopPet.App/Core/Log.cs`），**不在** Core/Sdk 里。
+   <br>**现状**：新增 `PluginLogLevel` 枚举（`src/DesktopPet.Core/PluginLogLevel.cs`）+ `ISystem.Log(...)`（只增不改），
+   宿主自动加 `[插件:<id>]` 前缀、`Warn/Error` 默认落盘、**永不抛**。**注意**：落实形式是"既有 `ISystem` 加成员"，
+   所以 **`IPluginContext` 仍只有三个能力入口**（这点没变）——见 §2.3 入口 3 与 §8.1。
 
-2. **信任清单 `builtins.lock.json` 在生产 App 侧未接线**。
-   `PluginHost` 构造 `new PluginLoader(pluginsRoot)`，**未传 `PluginTrustSet`** → 运行时信任集恒为 `Empty`
-   → **任何** `file`/`process` 声明都会被拒载（包括官方内置）。信任通道目前只在测试里被构造。
-   CHANGELOG v0.1.80 表述为「信任清单是唯一豁免路径」，与「App 侧未接线」存在落差。
-   影响面：当前无内置插件声明 `file`/`process`（已细分），所以**尚未暴露**；
-   但一旦有内置插件需要高危权限，会**静默拒载**。→ 建议宿主侧补接线，或明确文档化「暂不支持高危」。
+2. ~~**信任清单 `builtins.lock.json` 在生产 App 侧未接线**~~ → **✅ 已于 v0.1.82 接线**。
+   <br>（历史）`PluginHost` 曾 `new PluginLoader(pluginsRoot)` **未传** `PluginTrustSet` → 运行时信任集恒为 `Empty`，
+   任何 `file`/`process` 声明都被拒载（含官方内置）——即"设计好了从未接线"。
+   <br>**现状**：`PluginHost` 构造时调用 `LoadBuiltinTrust()` 从 exe 同级读 `builtins.lock.json` 并传入
+   （`PluginHost.cs:46` + `LoadBuiltinTrust` `:95-104`），内置高危插件（如 `com.lantern.music`）可正常加载；
+   清单**缺失/损坏/schema 不符** → 退回「一律不信任」（安全兜底，行为与旧版逐字节一致）。第三方仍无豁免（见 §3.6）。
 
 3. **manifest 权限声明「解析但不强制」**。
    `PermissionChecker.FromManifest` 解析出 `GrantedPermissions` 并存入 `LoadedPlugin`，

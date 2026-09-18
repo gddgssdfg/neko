@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using DesktopPet.Core;
 
 namespace DesktopPet.Builtin.ClipboardHistory;
 
@@ -23,8 +24,11 @@ public sealed class ClipboardWindow : Window
     private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
     private static readonly Brush SelBg = Frozen(0x33, 0x44, 0x5C);
 
-    public ClipboardWindow(List<string> history, Action<string> pick)
+    private readonly ISystem _sys;
+
+    public ClipboardWindow(List<string> history, Action<string> pick, ISystem system)
     {
+        _sys = system;
         Title = "Neko 剪贴板历史";
         Width = 380;
         Height = 420;
@@ -72,7 +76,7 @@ public sealed class ClipboardWindow : Window
         {
             if (listBox.SelectedItem is ListBoxItem { Tag: string s } && !string.IsNullOrEmpty(s))
             {
-                try { pick(s); } catch { }
+                try { pick(s); } catch (Exception ex) { _sys.Log(PluginLogLevel.Warn, $"写回剪贴板失败（用户看不到「已选中」效果）：{ex.Message}"); }
                 Close();
             }
         };

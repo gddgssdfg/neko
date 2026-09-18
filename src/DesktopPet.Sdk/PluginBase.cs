@@ -23,6 +23,7 @@ public abstract class PluginBase : IPetPlugin
     public virtual PluginPermissions RequiredPermissions => PluginPermissions.None;
 
     public virtual void OnLoad(IPluginContext ctx) => Context = ctx;
+    /// <summary>空实现；<b>宿主当前不会调用它</b>（见 <see cref="IPetPlugin.OnTick"/>）。周期逻辑请改用 <c>Capability.Scheduler</c>。</summary>
     public virtual void OnTick(TimeSpan delta) { }
     public virtual void OnUnload() { }
     public virtual void Dispose() { }

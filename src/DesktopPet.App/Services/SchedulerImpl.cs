@@ -144,7 +144,7 @@ public sealed class SchedulerImpl : IScheduler
         public void Dispose()
         {
             _active = false;
-            try { _timer?.Dispose(); } catch { }
+            try { _timer?.Dispose(); } catch { /* DispatcherTimer.Dispose 已停止计时：失败不追加影响（最后防线）*/ }
         }
     }
 }

@@ -30,6 +30,16 @@ public interface ISystem
     void WriteClipboard(string text);
     void OpenUrl(string url);
     string? PickFile(string filter = "");
+
+    /// <summary>
+    /// 写一条插件日志（v0.1.83 新增；<b>只增不改</b>，既有成员语义不变）。
+    /// <para>宿主会附加插件 id 前缀（形如 <c>[插件:com.lantern.weather]</c>）便于定位是哪个插件在报。
+    /// 插件不必、也不应自行拼这个前缀。实现必须保证<b>永不抛异常</b>（日志失败绝不影响插件与宿主）。</para>
+    /// </summary>
+    /// <param name="level">级别。宿主默认 warn，故 <see cref="PluginLogLevel.Debug"/>/<see cref="PluginLogLevel.Info"/> 默认不落盘。</param>
+    /// <param name="message">消息正文（请勿放入隐私内容，正文可能被写入磁盘日志）。</param>
+    /// <param name="exception">可选异常，仅在 <see cref="PluginLogLevel.Error"/> 时会记录堆栈。</param>
+    void Log(PluginLogLevel level, string message, Exception? exception = null);
 }
 
 /// <summary>事件总线：宿主 → 插件 单向广播为主</summary>

@@ -157,6 +157,15 @@ internal sealed class SmokeSystem : ISystem
     public void OpenUrl(string url) => OpenUrlCount++;
 
     public string? PickFile(string filter = "") => null;
+
+    /// <summary>v0.1.83：新增 ISystem.Log 的替身实现（只计数 + 记录，无副作用）。</summary>
+    public int LogCount { get; private set; }
+    public List<(PluginLogLevel Level, string Message)> Logs { get; } = new();
+    public void Log(PluginLogLevel level, string message, Exception? exception = null)
+    {
+        LogCount++;
+        Logs.Add((level, message));
+    }
 }
 
 /// <summary>事件总线替身（与宿主 EventBusImpl 同语义）。记录订阅/退订，便于验证 OnUnload 是否解绑。</summary>

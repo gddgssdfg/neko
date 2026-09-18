@@ -34,7 +34,9 @@ public sealed class SamplePlugin : PluginBase
             OnInvoke = () => Pet.Say("喵！我是示例插件"),
         });
 
-        // 2. 每 5 秒存一次计数，验证 Storage 隔离
+        // 2. 周期逻辑的正确写法 = Capability.Scheduler（Every / At）。
+        //    ⚠️ 不要用 IPetPlugin.OnTick —— 宿主当前【不会调用】该方法（见 IPetPlugin.OnTick 的接口注释），
+        //    把周期逻辑写进 OnTick 会永不执行。此处 Scheduler.Every 才是真实可用的示范。
         _timer = Capability.Scheduler.Every(5000, () =>
         {
             _tickCount++;
@@ -42,12 +44,8 @@ public sealed class SamplePlugin : PluginBase
             Pet.SetMood(_tickCount % 2 == 0 ? PetMood.Happy : PetMood.Idle);
         });
 
-        System.Diagnostics.Debug.WriteLine($"[SamplePlugin] 加载完成，已注册菜单槽位与定时器");
-    }
-
-    public override void OnTick(TimeSpan delta)
-    {
-        // 主循环 tick（10Hz）—— 可做轻量逻辑
+        // 3. 日志走 Capability.System.Log：宿主会附加 [插件:<id>] 前缀，便于定位是哪个插件在报
+        Capability.System.Log(PluginLogLevel.Info, "加载完成，已注册菜单槽位与定时器");
     }
 
     public override void OnUnload()

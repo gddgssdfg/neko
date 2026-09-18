@@ -1,3 +1,16 @@
+; ============================================================================
+; ⚠️  已废弃（DEPRECATED）—— 请勿再使用本文件
+; ============================================================================
+; 本 Inno Setup 脚本自 v0.1.82 起正式废弃，安装包统一改走 WiX 路线：
+;     · installer/build_setup.py   —— 一键出包（依赖 gen_setup_wxs.py 生成 .wxs）
+;     · 用法：python installer/build_setup.py <version>   （version 必须与
+;       src/DesktopPet.App/DesktopPet.App.csproj 的 <Version> 一致，脚本会强校验）
+; 废弃原因（见 docs/project-audit-2026-09-11.md 第 4 条「安装器双轨并存且双双陈旧」）：
+;     · 两套安装器并存且各自停在陈旧版本，Inno 脚本更停在 v0.1.42，无人维护；
+;     · 双轨导致「无法从源码一键得到当前版安装包」，发布流程实质中断。
+; 处理建议：本文件为 git 跟踪文件，故暂留作历史参考；后续可由维护者手动
+;     `git rm installer/neko.iss` 清理。请不要再拿它出包。
+; ============================================================================
 ; Neko 桌宠安装脚本（v0.1.42 Inno Setup 6.x）
 ; 设计：用户级安装（{userappdata}）—— 无 UAC 摩擦；卸载保留 data/ 让用户配置可恢复
 ; 编译：iscc.exe neko.iss（输出 installer/NekoSetup-0.1.42.exe）

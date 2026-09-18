@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using DesktopPet.Core;
 
 namespace DesktopPet.Builtin.TodoList;
 
@@ -24,13 +25,15 @@ public sealed class TodoWindow : Window
 
     private readonly List<TodoItem> _items;
     private readonly Action<List<TodoItem>> _save;
+    private readonly ISystem _sys;
     private readonly ListBox _listBox;
     private readonly TextBox _input;
 
-    public TodoWindow(List<TodoItem> items, Action<List<TodoItem>> save)
+    public TodoWindow(List<TodoItem> items, Action<List<TodoItem>> save, ISystem system)
     {
         _items = items;
         _save = save;
+        _sys = system;
         Title = "Neko 待办清单";
         Width = 380;
         Height = 420;
@@ -130,6 +133,7 @@ public sealed class TodoWindow : Window
 
     private void Save()
     {
-        try { _save(_items); } catch { }
+        // v0.1.83：落盘失败是真故障（数据可能丢）——经插件日志通道上报（宿主会加 [插件:<id>] 前缀）；绝不外抛（铁律 7）
+        try { _save(_items); } catch (Exception ex) { _sys.Log(PluginLogLevel.Warn, $"待办落盘失败：{ex.Message}"); }
     }
 }

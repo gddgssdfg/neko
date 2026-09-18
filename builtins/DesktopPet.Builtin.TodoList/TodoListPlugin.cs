@@ -44,7 +44,7 @@ public sealed class TodoListPlugin : PluginBase
     private void OpenTodo()
     {
         var list = Load();
-        new TodoWindow(list, save: Save).Show();
+        new TodoWindow(list, save: Save, system: Capability.System).Show();
     }
 
     private void Save(List<TodoItem> list)

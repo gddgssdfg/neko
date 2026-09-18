@@ -190,7 +190,7 @@ public static class DeepSeekClient
                 && err.TryGetProperty("message", out var m))
                 return m.GetString() ?? "";
         }
-        catch { }
+        catch { /* 尽力而为地抽取 error.message：解析失败返回空串，调用方另有兜底文案 */ }
         return "";
     }
 

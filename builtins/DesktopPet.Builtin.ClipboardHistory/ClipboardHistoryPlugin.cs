@@ -66,7 +66,7 @@ public sealed class ClipboardHistoryPlugin : PluginBase
     private void OpenHistory()
     {
         var list = Capability.Storage.Get<List<string>>(HistoryKey) ?? new List<string>();
-        new ClipboardWindow(list, pick: t => Capability.System.WriteClipboard(t)).Show();
+        new ClipboardWindow(list, pick: t => Capability.System.WriteClipboard(t), system: Capability.System).Show();
     }
 
     public override void OnUnload()

@@ -29,7 +29,13 @@ public interface IPetPlugin : IDisposable
 
     /// <summary>装载时调用</summary>
     void OnLoad(IPluginContext ctx);
-    /// <summary>主循环 tick（宿主低频驱动，约 10Hz）</summary>
+    /// <summary>
+    /// 主循环 tick。
+    /// <para><b>⚠️ 宿主当前不会调用此方法</b>（保留仅为 API 兼容，请勿依赖它做任何逻辑）。
+    /// 需要周期逻辑请用宿主上下文里的 <c>IPluginContext.Capability.Scheduler</c>：
+    /// <c>Every(intervalMs, callback)</c> / <c>At(time, callback)</c>。</para>
+    /// </summary>
+    /// <param name="delta">距上次 tick 的时长（当前无调用方，无实际取值）。</param>
     void OnTick(TimeSpan delta);
     /// <summary>卸载时调用</summary>
     void OnUnload();

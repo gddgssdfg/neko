@@ -8,6 +8,32 @@
 
 ---
 
+## ⚠️ 现状校准声明（2026-09-11 追加）
+
+**本文档是 2026-09-01 的立项设计与决策快照。** 第〇～十二章里描述的**接口草案、物理参数、插件清单、目录布局、发布形态**均为当时的**规划值**，属历史存档，**不代表现状**。项目已迭代至 **v0.1.82**，实际实现与本文多处不同。
+
+> **现状一律以代码 / [`README.md`](../README.md) / [`CHANGELOG.md`](../CHANGELOG.md) / [`docs/dev-log.md`](dev-log.md) 为准。**
+
+立项阶段的核心决策——**第〇、十一、十二章**的 dogfooding 铁律、`DesktopPet.Core` 唯一契约、分层方向、资源红线、19 项已确认决策——**至今仍然成立，予以保留、不作改动**（它们是立项依据，有存档价值）。漂移只发生在"实现细节"层面，故采取**"顶部声明 + 就地标注"**策略：**不改写历史记录**，只在偏离处就地插入 `⚠️ 现状`，让读者不会照旧值干活。
+
+### 现状校准摘要（相对本稿的主要差异）
+
+| 本文稿（2026-09-01） | 现状（v0.1.82） | 依据（源码/记录） |
+|---|---|---|
+| 宠物状态 **8 个**（§10.1） | **9 个** —— 新增 `Work` 工作模式（v0.1.48） | `src/DesktopPet.Core/Enums.cs` |
+| 径向菜单**固定 8 槽位**（§〇 / §10.2） | **每页最多 8 个、超出翻页**（`MaxPerPage = 8` + 分页胶囊） | `src/DesktopPet.App/Windows/RadialMenu.cs` |
+| 内置插件 **4 个**（§10.3） | **18 个**（quote/screenshot/pomodoro/sleep/search/wordcard/hourly/music/fortune/countdown/notes/todo/sysinfo/weather/bazi/affection/clipboard/colorpicker） | `builtins/` |
+| 物理·**静止阈值 20 px/s**（§10.4） | **`RestVelocity = 100.0`**（差 5 倍）；另新增地面摩擦 `GroundFriction = 0.6`（v0.1.59） | `src/DesktopPet.App/Windows/PetWindow.cs` |
+| 目录 `plugins-src/` · `assets/` · `Window/`（§8.1） | **`builtins/` + `samples/`** · **`neko-assets/`** · **`Windows/`** | 仓库实际结构 / `README.md` |
+| 发布：依赖模式(8 MB) + 自包含(35–50 MB) **两套**（§7.3） | **自包含单文件**（`PublishSelfContained=true`，~174 MB / 稳态内存 ~177 MB，v0.1.60 定稿） | `App.csproj` / `CHANGELOG` v0.1.60 |
+| 托盘菜单「设置/暂停/关于/退出」（§〇） | 另含 **工作模式 / 显示·隐藏猫咪 / 插件…** 子菜单；其余（自启/穿透/缩放/透明度）下沉设置页 | `src/DesktopPet.App/Services/TrayManager.cs` |
+| Core API 草案（§4：`IPetPlugin` / `IPetApi` / `IUIApi` / `ICapabilityApi`） | 见现行 `src/DesktopPet.Core/` 与 [`docs/plugin-development-guide.md`](plugin-development-guide.md)（新增 `PluginBase`、`IPluginContext` 四入口 `Pet/UI/Capability/Log`；`PluginPermissions` 权限位已重排） | `docs/plugin-development-guide.md` |
+| 插件包 `.npet` + `SIGNATURE`（§5.3） | **未采用** —— 运行时即 `plugins/<id>/`（dll + `plugin.toml` 目录约定） | `plugins/README.md` |
+
+> **处置记录**：本次校准仅新增本声明与下列就地的 `⚠️ 现状` 标注；**未删除、未改写**任何立项决策与历史表格。审计（`docs/project-audit-2026-09-11.md` §13）对本文的 4 条指控已逐条核对，见上表前四行。
+
+---
+
 ## 〇、已确认决策（2026-09-01，共 19 项全部敲定）
 
 ### 产品定位
@@ -145,6 +171,10 @@
 
 ## 四、Core API 草案（v1，P3 冻结）
 
+> ⚠️ **现状（v0.1.82）**：本节的接口为**立项草案**，与实际有出入——实际 `src/DesktopPet.Core/` 引入 `IPluginContext`（四入口 `Pet/UI/Capability/Log`）、`PluginPermissions` 位序已重排（如 `file.own`/`media`/`process` 等 token 命名）、插件基类在 `src/DesktopPet.Sdk/PluginBase.cs`。**写插件请以 [`docs/plugin-development-guide.md`](plugin-development-guide.md)（逐字段核对源码）为准，勿照本节草案编码。**
+>
+> 立项决策「**Core 是唯一扩展契约 / 插件只依赖 `DesktopPet.Core` / 公开发布后只增不改**」**仍然成立**。
+
 ### 4.1 接口定义
 
 ```csharp
@@ -218,6 +248,8 @@ public enum PluginPermissions
 ---
 
 ## 五、插件格式
+
+> ⚠️ **现状（v0.1.82）**：`plugin.toml` 的实际字段、权限 token 表（`pet`/`ui`/`other`/`file.own`/`media`…）、高风险权限（`file`/`process`）与信任清单机制，以 [`docs/plugin-development-guide.md`](plugin-development-guide.md) 为准；**`.npet` 打包 / `SIGNATURE` 签名未采用**（运行时即 `plugins/<id>/` 目录）。**§5.5「加载器只认目录结构」、§5.6「配置文件控制启用/禁用」、§5.7「数据写 `data/plugins/<id>/`」三项设计至今成立** ✅。
 
 ### 5.1 目录结构
 
@@ -409,6 +441,8 @@ Storage 按 `plugin.id` 做命名空间隔离，插件之间互不可见。
 
 ### 7.3 发布方案：两种 .NET 部署模式
 
+> ⚠️ **现状（v0.1.60 定稿）**：**只发「自包含单文件」这一种形态**（`PublishSelfContained=true` + `PublishSingleFile=true`，~174 MB / 稳态内存 ~177 MB；**`EnableCompressionInSingleFile=false`**，内存优先）。本稿的"两套开发/发布模式"未采用。见 §7.2 第 17–18 项与 `docs/release-sop.md` §4。
+
 | 模式 | 包体 | 用户前置 | 推荐场景 |
 |---|---|---|---|
 | **依赖系统 Runtime** | 8 MB | 需装 .NET 8 Desktop Runtime（一次 60 MB） | 你自己、懂技术的 |
@@ -421,6 +455,8 @@ Storage 按 `plugin.id` 做命名空间隔离，插件之间互不可见。
 ## 八、Visual Studio 2022 项目结构
 
 ### 8.1 解决方案布局
+
+> ⚠️ **现状（v0.1.82）**：目录名已调整——内置插件源码 `plugins-src/` → **`builtins/`**（另有 `samples/SamplePlugin`）；素材 `assets/` → **`neko-assets/`**（皮肤按 `<id>/` 子目录）；窗口目录 `Window/` → **`Windows/`**；新增 `tests/PluginSmoke/`、`installer/`。完整现状见 `README.md` 目录结构。下列为立项规划布局。
 
 ```
 DesktopPet.sln
@@ -568,6 +604,8 @@ plugins/* ─────→ DesktopPet.Sdk ─→ DesktopPet.Core
 
 ### 10.1 宠物状态（8 个，均 4 帧循环）
 
+> ⚠️ **现状（v0.1.82）**：实为 **9 个** —— 新增 `Work` 工作模式（v0.1.48）。**且"均 4 帧 / 下表帧率"为立项规划值**，实际每状态帧数与 fps 由各皮肤 `skin.json` 定义（见 `docs/skin-development-guide.md`）。状态枚举见 `src/DesktopPet.Core/Enums.cs`。
+
 | 状态 | 帧率 | 触发 | 眼球层 |
 |---|---|---|---|
 | `Idle` 待机 | 2 fps | 默认 | ✅ |
@@ -583,11 +621,14 @@ plugins/* ─────→ DesktopPet.Sdk ─→ DesktopPet.Core
 
 - **左键抚摸**：点击落在宠物矩形内 → 切 `Pet` 状态 1.5 s → 触发 `pet:pet` 事件（好感度由插件处理）
 - **右键径向菜单**：以宠物中心弹出 **8 槽位**圆环，支持拖拽排序、常用置顶
+  > ⚠️ **现状（v0.1.82）**：改为「**每页最多 8 个、超出翻页**」（`RadialMenu.cs`：`MaxPerPage = 8` + 分页胶囊 `‹ n/N ›`）；排序/显隐改在**设置页「径向菜单」栏**（v0.1.71 起），非菜单内拖拽。
 - **拖拽物理**：左键长按 → 跟随鼠标（记录速度矢量）→ 释放后按惯性抛物线落下 → 触底反弹衰减
 - **滚轮**：可绑定插件命令（如切换装扮、调节音量）
 - **说话气泡**：宿主只提供渲染能力，**内容完全由插件通过 `Say()` 驱动**，内置不做台词库
 
 ### 10.3 内置插件（必须插件化 —— dogfooding 铁律）
+
+> ⚠️ **现状（v0.1.82）**：内置插件已从立项的 **4 个**增至 **18 个**（新增整点报时、音乐控制、运势、倒计时、便签、待办、系统信息、天气、八字命理、截图、清客、剪贴板历史、取色器、单词卡、快捷搜索、番茄钟、睡眠提醒等）。下表仅保留 **立项时规划的 4 个 dogfooding 基准插件**，作为"内置=插件"原则的历史说明。完整清单见 `builtins/` 与 `README.md`。
 
 | 插件 | 权限 | 订阅事件 | 职责 |
 |---|---|---|---|
@@ -599,6 +640,12 @@ plugins/* ─────→ DesktopPet.Sdk ─→ DesktopPet.Core
 **这四个插件与朋友的插件走完全相同的加载路径和 API。** 若某个做不成插件，说明 Core API 有洞，补 API 不开后门。
 
 ### 10.4 拖拽物理参数（P1 后期）
+
+> ⚠️ **现状（v0.1.82，以 `src/DesktopPet.App/Windows/PetWindow.cs` 为准）**：
+> - **静止阈值 = `RestVelocity = 100.0`**（本稿写 20，**差 5 倍**；`PetWindow.cs:147`）。
+> - 新增 **地面摩擦 `GroundFriction = 0.6`**（v0.1.59⑦：触地时水平速度衰减）。
+> - 本稿「**释放速度继承系数 0.6 / 甩动保留 60% 鼠标速度**」——**已不存在**（已确认，`PetWindow.cs:1276-1293`）：现行 `StartFall` 直接取「**上一帧鼠标位移 × 60**」作为抛出初速（即 **100% 继承**；那个 ×60 只是「每帧位移 → 像素/秒」的单位换算），再统一**限速 `±MaxThrowSpeed = 900` px/s**；全程**无任何 0.6 系数**。（注：`PetWindow.cs` 中唯一的 `0.6` 是 `GroundFriction = 0.6` —— 那是**触地水平摩擦**，与此无关。）
+> - 重力 1800、反弹 0.35 **与现状一致** ✅。
 
 | 参数 | 值 | 说明 |
 |---|---|---|

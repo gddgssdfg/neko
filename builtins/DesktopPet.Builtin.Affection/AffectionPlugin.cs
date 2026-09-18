@@ -63,7 +63,8 @@ public sealed class AffectionPlugin : PluginBase
         // 注册自定义设置页（v0.1.5 ISettingsPage dogfooding 示范）—— 嵌入宿主设置窗口的「插件」tab
         UI.RegisterSettingsPage(new AffectionSettingsPage(Capability.Storage, () => _score));
 
-        System.Diagnostics.Debug.WriteLine($"[好感度] 加载完成，当前分数={_score}");
+        // v0.1.83：迁移到插件日志通道（Debug 级 —— 宿主默认 warn，故默认不落盘；需 config logLevel=debug 才可见）
+        Capability.System.Log(PluginLogLevel.Debug, $"加载完成，当前分数={_score}");
     }
 
     public override void OnUnload()

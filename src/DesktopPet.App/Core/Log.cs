@@ -119,7 +119,7 @@ public static class Log
                 if (level < _minLevel) return;
                 if (!_initialized) // 未显式 Initialize 时懒初始化（首次写入即建目录）
                 {
-                    try { Directory.CreateDirectory(_logsDir); CleanupOldLogs(); } catch { }
+                    try { Directory.CreateDirectory(_logsDir); CleanupOldLogs(); } catch { /* 懒初始化建目录失败：丢弃本条日志，绝不抛（日志设施不得搞崩宿主）*/ }
                     _initialized = true;
                 }
 
@@ -128,7 +128,7 @@ public static class Log
                 // Error 兼容：同时写 errors.log
                 if (level == LogLevel.Error)
                 {
-                    try { AppendLine(Path.Combine(_logsDir, LegacyErrorFile), line); } catch { }
+                    try { AppendLine(Path.Combine(_logsDir, LegacyErrorFile), line); } catch { /* errors.log 兼容写入失败：不影响主日志文件（最后防线）*/ }
                 }
             }
         }

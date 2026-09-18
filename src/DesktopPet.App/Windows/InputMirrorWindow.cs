@@ -713,6 +713,8 @@ public sealed class InputMirrorWindow : Window
     {
         _config.MirrorPosX = Left;
         _config.MirrorPosY = Top;
+        // v0.1.83（按 team-lead 裁决还原）：这是【委托边界】的最后防线 —— _saveConfig 是外部注入的 Action，
+        // 当前注入的是永不抛的 PetWindow.SaveConfigFile，但委托边界不应假设具体实现，故保守保留 catch。
         try { _saveConfig(); } catch { }
     }
 

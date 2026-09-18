@@ -131,7 +131,7 @@ public sealed class PluginHost : IDisposable
             {
                 _errors.Add((plugin.PluginDir, $"OnLoad 失败: {ex.Message}"));
                 // 撤销该插件可能已经注册的 UI（OnLoad 中途抛异常时残留的槽位/托盘项）
-                try { _uiApi.UnregisterAll(plugin.Manifest.Id); } catch { }
+                try { _uiApi.UnregisterAll(plugin.Manifest.Id); } catch { /* OnLoad 失败后的尽力回滚：撤销失败不阻断 Dispose */ }
                 plugin.Dispose();
             }
         }
@@ -145,7 +145,8 @@ public sealed class PluginHost : IDisposable
         {
             Storage = new JsonPluginStorage(Paths.PluginDataDir(plugin.Manifest.Id)),
             Scheduler = new SchedulerImpl(),
-            System = new SystemImpl(),
+            // v0.1.83：传入插件 id → 插件经 Capability.System.Log 写的日志会带 [插件:<id>] 前缀
+            System = new SystemImpl(plugin.Manifest.Id),
             Events = _capability.Events,
         };
 
@@ -184,8 +185,8 @@ public sealed class PluginHost : IDisposable
         catch (Exception ex)
         {
             _errors.Add((dir, $"OnLoad 失败: {ex.Message}"));
-            try { _uiApi.UnregisterAll(id); } catch { }
-            try { lp.Dispose(); } catch { }
+            try { _uiApi.UnregisterAll(id); } catch { /* 回滚已注册 UI：单步失败不阻断后续清理（尽力而为）*/ }
+            try { lp.Dispose(); } catch { /* 回滚卸载 ALC：失败不影响返回 false 的结果（尽力而为）*/ }
             return false;
         }
     }
@@ -195,9 +196,9 @@ public sealed class PluginHost : IDisposable
     {
         var p = _plugins.FirstOrDefault(x => string.Equals(x.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
         if (p is null) { _disabled.Add(id); return true; }   // 没加载也确认禁用（一致性）
-        try { p.Instance.OnUnload(); } catch { }
-        try { _uiApi.UnregisterAll(id); } catch { }
-        try { p.Dispose(); } catch { }
+        try { p.Instance.OnUnload(); } catch { /* 卸载回调异常不得阻断后续撤销 UI 与 ALC 卸载（尽力而为）*/ }
+        try { _uiApi.UnregisterAll(id); } catch { /* 撤销 UI 失败不阻断 ALC 卸载 */ }
+        try { p.Dispose(); } catch { /* 释放失败不阻断从已加载列表移除 */ }
         _plugins.Remove(p);
         _disabled.Add(id);   // 标记禁用
         EnabledChanged?.Invoke(id, false);
@@ -209,8 +210,8 @@ public sealed class PluginHost : IDisposable
         foreach (var p in _plugins)
         {
             // 先撤销该插件注册的全部 UI（径向菜单槽位 / 托盘项 / 设置页）
-            try { _uiApi.UnregisterAll(p.Manifest.Id); } catch { }
-            try { p.Dispose(); } catch { }
+            try { _uiApi.UnregisterAll(p.Manifest.Id); } catch { /* 宿主退出清理：单个插件失败不阻断其余插件 */ }
+            try { p.Dispose(); } catch { /* 同上，尽力而为 */ }
         }
         _plugins.Clear();
     }

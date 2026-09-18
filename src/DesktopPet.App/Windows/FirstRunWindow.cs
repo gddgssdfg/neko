@@ -146,7 +146,7 @@ public sealed class FirstRunWindow : Window
         }
         _config.CatName = name;
         _config.OwnerTitle = title;
-        try { ConfigManager.Save(Paths.ConfigFile, _config); } catch { }
+        ConfigManager.Save(Paths.ConfigFile, _config);   // Save 内部已吞异常，永不抛 → 无需外层 try/catch（v0.1.82 P1-8）
         DialogResult = true;
         Close();
     }

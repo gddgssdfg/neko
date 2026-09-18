@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using DesktopPet.App.Core;
 
 namespace DesktopPet.App.Services;
 
@@ -88,6 +89,10 @@ public sealed class ActivityTracker
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(_file, JsonSerializer.Serialize(new { date = _todayDate, minutes = _todayMinutes }, _opts));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // v0.1.82 P1-8：磁盘写失败（满/权限）会让"今日活跃分钟"这一跨进程统计静默丢失 → 记 Warn 可定位
+            Log.Warn($"[活动统计] 落盘失败（今日活跃分钟可能无法跨进程保留）：{ex.Message}");
+        }
     }
 }

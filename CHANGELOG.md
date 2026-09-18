@@ -4,6 +4,94 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.83] - 2026-09-19
+
+**批次 B/C 收尾：补上「插件日志通道」这个架构缺口 + 清理历史欠账（空 catch / CHANGELOG 缺段 / 安装器 / 文档漂移）+ 首次跑通完整发布链路**。
+
+### 新增：插件日志通道 `ISystem.Log`（Core API，**只增不改**）
+- **缺口**：插件**没有任何宿主日志接口**，只能 `Debug.WriteLine`（Release 无监听器 ≈ 静默）。
+  而立项时 `IPluginContext` 的规划本就是"四入口 Pet/UI/Capability/**Log**"，`Log` 从未实现。
+  在「`catch{}` 吞掉剪贴板跨线程失败 → 剪贴板历史永远是空的」那类**静默失效**被反复证明代价最高之后，补上此能力。
+- **接口（additive，既有 5 个成员一字未动）**：
+  ```csharp
+  public enum PluginLogLevel { Debug, Info, Warn, Error }
+  void Log(PluginLogLevel level, string message, Exception? exception = null);
+  ```
+- **宿主实现**：`PluginHost.BuildContext` 为每个插件构造 `new SystemImpl(pluginId)`，日志自动加
+  `[插件:<id>]` 前缀（插件**不必也不应**自己拼）；级别映射到宿主日志；**实现永不抛**；
+  `Debug/Info` 默认不落盘（宿主默认 `warn`），仅 `Error` 记异常堆栈。
+- **真机实证**：`[DEBUG] [1] [插件:com.lantern.affection] 加载完成，当前分数=5`
+- 顺带把 4 处插件的 `Debug.WriteLine`（Weather / TodoWindow / NotesWindow / ClipboardWindow）与
+  `AffectionPlugin` 的既有用法迁到新通道。
+- ⚠️ **实现细节坑**：`SystemImpl` 新增名为 `Log` 的成员后，C# 会**让成员名遮蔽同名类型**
+  `DesktopPet.App.Core.Log` → 用 `using HostLog = ...` 别名消歧（原 6 处调用纯改名，语义不变）。
+
+### `OnTick` 契约诚实化（**宿主从未调用它**）
+- **已核实**：`IPetPlugin.OnTick` 全仓**无任何调用点**（其余同名命中都是 `ChatScheduler` / `HeartParticleWindow` 的私有方法）。
+  而 `samples/SamplePlugin` **重写了它**（错误示范），`BaziEngine.cs` 的注释还写着"OnTick 约 10Hz"（错误前提）。
+- **决策：不删、不接线，让契约诚实**。不删是因为有示例在重写且「Core API 只增不改」；
+  不接线是因为让 18 个插件在主循环跑代码与"精简无感"红线冲突（周期逻辑的正确途径是 `Capability.Scheduler`）。
+- **改法**：`IPetPlugin.OnTick` / `PluginBase.OnTick` 加醒目 XML doc 明写"**宿主当前不会调用**"并指向 `Capability.Scheduler`；
+  `samples/SamplePlugin` **删掉误导性重写**、把正确示范前移到已存在的 `Capability.Scheduler.Every(...)` 调用点；
+  `BaziEngine.cs` 注释改为 Scheduler 口径。
+
+### 清理：57 处空 `catch` 分类处理（审计口径 48 处已过时）
+行级 grep 会漏多行、还会把注释里的 `catch {}` 当命中 → 全量枚举后**真实 57 处**：
+- **A 类 15 处｜纯冗余 → 删除**：`ConfigManager.Save` 内部**已有 try/catch + Log.Error（永不抛）**，
+  外层再包 `try{...}catch{}` 无任何作用（`PetWindow` 13 处 + `FirstRunWindow` 1 处 + `InputMirrorWindow` 1 处）。
+  > ⚠️ `InputMirrorWindow` 那处**按裁决还原**：它是包在**委托**上的 try/catch，
+  > "唯一注入点永不抛"是**关于当前调用方的事实**而非该边界的性质 → 委托边界保守保留 + 注释。
+- **B 类 9 处｜真故障 → 补日志**：宿主侧 5 处补 `Log.Warn`（图标加载失败 / 槽位回调异常 / 插件设置页构建失败 / 清理失效槽位 /
+  活跃度落盘失败，均带可定位上下文）；插件侧 4 处改走新的 `ISystem.Log`。
+- **C 类 33 处｜最后防线 → 保留 + 写明"为什么可以吞"**（16 处补注释）：多为清理/卸载路径、
+  高频输入回调、可视化点缀、以及**日志设施自身**（记日志反而会造成"日志写日志"递归或淹没真信号）。
+
+### 补齐：CHANGELOG `[0.1.54]` / `[0.1.55]`
+- **不是丢失，而是被揉进了 `[0.1.56]` 段**（该段塞了 3 组"变更 + 验证"）→ 做的是**拆分回填**，不是凭空补写。
+- 交叉印证：`dev-log` 的逐版字节数表（v0.1.55 = 71,413 B「抠白底→托盘下半截黑」/ v0.1.56 = 82,965 B「保留白底+抹水印」）与拆出的文案逐字吻合。
+- 两段均加 `> 事后补记` 引用块说明来源；日期按同批次（2026-09-03）推定并标注。**未编造**（`[0.1.56]` 段本就无 `### 验证` 块，未替它补写）。
+
+### 文档（README / 发布 SOP / 两份手册 / 技术方案）
+- **`README.md` 重写**：设置窗口章节原写"v0.1.5 重做，**4 tab**"，与实际**严重不符** → 按源码实读重写为
+  **6 个 section** 的 sidebar 卡片式（通用/猫咪/输入/径向菜单/插件/关于）；并补托盘菜单、双模态（slack/work）、
+  皮肤选择器（v0.1.82）、以及"**`tests/` 不在 sln，必须各自单独构建**"的警示。
+- **新增 `docs/release-sop.md`（301 行）**：8 个强制检查章节 + 可勾选 checklist +
+  **附录「真实事故映射」9 条**（SelfContained 泄漏 / `Loaded` 里挂 `Loaded` / `LinkBase` 摊平 / bin 假绿 / 版本漂移 / 无留痕回退…）。
+- **`desktop-pet-plan.md` 校准**：审计的 4 条指控**全部仍然成立**（静止阈值差 5 倍 / 径向菜单 / 插件数 4→18 / 状态 8→9）
+  → 用「顶部校准声明 + 9 行现状表 + 8 处就地标注」的混合方案，**不删除任何立项决策记录**（保留存档价值）。
+  另确认：**"释放继承系数 0.6"不存在** —— 初速 = 上一帧鼠标位移 ×60（单位换算，非系数）+ 限速 ±900 px/s，即 **100% 继承**；
+  全文件唯一的 `0.6` 是 `GroundFriction`（触地水平摩擦）。
+- **两份插件手册**：补上 **`file.own`/`media`** 两个低危权限 token（v0.1.80 新增）、**内置信任通道**整节、
+  图标 key 补全至 **20 个**、`PluginPermissions` 底层 `int`→**`ulong`**、config 键名 `disabledPlugins`→**`DisabledPlugins`**、
+  日志名 `error.log`→**`errors.log`**；并无漂移化（改为"最后核对日期 + 核对到的版本"，权威源指向 csproj + `check_version.py`）。
+
+### 交付链路
+- **统一安装器**：保留 WiX（`build_setup.py` + `gen_setup_wxs.py`），**废弃 Inno**（`neko.iss` 是跟踪文件故不删，加醒目废弃横幅）。
+  清理 16 个陈旧产物（7 个旧 MSI + 7 个 wixpdb + 2 个 tmp）。
+- **防版本漂移（硬校验）**：`build_setup.py` 现在**必须显式传版本**且**与 csproj `<Version>` 一致**，否则报错退出；
+  另校验 publish 目录存在并给出可照抄的 `dotnet publish` 命令。实测 4 例：无参数 / 版本不匹配 / 目录不存在 → 全部正确拦截并给出清晰原因。
+- **新增 `tools/ci.py`（本地一键 CI）**：构建 sln → **单独构建**三个测试工程 → 依次跑 LoaderTest / PluginSmoke / UiProbe → 汇总表。
+  失败即中止 + 打印日志绝对路径；测试产物隔离到 `bin_ci/`；UiProbe 用"哨兵 + 宽限 + 总超时"兜底。
+  **实测六道闸门全绿，总耗时 2m05s。**
+- **首次完整发布演练**（v0.1.82）：`dotnet publish`（1m59s）→ MSI（96.8s）→ **用 `msiexec /a` 管理安装实拆核对内容**：
+  `builtins.lock.json` **在包内**（Neko.exe 同级，18 个 id + 摘要）、`plugins/` **18 个全在**、`neko-assets/` **8 套皮肤全在**、
+  `data/` **0 条**（正确排除）、`*.pdb` **0 条**。
+  → 闭环审计 P1-4「无法从源码一键得到当前版安装包」，并首次验证了"新增构建产物（信任清单）确实入包"。
+- `.gitignore`：`installer/*.wxs`、`installer/*.wixpdb` 改为不入库（`gen_setup_wxs.py` 每次出包重写）；
+  旧的 7 个 `.wxs` `git rm --cached`（磁盘文件保留）。
+
+### 已知限制
+- MSI 里含 `plugins/_template/` 与 `plugins/README.md`（轻微冗余）。`_template` 以 `_` 开头会被 `PluginLoader` 跳过，
+  **功能无影响** —— 保留（顺带给用户一个插件目录结构的提示），如需排除是打包规则的一行改动。
+
+### 验证
+- 构建：`src/DesktopPet.sln` **0 警告 0 错误**；`samples/SamplePlugin` 单独构建 **0/0**；
+  5 个测试工程（LoaderTest / PluginSmoke / UiProbe / AlcPinProbe / AffectionProbe）**均 0/0**
+- **LoaderTest 全绿**；**PluginSmoke 18/18 加载、ALC 未回收 0**；**UiProbe 全绿**
+- **`tools/ci.py` 六道闸门全绿（2m05s）**
+- 真机：18 插件全加载；`[插件:<id>]` 前缀日志实证；信任清单载入日志
+- 发布演练：MSI 实拆内容逐项核对通过
+
 ## [0.1.82] - 2026-09-16
 
 **修 QA 复验（v0.1.81）查出的 2 个真实缺陷：重复选皮肤不重套推荐缩放 + 设置页步进器基准漂移**。
@@ -847,6 +935,12 @@ lunar-csharp 的 `EightChar.YearWuXing/MonthWuXing/DayWuXing/TimeWuXing` 返回*
 - HSV 饱和度对"内容浅色 vs 背景白"区分不准——白色肚皮/嘴周被误抠透明
 - 下一轮要更精确问用户："抠白底 / 抹水印 / 透明背景 / 白底保留"哪种
 
+## [0.1.55] - 2026-09-03
+
+> **事后补记**：本版发布时未在本文件单独立段，其内容原被并入上方 [0.1.56] 段；本段依据 `docs/dev-log.md`（2026-09-03 段「托盘图标」+ 2026-09-11 逐版本比对表：v0.1.55 `tray.ico` = 71,413 B，抠白底版被灯灯否决）自 [0.1.56] 段拆分回填。日期按同批次 09-03 条目推定。
+
+**托盘图标换成豆包 AI 橘猫头（首次尝试：抠白底 + 抹水印；后因托盘显示"下半截黑"被 [0.1.56] 修正为保留白底）**。
+
 ### 变更
 
 - `neko-assets/tray.ico` 替换：豆包 AI 生成的橘猫头（1280×1280 RGB → 抠白底 + 抹右下"豆包AI生成"水印 → 多尺寸 ICO 256/64/48/32/16）
@@ -865,6 +959,13 @@ lunar-csharp 的 `EightChar.YearWuXing/MonthWuXing/DayWuXing/TimeWuXing` 返回*
 
 - 抠图用 HSV 饱和度区分"白 vs 橘"——避免 R 单通道错判（橘 R=255 会被误判为白）
 - ICO 多尺寸生成时 PNG → ICO 的 PNG 编码（保留 alpha 通道）；运行时 WPF NotifyIconWpf 自动选合适尺寸
+- 本版"抠白底"方案在托盘实际显示为"下半截黑"，灯灯否决 → 已在 [0.1.56] 改为"保留白底 + 抹水印"；`tray.ico.bak-v0.1.54` 备份内容实为像素版（1,330 B），无法用于回滚到 AI 版（见 `docs/dev-log.md` 2026-09-11）
+
+## [0.1.54] - 2026-09-03
+
+> **事后补记**：本版发布时未在本文件单独立段，其内容原被并入上方 [0.1.56] 段；本段依据 `docs/dev-log.md`（2026-09-03 段 ③「柔光屏蔽（v0.1.54）」）自 [0.1.56] 段拆分回填。日期按同批次 09-03 条目推定。
+
+**柔光皮肤屏蔽（灯灯指示"先专注像素版"）**；**MSI 自本版起不再随版本自动出包**（需要时手动 `installer/build_setup.py <version>`）。
 
 ### 变更
 

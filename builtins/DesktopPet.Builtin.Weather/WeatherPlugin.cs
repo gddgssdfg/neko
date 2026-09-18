@@ -47,7 +47,7 @@ public sealed class WeatherPlugin : PluginBase
     public override void OnUnload()
     {
         // v0.1.82：释放共享 HttpClient（见字段注释），否则 ALC 无法回收
-        try { _http?.Dispose(); } catch { }
+        try { _http?.Dispose(); } catch { /* Dispose 失败不影响卸载（铁律 7）；插件无宿主日志通道 */ }
         _http = null;
     }
 
@@ -121,7 +121,7 @@ public sealed class WeatherPlugin : PluginBase
                 return (r.GetProperty("latitude").GetDouble(), r.GetProperty("longitude").GetDouble());
             }
         }
-        catch { }
+        catch (System.Exception ex) { Capability.System.Log(PluginLogLevel.Warn, $"城市坐标解析失败，回退默认城市「{city}」：{ex.Message}"); }
         return KnownCities[DefaultCity];
     }
 

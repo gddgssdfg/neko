@@ -3,6 +3,9 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using DesktopPet.App.Core;
 using DesktopPet.Core;
+// 本类 v0.1.83 起新增了名为 Log 的成员方法；C# 在成员访问里同名方法会遮蔽同名类型，
+// 故用别名消歧，保证宿主日志（DesktopPet.App.Core.Log）调用不受影响。
+using HostLog = DesktopPet.App.Core.Log;
 
 namespace DesktopPet.App.Services;
 
@@ -17,12 +20,22 @@ public sealed class SystemImpl : ISystem
     /// </summary>
     public static Action<string, string>? NotifySink;
 
+    /// <summary>所属插件 id；null = 宿主内部使用（v0.1.83）。由 PluginHost.BuildContext 按插件注入，用于给插件日志加可定位前缀。</summary>
+    private readonly string? _pluginId;
+
+    /// <summary>宿主内部构造：日志不带插件 id 前缀。</summary>
+    public SystemImpl() { }
+
+    /// <summary>插件侧构造：<see cref="Log"/> 会带 <c>[插件:&lt;id&gt;]</c> 前缀（v0.1.83）。</summary>
+    /// <param name="pluginId">插件唯一 id（如 com.lantern.weather）。</param>
+    public SystemImpl(string pluginId) => _pluginId = pluginId;
+
     public void Notify(string title, string body)
     {
         // 托盘气泡通知（v0.1.62：接入 TrayManager.ShowBalloon；sink 未绑定时退化为日志）
         // v0.1.74 隐私收紧：不落通知正文（body 可能含用户内容，如待办标题），且降为 Debug 级
         // （默认 warn 级别本就不落盘；此改动保证用户主动开 debug 时也不会把内容写进日志）。
-        Log.Debug($"[通知] {title}");
+        HostLog.Debug($"[通知] {title}");
         NotifySink?.Invoke(title, body);
     }
 
@@ -34,7 +47,7 @@ public sealed class SystemImpl : ISystem
         return OnUi(() =>
         {
             try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
-            catch (Exception ex) { Log.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
+            catch (Exception ex) { HostLog.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
         }, null);
     }
 
@@ -43,7 +56,7 @@ public sealed class SystemImpl : ISystem
         OnUi(() =>
         {
             try { Clipboard.SetText(text); }
-            catch (Exception ex) { Log.Warn($"剪贴板写入失败: {ex.Message}"); }
+            catch (Exception ex) { HostLog.Warn($"剪贴板写入失败: {ex.Message}"); }
         });
     }
 
@@ -53,7 +66,7 @@ public sealed class SystemImpl : ISystem
         var d = System.Windows.Application.Current?.Dispatcher;
         if (d is null || d.CheckAccess()) { action(); return; }
         try { d.Invoke(action); }
-        catch (Exception ex) { Log.Warn($"[System] UI 线程执行失败: {ex.Message}"); }
+        catch (Exception ex) { HostLog.Warn($"[System] UI 线程执行失败: {ex.Message}"); }
     }
 
     private static T OnUi<T>(Func<T> f, T fallback)
@@ -63,7 +76,7 @@ public sealed class SystemImpl : ISystem
         try { return d.Invoke(f); }
         catch (Exception ex)
         {
-            Log.Warn($"[System] UI 线程执行失败: {ex.Message}");
+            HostLog.Warn($"[System] UI 线程执行失败: {ex.Message}");
             return fallback;
         }
     }
@@ -71,7 +84,7 @@ public sealed class SystemImpl : ISystem
     public void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warn($"打开链接失败: {ex.Message}"); }
+        catch (Exception ex) { HostLog.Warn($"打开链接失败: {ex.Message}"); }
     }
 
     public string? PickFile(string filter = "")
@@ -82,4 +95,24 @@ public sealed class SystemImpl : ISystem
         };
         return dlg.ShowDialog() == true ? dlg.FileName : null;
     }
+
+    /// <summary>
+    /// v0.1.83：插件日志入口。附加插件 id 前缀（<c>[插件:&lt;id&gt;]</c>）后转交宿主日志设施，
+    /// 使插件内的失败不再"静默"（此前插件无任何日志通道，只能用 Debug.WriteLine——Release 下等于静默）。
+    /// 全程由宿主 <see cref="HostLog"/> 内部 try/catch 兜底，<b>永不抛</b>。
+    /// </summary>
+    public void Log(PluginLogLevel level, string message, Exception? exception = null)
+    {
+        var line = $"{Tag} {message}";
+        switch (level)
+        {
+            case PluginLogLevel.Debug: HostLog.Debug(line); break;
+            case PluginLogLevel.Info: HostLog.Info(line); break;
+            case PluginLogLevel.Warn: HostLog.Warn(line); break;
+            default: HostLog.Error(line, exception); break;
+        }
+    }
+
+    /// <summary>日志前缀：有插件 id 时带 id 便于定位，否则退化为通用标记。</summary>
+    private string Tag => _pluginId is null ? "[插件]" : $"[插件:{_pluginId}]";
 }
