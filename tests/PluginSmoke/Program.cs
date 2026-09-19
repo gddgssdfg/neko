@@ -41,7 +41,7 @@ public static class Program
     /// <summary>已知的 OnLoad 阶段副作用标注（审计结论，仅用于报告，不改变运行行为）。</summary>
     private static readonly Dictionary<string, string> OnLoadSideEffects = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["com.lantern.bazi"] = "OnLoad 运行 6 项本地自检（lunar 排盘 + 运势 + MBTI 计分 + DPAPI 往返），无网络、无写盘",
+        ["com.lantern.bazi"] = "OnLoad 默认不跑自检（v0.1.84：仅当 NEKO_PLUGIN_SELFTEST=1 时跑 6 项：lunar 排盘 + 运势 + MBTI 计分 + DPAPI 往返），无网络、无写盘",
         ["com.lantern.screenshot"] = "OnLoad 创建插件数据目录（写盘，路径在临时目录内）",
         ["com.lantern.clipboard"] = "OnLoad 读一次剪贴板（本工具用纯内存替身，不碰真实剪贴板）",
     };

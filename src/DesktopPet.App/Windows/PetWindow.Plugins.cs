@@ -1,0 +1,93 @@
+// v0.1.84：从 PetWindow.cs 按功能区域拆出（审计 P2-11）——插件加载 + 径向菜单
+using System.Runtime.InteropServices;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
+using DesktopPet.App.Behavior;
+using DesktopPet.App.Core;
+using DesktopPet.App.Renderer;
+using DesktopPet.App.Services;
+using DesktopPet.Core;
+
+namespace DesktopPet.App.Windows;
+
+public sealed partial class PetWindow : Window
+{
+    /// <summary>切换径向菜单开关（全局热键调用）</summary>
+    public void ToggleRadialMenu()
+    {
+        if (_radialMenu is { IsVisible: true })
+        {
+            CloseRadialMenu();
+        }
+        else
+        {
+            OpenRadialMenu();
+        }
+    }
+
+    /// <summary>打开径向菜单（读取所有插件注册的槽位）</summary>
+    public void OpenRadialMenu()
+    {
+        // 单例复用 + Hide() 关闭：反复 Show/Hide 不会触发"窗口关闭期间 Show"异常
+        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, _config, onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
+        // v0.1.25：撤销 v0.1.9 的「旁边定位」（用户要求改回围绕猫一圈）。
+        // 菜单圆心 = 猫中心，中心挖空（洞半径 = 猫半宽 + 余量）透出猫，
+        // 猫可见、可直接抚摸/拖拽，槽位在猫外围一圈不再盖猫。
+        // v0.1.32：洞半径 4→10（猫不再贴洞边，视觉更舒适）
+        var holeR = Width / 2 + 10;
+        _radialMenu.ShowAt(Left + Width / 2, Top + Height / 2, holeR);
+    }
+
+    public void CloseRadialMenu() => _radialMenu?.HideMenu();
+
+    /// <summary>加载插件（窗口显示后调用）</summary>
+    public void LoadPlugins()
+    {
+        _pluginHost.LoadCore(); // v0.1.34：只立即加载核心插件（deferred 集合外的）；延迟插件主窗口显示后异步加载
+
+        // v0.1.34：窗口首次显示完成后 Background 加载 deferred 插件（不抢首屏渲染）
+        // ⚠️ v0.1.82 修：原来无条件 `Loaded += ...`，但本方法是被 App 的 Loaded 处理器调用的，
+        // 也就是「在 Loaded 事件的触发过程中再挂一个 Loaded 处理器」——WPF 不会在本次触发里调用
+        // 新挂的处理器，且 Loaded 不会重放，于是 LoadDeferred() **永远不执行**：
+        // weather/quote/wordcard/screenshot/fortune/hourly 这 6 个延迟插件从来没被加载过。
+        // 正确做法：已加载完就直接排后台任务；否则才挂一次性处理器。
+        void QueueDeferredLoad() => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _pluginHost.LoadDeferred();
+            DeferredPluginsLoaded?.Invoke();   // 通知 App/TrayManager 等刷新
+            PruneRadialMenuConfig();           // v0.1.71：插件全加载完后清一次径向菜单配置残留 slotId
+        }), DispatcherPriority.Background);
+
+        if (IsLoaded) QueueDeferredLoad();
+        else Loaded += (_, _) => QueueDeferredLoad();
+
+        _eventBus.Emit(DesktopPet.Core.PetEvents.AppReady, null); // v0.1.0+：插件初始化完成，订阅 AppReady 可替代 OnLoad 做延迟初始化
+        _stateMachine.Play(DesktopPet.Core.PetState.Idle);
+        _loopTimer.Start(); // v0.1.1 fix：之前忘了 Start()，主循环从未跑（动画、眼神追踪、边缘吸附全部失效 → 用户只看到冻住的死图猫）
+    }
+
+    /// <summary>
+    /// v0.1.71：插件全加载完后清一次径向菜单配置里的残留 slotId（卸载/改名插件后不留垃圾 key）。
+    /// 必须在 LoadDeferred 之后调用（否则 AllRadialSlots 未注册完，会误删合法 key）。仅在确有残留时才落盘，避免每次启动重写 config.json。
+    /// </summary>
+    private void PruneRadialMenuConfig()
+    {
+        try
+        {
+            var before = _config.RadialMenu.Order.Count + _config.RadialMenu.Visible.Count;
+            RadialMenuResolver.Prune(_uiApi.AllRadialSlots, _config.RadialMenu);
+            var after = _config.RadialMenu.Order.Count + _config.RadialMenu.Visible.Count;
+            if (before != after)
+                ConfigManager.Save(Paths.ConfigFile, _config);
+        }
+        catch (Exception ex)
+        {
+            // v0.1.82 P1-8：清理失效槽位的逻辑异常（如配置结构损坏）会导致脏槽位残留，需留痕
+            Log.Warn($"[径向菜单] 清理失效槽位失败：{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+}

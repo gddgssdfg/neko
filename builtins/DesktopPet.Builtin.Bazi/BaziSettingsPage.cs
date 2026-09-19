@@ -17,13 +17,28 @@ public sealed class BaziSettingsPage : ISettingsPage
     private readonly IPluginStorage _storage;
 
     /// <summary>
+    /// v0.1.84：保存后的回调（由插件注入），用于让插件按新的播报设置<b>重排每日播报</b>。
+    /// 可空 —— 便于测试或在不关心重排的场景下构造。
+    /// </summary>
+    private readonly Action? _onSaved;
+
+    /// <summary>
     /// v0.1.82：出生字段预览的输入去抖计时器（300ms）。
     /// <para>避免逐键触发同步排盘（<see cref="BaziEngine.ComputeProfile"/> 是同步天文 / 历法计算）导致输入卡顿。
     /// 在 <see cref="BuildContent"/> 内创建，内容卸载（<c>Unloaded</c>）时停止并释放。</para>
     /// </summary>
     private DispatcherTimer? _previewDebounce;
 
-    public BaziSettingsPage(IPluginStorage storage) => _storage = storage;
+    /// <param name="storage">插件私有存储。</param>
+    /// <param name="onSaved">
+    /// 可选：保存成功后回调（在 UI 线程上执行）。插件用它重排每日播报 ——
+    /// 用户改了播报时间 / 开关后，旧排期必须被取消、按新值重排，否则要么按旧时刻触发、要么不触发。
+    /// </param>
+    public BaziSettingsPage(IPluginStorage storage, Action? onSaved = null)
+    {
+        _storage = storage;
+        _onSaved = onSaved;
+    }
 
     public string Id => "com.lantern.bazi";
     public string Title => "com.lantern.bazi";
@@ -289,6 +304,8 @@ public sealed class BaziSettingsPage : ISettingsPage
             var draft = FullDraft();
             draft.Save(_storage);
             RefreshPreview();
+            // v0.1.84：保存后通知插件重排每日播报（改时间 / 开关后立即取消旧排期、按新值重排）。
+            _onSaved?.Invoke();
         }
 
         // ==== 实时预览：任一出生字段变化即重算四柱 ====

@@ -357,6 +357,14 @@ public static class Program
         var uiApi = new TestUIApi();
         var petApi = new TestPetApi();
         var ctx = BuildContext(bazi, dataDir, petApi, uiApi, new TestEventBus());
+
+        // v0.1.84（两全方案）：Bazi 的 6 项 OnLoad 自检已改为「默认不跑，NEKO_PLUGIN_SELFTEST=1 才跑」。
+        // 本测试必须在加载前打开开关，才能让下面两条断言继续有效：
+        //   ① OnLoad 触碰 lunar（BaziEngine.VerifyKnownCases）→ 验证第三方依赖在插件 ALC 下可解析；
+        //   ② 下方各 LastSelfTest 静态结果（lunar/fortune/mbti/api/prompt/client）仍会写入并等于 "OK"。
+        // 生产环境不设该变量 → OnLoad 不跑自检（省 ~8MB / 启动 CPU）。
+        Environment.SetEnvironmentVariable("NEKO_PLUGIN_SELFTEST", "1");
+
         try
         {
             bazi.Instance.OnLoad(ctx);

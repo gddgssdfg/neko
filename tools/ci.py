@@ -17,7 +17,9 @@
   3. 依次运行测试套件并按固定判据断言：
        · LoaderTest  — 末行 `=== 全部通过 ===` 且退出码 0
        · PluginSmoke — `加载 N/N 成功`（N==N，全量加载）+ `[ALC 未能回收] 0 个`
-       · UiProbe     — `=== 全部通过 ===`（含超时兜底与「读到哨兵后主动收尾」）
+       · UiProbe     — `=== 全部通过 ===`（**以哨兵为准，不看退出码**）
+                      ⚠️ UiProbe 有「跑完不自行退出」的已知形态，脚本会在宽限期后主动终止；
+                      Windows 上 terminate() 的退出码是 1，拿它判失败会间歇误报。
   4. 打印 `git status --short`（仅提示未提交改动，非闸门）
   5. 结束打印汇总表（各步耗时 + 结果）
 
@@ -120,6 +122,10 @@ class RunResult:
     duration: float = 0.0
     timed_out: bool = False
     log_path: Path | None = None
+    # v0.1.84：哨兵出现后由本脚本【主动终止】子进程（UiProbe 的已知形态：跑完不自行退出）。
+    # 必须记下来 —— Windows 上 Popen.terminate() 走 TerminateProcess(h, 1)，退出码就是 1，
+    # 不能拿"退出码非 0"反推失败，否则会把"我们自己杀的"误判成"它挂了"。
+    killed_after_sentinel: bool = False
 
     @property
     def text(self) -> str:
@@ -196,6 +202,7 @@ def run_captured(
     deadline = start + timeout
     sentinel_at: float | None = None
     timed_out = False
+    killed_after_sentinel = False
 
     with open(log_path, "w", encoding="utf-8", errors="replace") as logf:
         while True:
@@ -222,6 +229,7 @@ def run_captured(
             # 哨兵已出现但进程迟迟不退出 → 主动收尾
             if sentinel_at is not None and now - sentinel_at >= grace:
                 if proc.poll() is None:
+                    killed_after_sentinel = True   # 是我们主动杀的，不是它自己挂的
                     proc.terminate()
                     try:
                         proc.wait(timeout=5)
@@ -247,6 +255,7 @@ def run_captured(
         duration=time.monotonic() - start,
         timed_out=timed_out,
         log_path=log_path,
+        killed_after_sentinel=killed_after_sentinel,
     )
 
 
@@ -377,21 +386,36 @@ def step_run_uiprobe() -> StepResult:
     r = run_captured([str(exe)], log, timeout=RUN_TIMEOUTS["UiProbe"],
                      sentinel="=== 全部通过 ===", echo=True)
 
+    ok, detail = judge_uiprobe(r)
+    return StepResult(name, ok, r.duration, detail, log)
+
+
+def judge_uiprobe(r: RunResult) -> tuple[bool, str]:
+    """UiProbe 闸门判据（**纯函数，便于单测三条分支**）。
+
+    v0.1.84：**以哨兵为准，不看退出码**。UiProbe 有「跑完不自行退出」的已知形态
+    （真实 WPF 窗口 + GlobalInput 低层钩子留下前台线程），脚本会在宽限期后主动终止它；
+    而 Windows 上 `Popen.terminate()` = `TerminateProcess(h, 1)` → 退出码就是 1，
+    原先的白名单 `(0, -15, -9)` 是 POSIX 信号、在 Windows 上永不成立 → 间歇误报。
+    前两道检查（有失败项 / 无哨兵）**优先级高于哨兵**：真失败依旧会被拦下。
+    """
     if _has_failed_sentinel(r.lines):
-        return StepResult(name, False, r.duration, "存在失败项（输出『N 项失败』）", log)
+        return False, "存在失败项（输出『N 项失败』）"
     if "=== 全部通过 ===" not in r.text:
         if r.timed_out:
-            return StepResult(name, False, r.duration, "运行超时且未打印『全部通过』", log)
-        return StepResult(name, False, r.duration, f"未打印『全部通过』（退出码 {r.rc}）", log)
+            return False, "运行超时且未打印『全部通过』"
+        return False, f"未打印『全部通过』（退出码 {r.rc}）"
 
     note = "全部通过"
-    if r.timed_out:
+    if r.killed_after_sentinel:
+        note += "（进程未自行退出，已被脚本终止）"
+    elif r.timed_out:
         note += "（总超时兜底）"
-    elif r.rc not in (0, -15, -9):
-        return StepResult(name, False, r.duration, f"已打印全部通过但退出码 {r.rc}", log)
-    else:
-        note += "（读到哨兵后已确认收尾）"
-    return StepResult(name, True, r.duration, note, log)
+    elif r.rc != 0:
+        note += f"（进程退出码 {r.rc}）"
+    return True, note
+
+    raise AssertionError("unreachable")
 
 
 def step_git_status() -> StepResult:

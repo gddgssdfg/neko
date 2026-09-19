@@ -513,18 +513,29 @@ internal static class Program
             double pawRaised = (double)typeof(InputMirrorWindow).GetField("PawRaisedTop", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
             if (paw is null) throw new Exception("键盘爪未创建");
             mirror.FlashKey(0x41, true);   // 敲 A
-            var frame2 = new DispatcherFrame();
-            var t2 = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            // v0.1.84（修间歇失败）：原来是【死等 220ms】再断言 —— 机器负载高时（例如紧接一次构建之后）
+            // 那个 130ms 的回弹 DispatcherTimer 会被推迟，爪还没回到举手位就断言，
+            // 实测偶发 "实际 Top=99（挡住键盘了）"。改为【轮询等到位】，最多等 1.2s。
+            // 注意：必须用 DispatcherFrame 让消息泵转（不能用 Thread.Sleep —— 会阻塞 STA 消息循环，动画反而停摆）。
+            double pawTop;
+            var waitSw = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
             {
-                Interval = TimeSpan.FromMilliseconds(220),   // 等 130ms 回弹定时器跑完
-            };
-            t2.Tick += (_, _) => { t2.Stop(); frame2.Continue = false; };
-            t2.Start();
-            Dispatcher.PushFrame(frame2);
-            mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
-            double pawTop = Canvas.GetTop(paw);
+                mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                pawTop = Canvas.GetTop(paw);
+                if (pawTop >= pawRaised - 1) break;          // 已回到举手位
+                if (waitSw.ElapsedMilliseconds > 1200) break; // 兜底：别把真 bug 拖成超时
+                var slice = new DispatcherFrame();
+                var ts = new System.Windows.Threading.DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(30),
+                };
+                ts.Tick += (_, _) => { ts.Stop(); slice.Continue = false; };
+                ts.Start();
+                Dispatcher.PushFrame(slice);
+            }
             if (pawTop < pawRaised - 1)
-                throw new Exception($"爪应举回举手位（Top={pawRaised}，键盘上方之外），实际 Top={pawTop:F0}（挡住键盘了）");
+                throw new Exception($"爪应举回举手位（Top={pawRaised}，键盘上方之外），实际 Top={pawTop:F0}（挡住键盘了；已等 {waitSw.ElapsedMilliseconds}ms 仍未到位）");
 
             mirror.Close();
             gi.Dispose();
@@ -655,9 +666,20 @@ internal static class Program
             var quizType = asm.GetType("DesktopPet.Builtin.Bazi.MbtiQuiz")
                 ?? throw new Exception("MbtiQuiz 类型未找到");
 
-            var page = pageType.GetConstructor(new[] { typeof(DesktopPet.Core.IPluginStorage) })
-                ?.Invoke(new object[] { new ProbeStorage() })
-                ?? throw new Exception("BaziSettingsPage 构造失败");
+            // ⚠️ 不能再用 pageType.GetConstructor(new[] { typeof(IPluginStorage) })：
+            //    Type.GetConstructor(Type[]) 要求参数列表**精确相等**，**可选参数不参与匹配**。
+            //    故一旦 BaziSettingsPage 的构造函数新增/调整可选参（如 v0.1.84 加了 Action? onSaved = null），
+            //    精确匹配会返回 null、这里直接抛「构造失败」——CI 第 5 道闸门曾因此变红。
+            // 改为：挑「第一个参数是 IPluginStorage」的构造函数，其余参数用 Type.Missing 走其默认值，
+            //    对「新增可选参数」健壮（后期再动 ctor 也不会把这里弄坏）。
+            var pageCtor = pageType.GetConstructors()
+                .FirstOrDefault(c => c.GetParameters().Length >= 1
+                    && c.GetParameters()[0].ParameterType == typeof(DesktopPet.Core.IPluginStorage))
+                ?? throw new Exception("BaziSettingsPage 未找到以 IPluginStorage 为首的构造函数");
+            var pageArgs = pageCtor.GetParameters()
+                .Select((_, i) => i == 0 ? (object)new ProbeStorage() : Type.Missing)
+                .ToArray();
+            var page = pageCtor.Invoke(pageArgs) ?? throw new Exception("BaziSettingsPage 构造失败");
             var content = pageType.GetMethod("BuildContent")?.Invoke(page, null)
                 ?? throw new Exception("BuildContent 返回 null");
 

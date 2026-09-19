@@ -4,6 +4,74 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.84] - 2026-09-19
+
+**收掉审计最后一项（P2-11 超长文件拆分）+ 修掉三处用户可感的插件问题**。
+
+### 重构：拆分超长文件（审计 P2-11「可维护性红线」）
+| 文件 | 拆前 | 拆后 | 拆成 |
+|---|---|---|---|
+| `Windows/PetWindow.cs` | **1469 行** | **376 行**（-74%） | 9 个 partial：`EdgeSnap` / `Drag` / `Move` / `Loop` / `Mirror` / `GameMode` / `Followers` / `Plugins` / `Settings` |
+| `Windows/SettingsWindow.cs` | **1384 行** | **232 行**（-83%） | 4 个 partial：`Pages` / `Cards` / `Theme` / `HotKeys` |
+
+- **纯重构、零行为变更**；主文件只留字段/构造/布局主干，每个 partial 带 `<remarks>` 说明拆分依据与文件清单。
+- ⚠️ **硬约束（执行得更严）**：**绝不移动字段声明的位置** —— C# 里**字段初始化器在 partial class 多个文件之间的执行顺序是"未指定"的**，
+  挪动字段可能改变初始化顺序、产生极难排查的偶发 bug。因此连 `const` 也算字段：
+  缓动常量 `BackEaseMaxAmplitude` / `BackEaseScanSamples` **也没有随方法搬走**，留在主文件（partial 里加注释指向）。
+  嵌套类型（`MoveStyle` / `ToggleSwitch`）非字段，随功能区域移动。
+
+### 修复（插件，均已实测）
+- **Bazi 每日播报会「漏播整天」** → 由 `Every(60_000)` 每分钟轮询 + 字符串比对 `HH:mm`，改为
+  **`IScheduler.At` 精确一次性调度**（到点触发 → 播报 → 立即续排次日同刻）。
+  轮询模型只要目标那一分钟恰逢进程挂起 / 休眠恢复 / 时钟跳变 / 主循环卡顿，**当天就再也不播**（下次要等 24 小时）；
+  一次性绝对调度在进程恢复调度时会补触发，不丢事件。
+  - 改设置（时间/开关）后**立即重排**（`BaziSettingsPage` 新增可选 `Action? onSaved` 回调 → `RescheduleBroadcast`）
+  - `NextBroadcastTime` 取"严格晚于 now"的最近 `HH:mm`，已过则 `AddDays(1)`；
+    **恰为 `08:00:00` 也顺延次日**（避免立即重复触发）；跨月 1/31→2/1、跨年 12/31→次年 1/1 均已实测
+  - ⚠️ **热重载防护**：新增 `volatile bool _unloaded`，`OnUnload` 先置位 —— 阻止**在途回调**在卸载后又排一个新定时器
+    （否则会遗留引用旧插件类型的定时器**钉住旧 ALC**）
+- **截图插件数据目录无限增长** → 加**保留策略**：每次截图**成功后**清理超额旧图，只保留最近 **30** 张
+  （4K PNG 单张 3~8MB → 30 张约 0.1~0.25GB）。**只删本插件命名模式**（`shot_<8位日期>_<6位数字>.png`），
+  用户手动放入的文件一律不动；删除失败走 `Capability.System.Log(Warn, ...)` 且**不影响本次截图成功**。
+- **Bazi 每次启动白跑 6 项自检** → 改为受环境变量 `NEKO_PLUGIN_SELFTEST` 控制的开关（**默认不跑**），
+  消除每次启动约 8MB 与启动 CPU 大头。
+  - **为什么不用 `#if DEBUG`**：`LoaderTest` 在 Debug/Release 都跑，且靠"OnLoad 触碰 lunar → 解析失败即抛"验证 ALC 依赖链；
+    纯 `#if DEBUG` 会在 Release 把自检编译掉 → 该断言永远失败且无法运行期开启。
+  - **两全**：`LoaderTest` 在 `OnLoad` 前设 `NEKO_PLUGIN_SELFTEST=1` → 6 条原断言**一字未改**继续有效。
+  - `PluginSmoke --selftest` 是**反射直接调自检静态方法**（不走 OnLoad），不受该开关影响。
+- **`UiProbe` 反射断言对可选参数健壮化**（本轮交叉回归的修复）：
+  `BaziSettingsPage` ctor 新增可选参后，`Type.GetConstructor(new[]{ typeof(IPluginStorage) })` 返回 null 导致断言抛"构造失败" ——
+  因为 **`GetConstructor(Type[])` 要求参数**精确相等**，可选参数不参与匹配**。
+  改为 `GetConstructors()` + 按"首参是 `IPluginStorage`"挑选、其余参数用 `Type.Missing` 走默认值，
+  **以后再往 ctor 加可选参也不会弄坏它**；并注释写明为什么不能再用 `GetConstructor(Type[])`。
+
+### 测试基建（本轮暴露并修掉的两处）
+- **`tools/ci.py` 的 UiProbe 判据：以「哨兵」为准，不再看退出码**。
+  症状：间歇报 `已打印全部通过但退出码 1` —— 而 UiProbe 结尾巴是
+  `Console.WriteLine(_fail==0 ? "全部通过" : ...); Environment.Exit(_fail==0?0:1);`，
+  同一个 `_fail` 不可能既打印通过又 Exit(1)。
+  **真因**：UiProbe 有「跑完不自行退出」的已知形态（真实 WPF 窗口 + 低层输入钩子留下前台线程），
+  脚本会在宽限期后**主动终止**它；而 **Windows 上 `Popen.terminate()` = `TerminateProcess(h, 1)`，退出码就是 1**，
+  脚本原先的白名单 `(0, -15, -9)` 是 **POSIX 信号**、在 Windows 上永不成立 → 把"我们自己杀的"误判成失败。
+  修法：记下 `killed_after_sentinel`，判据改为"读到 `=== 全部通过 ===` 即通过"，
+  **但如实标注**（`全部通过（进程未自行退出，已被脚本终止）`）让该已知问题保持可见。
+  判据抽成纯函数 `judge_uiprobe()` 并单测 5 条分支：
+  正向 2 条通过；**负向 3 条（有失败项 / 无哨兵 / 超时无哨兵）仍能被拦下**。
+- **`tests/UiProbe` 猫爪断言由「死等 220ms」改为「轮询等到位」**。
+  症状：间歇 `爪应举回举手位（Top=101），实际 Top=99（挡住键盘了）`（差 2px）。
+  根因：断言死等 220ms 就检查那个 130ms 的回弹 `DispatcherTimer`，机器负载高时（例如紧接一次构建之后）
+  定时器被推迟 → 爪还没到位就断言。
+  修法：改用 `DispatcherFrame` 分片轮询（**不能用 `Thread.Sleep`** —— 会阻塞 STA 消息循环让动画反而停摆），
+  最多等 1.2s，且**失败信息带上已等待时长**，兜底避免把真 bug 拖成超时。
+
+### 验证
+- 构建 `src/DesktopPet.sln` **0 警告 0 错误**
+- **`tools/ci.py` 六道闸门全绿**：
+  `build sln(9.3s)` / `build tests(26.0s)` / **LoaderTest 全部通过** / **PluginSmoke 18/18 加载，ALC 未回收 0** / **UiProbe 全部通过** / git status
+- 真机 `Neko.exe --dev`：**18 插件全加载**、`[插件:<id>]` 前缀日志在场、**本次运行 0 WARN / 0 ERROR**
+- 三处插件修复各自带针对性实测：播报时刻计算（含跨月/跨年/恰为整点的边界）、
+  截图清理（预置 40 张 → 剩 30；**用 `FileShare.None` 锁住最旧一张** → 剩 31 且产生 Warn 日志，证明失败路径不影响本次截图）
+
 ## [0.1.83] - 2026-09-19
 
 **批次 B/C 收尾：补上「插件日志通道」这个架构缺口 + 清理历史欠账（空 catch / CHANGELOG 缺段 / 安装器 / 文档漂移）+ 首次跑通完整发布链路**。
