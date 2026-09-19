@@ -4,6 +4,69 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.85] - 2026-09-20
+
+**顺着审计 P2-2 一路挖出的「改了设置不生效 / 该响的不响」一族问题：共 5 处，外加剪贴板从轮询改事件驱动。**
+
+### 径向槽位文案不随状态刷新（审计 P2-2）
+- **根因**：槽位 `Label` 在 `OnLoad` 算一次就定死；而宿主 `UIApiImpl.RegisterRadialSlot` 是**纯追加**，
+  插件**无法靠重注册来更新**（会变成菜单里两个同 Id 条目）。
+- **修法**：宿主注册改为**按 Id 幂等 upsert**（同 scope 同 Id 原地替换、保留位置；新 Id 追加），
+  插件只需在状态变化时再注册一次即可 —— **无需新增 Core API**；顺带修掉"同 Id 重复注册产生重复条目"的潜在 bug。
+  - 三个注册表（径向/托盘/设置页）**统一改**（本就共用 `AddToList`；只给径向开特例会在共享 helper 里埋隐蔽不对称）
+  - ⚠️ **并发加固**：`AllRadialSlots` 会在 UI 线程被读、而插件注册**未来可能来自定时器线程** →
+    三张表的**所有读写**加 `_gate` 串行化（否则并发改 `Dictionary` 会异常/半更新）
+  - `UnregisterAll(scope)` 语义不变（仍整组清空）
+- **插件侧**：`HourlyChime` / `SleepReminder` / `Affection` 各抽私有 `RefreshSlot()`，在**状态变化点**刷新
+  （开关切换 / 设置保存 / 升级那一刻），**不在 tick 或每次抚摸路径**上重注册。
+- `RadialMenu` **无需改**：`ShowAt()` 每次都会 `RebuildSlots()` 重新取数。
+
+### 三处「改了设置不生效」（同一家族）
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| **HourlyChime 设置页改开关不启停计时器** | `_enabled` 只决定 Start/Stop，而设置页只改标志位 | 抽**幂等 `SyncTimer()`**（开=没有就跑、已有不动；关=停），径向 `Toggle()` 与设置页 `onSaved` 都调；`CheckHour()` 开头加 `if (!_enabled) return;` 堵住"`Dispose()` 不保证在途回调已执行完"的窗口；`_enabled` 改 `volatile`（定时器线程读） |
+| **SleepReminder 运行中改时间仍用旧时刻** | `Start()` 闭包捕获了当时时刻 | 抽 `Arm()`（**内部先 `Stop()`** → 杜绝双定时器）；语义定为「**重排到下一个新时刻**」（用户改时间就是要它按新时间响），且**仅"已布防"时**才重排（不擅自替用户开启） |
+| **Affection「重置好感度」静默失效** | 设置页直接 `_storage.Set(score,0)`，**内存 `_score` 不动** → 下一次去抖 flush 把旧值**原样写回**，分数自己变回来 | 重置改由插件统一处理：`_score=0` → 既有 `Flush()`（锁串行化）落盘 → `RefreshSlot()`；设置页改为**零 Storage 访问** |
+
+> **Affection 同类风险排查结论**：修复后磁盘**只有一个写者（`Flush`）、一个读者（`OnLoad`）**，
+> 内存改动全部经同一落盘路径，无其它"写盘不更内存 / 更内存不写盘"的分歧点。
+
+### SleepReminder 改 `At()` 精确调度（修「跨过目标分钟即漏报整天」）
+- **同源于 Bazi 那个 bug**：`Every(60_000)` + `now.Minute == minute` 判定 —— 只要目标那一分钟恰逢
+  进程挂起 / 休眠恢复 / 时钟跳变 / 主循环卡顿，这次提醒**彻底不响**（下次要等 24 小时）。
+  **对「每天一次」的任务，轮询是错误的时间模型。**
+- **修法**（逐处对齐 Bazi 已验证做法）：`At(下一个 HH:mm)` 一次性调度 → 到点提醒 → **立即续排次日**；
+  `NextReminderTime` 用**严格 `>`**（**恰为整点也顺延次日**，避免立即重复触发；跨月/跨年自动进位）；
+  `lastReminderDate` 同日防重；改设置立即重排；**热重载防护** `volatile _unloaded`（阻止在途回调卸载后又排定时器**钉住旧 ALC**）；
+  `_armed` 与 `_timer` 拆离以关闭 cancel/in-flight 竞态。
+- **同步确认 HourlyChime 无需改**：其"时段"是**整点区间**、长度恒为**整数小时**（最小 `start=23,end=0` ⇒ 1 小时），
+  60s tick 只是"是否整点"的探测粒度，**不可能跨过**目标 —— 该漏报只存在于"按分钟定时"的场景。
+
+### 剪贴板历史：轮询 → 事件驱动（修「连按两次漏记」）
+- **这不只是性能问题，是功能缺口**：**轮询是有损的** —— 用户在 3 秒内连按两次 Ctrl+C，**第一次会被整个漏掉**。
+- **修法**：`HwndSource` 建消息窗口 + `AddClipboardFormatListener`，在 `WndProc` 收 `WM_CLIPBOARDUPDATE`。
+  好消息：该消息派发到窗口所在线程 = **UI 线程（STA）**，于是 `Clipboard` 读取天然合规，省掉跨线程封送。
+  - ⚠️ **实测中抓到并修掉一个真 bug**：该消息是在写方 `SetClipboardData` 后、**可能尚未 `CloseClipboard`** 时投递的 →
+    直读有概率撞 `CLIPBRD_E_CANT_OPEN` → 读到 null → **该次变更被静默丢弃**。
+    修法：直读为空**不丢弃**，改用 `Dispatcher.BeginInvoke` **延后一拍重读一次**（一次为限、不阻塞 UI）。
+  - **成对清理（顺序不可反）**：`OnUnload` → 句柄仍有效时先 `RemoveClipboardFormatListener` → 再 `RemoveHook` → 再 `Dispose` → 置 null
+  - **注册失败不静默**：降级为 10s 轮询兜底 **并 `Log(Warn)` 明说"可能漏记"**
+  - 去重（连续重复跳过；重复过的内容移到最前不新增）、最新在前、硬顶 20 条
+- **真机 e2e 实证**：120ms 内连写 3 条 → **三条全记**（旧实现只可能看到 1 条）；重复写入不新增且移到最前。
+
+### 新增工具 `tests/ClipHarness`
+验证「**窗口型插件**」的**优雅卸载**：主路径判定（`EveryCount==0` 结构性判据，而非看日志）/ 真写剪贴板被记录 /
+卸载无异常 / 监听确实注销 / `HwndSource` 已销毁（Win32 `IsWindow`）/ **ALC 在宿主 UI 线程仍活着时可回收** /
+重新 Enable 只留一份监听。可传入插件目录复用到其它同类插件。
+> 方法学提醒（写进工具注释）：**判 ALC 必须在"载入方法栈帧已返回"之后**，否则栈帧强引用会让结果假阴性。
+
+### 验证
+- 构建 `src/DesktopPet.sln` **0 警告 0 错误**
+- **`tools/ci.py` 六道闸门全绿**
+- **仓库外 harness 三套全过**：P2-2 槽位刷新 14 PASS / 上述三处「立即生效」22 PASS / SleepReminder 精确调度 32 PASS
+- PluginSmoke 表 B 无回归（`hourly slots=1` / `sleep slots=2` / `affection slots=1`）
+- 沙箱偶发 `MSB4166` / `MSB3491` / `MSB3027`（构建期 obj 缓存与 dll 复制争用，含跨 teammate 文件锁）→ **重试即过**，非代码问题
+
 ## [0.1.84] - 2026-09-19
 
 **收掉审计最后一项（P2-11 超长文件拆分）+ 修掉三处用户可感的插件问题**。

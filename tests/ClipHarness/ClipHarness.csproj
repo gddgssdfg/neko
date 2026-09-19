@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    剪贴板插件「主路径卸载」验证工具（审计用，独立工程，不进 src/DesktopPet.sln）。
+    与 tests/ 下的 PluginSmoke / AlcPinProbe / TrustProbe 等同类：只读、独立、可复跑。
+
+    - 用真实的 DesktopPet.Runtime.PluginLoader.LoadOne()（真实可回收 ALC）加载 **事件驱动主路径** 的
+      ClipboardHistory 插件；只把 IPluginContext 收窄成最小替身（Pet=null，该插件不碰 Pet）。
+    - 在专用 STA 线程 + 真实 Dispatcher.Run() 上跑，真实消息泵 → HwndSource 才能收 WM_CLIPBOARDUPDATE；
+      剪贴板用独立进程 clip.exe 写入（避开本进程 WPF/OLE 自占用）。
+    - 断言：主路径(EveryCount==0) / 真写被记录 / 卸载无异常 / 监听已注销 / HwndSource 已释放 /
+      ALC 可回收（WPF 线程存活 + 线程退出 两口径）/ 重新 Enable 后单监听。
+    - 不引用任何 builtins 工程（避免插件类型混进默认 ALC）；不改任何既有 tests/ 文件、builtins 源码。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DesktopPet.Tests.ClipHarness</RootNamespace>
+    <AssemblyName>ClipHarness</AssemblyName>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.Core\DesktopPet.Core.csproj" />
+    <ProjectReference Include="..\..\src\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
+    <!-- 引用 Sdk 仅为让 DesktopPet.Sdk.dll 落到输出目录并在默认 ALC 中加载：
+         插件 ALC 需要把 DesktopPet.Sdk 解析回宿主侧实例（否则 IPetPlugin 类型分裂）。 -->
+    <ProjectReference Include="..\..\src\DesktopPet.Sdk\DesktopPet.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

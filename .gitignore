@@ -64,6 +64,9 @@ __pycache__/
 installer/*.wxs
 installer/*.wixpdb
 
+# ===== 测试工具的运行产物（tests/ClipHarness 每次跑会重写）=====
+tests/ClipHarness/out.txt
+
 # ===== 编辑器 / 系统 =====
 .vscode/
 .workbuddy/

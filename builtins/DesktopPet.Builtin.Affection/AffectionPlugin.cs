@@ -50,18 +50,13 @@ public sealed class AffectionPlugin : PluginBase
         // 订阅抚摸事件：好感度增长入口
         _unsubscribePetted = Capability.Events.On(PetEvents.PetPetted, _ => OnPetted());
 
-        // 注册径向槽位：点击可查询当前好感度（标签为初始等级，v1 不做动态刷新）
-        UI.RegisterRadialSlot(new RadialSlot
-        {
-            Id = "affection-status",
-            Label = LevelName(GetLevel(_score)),
-            Icon = "heart",
-            Order = 1,
-            OnInvoke = () => Pet.Say($"好感度：{_score}（{LevelName(GetLevel(_score))}）"),
-        });
+        // 注册径向槽位：点击可查询当前好感度（标签为当前等级）
+        RefreshSlot();
 
         // 注册自定义设置页（v0.1.5 ISettingsPage dogfooding 示范）—— 嵌入宿主设置窗口的「插件」tab
-        UI.RegisterSettingsPage(new AffectionSettingsPage(Capability.Storage, () => _score));
+        // v0.1.84：重置改由插件统一处理（getScore 读值 + onReset 执行「改内存 + 落盘 + 刷新槽位」），
+        // 设置页不再自己写 Storage（那正是「重置静默失效」的根因：只写盘、内存不动）。
+        UI.RegisterSettingsPage(new AffectionSettingsPage(() => _score, ResetScore));
 
         // v0.1.83：迁移到插件日志通道（Debug 级 —— 宿主默认 warn，故默认不落盘；需 config logLevel=debug 才可见）
         Capability.System.Log(PluginLogLevel.Debug, $"加载完成，当前分数={_score}");
@@ -88,6 +83,24 @@ public sealed class AffectionPlugin : PluginBase
     /// </summary>
     public void FlushNow() => Flush();
 
+    /// <summary>
+    /// 把好感度重置为 0 —— <b>内存 + 磁盘 + 槽位三者必须一致</b>。
+    /// <para><b>为什么不能像旧实现那样只写盘</b>：本插件是「内存即时更新 + 去抖落盘」，落盘写入的正是内存字段
+    /// <see cref="_score"/>。若只 <c>Storage.Set(score, 0)</c> 而不动内存，下一次抚摸触发的 flush（或 5s 兜底
+    /// flush）会把<b>旧的内存值原样写回</b> —— 用户看到「点了重置，过几秒分数自己变回来了」，
+    /// 即『重置静默失效』（与整轮在打的静默失效同源）。</para>
+    /// <para>流程：<c>_score = 0</c> → 经既有 <see cref="Flush"/>（<see cref="_flushLock"/> 串行化）落盘 →
+    /// <see cref="RefreshSlot"/> 让径向槽位文案回到「陌生」。复用既有落盘路径，不另起一套写盘逻辑；
+    /// 由于两次 flush 都被 <see cref="_flushLock"/> 串行化、且内存已先归零，绝不会再写回旧值。</para>
+    /// </summary>
+    private void ResetScore()
+    {
+        _score = 0;
+        _dirty = true;
+        Flush();          // 复用串行化落盘；失败则保留 _dirty，由 5s 兜底定时器重试
+        RefreshSlot();    // 槽位文案随等级回到「陌生」
+    }
+
     private void OnPetted()
     {
         var oldLevel = GetLevel(_score);
@@ -99,8 +112,31 @@ public sealed class AffectionPlugin : PluginBase
         if ((DateTime.UtcNow - _lastFlushUtc).TotalMilliseconds >= FlushIntervalMs) Flush();
 
         // 升到新等级：特殊庆祝；否则普通友好反应
-        if (GetLevel(_score) > oldLevel) OnLevelUp(GetLevel(_score));
+        if (GetLevel(_score) > oldLevel)
+        {
+            OnLevelUp(GetLevel(_score));
+            RefreshSlot();   // 等级变化 → 同步径向槽位文案（仅在升级点刷新，不随每次抚摸）
+        }
         else OnNormalPet();
+    }
+
+    /// <summary>
+    /// 注册 / 刷新「好感度」径向槽位。固定 Id（<c>affection-status</c>），
+    /// 依靠宿主按 (scope, Id) 幂等 upsert：等级提升时重新调用只更新 <see cref="RadialSlot.Label"/>，
+    /// 不新增槽位。<b>不随每次抚摸刷新</b>（每次抚摸都注册会造成无谓的列表写入）。
+    /// <para>调用点：OnLoad、升级点（<see cref="OnLevelUp"/>）、重置（<see cref="ResetScore"/>）。均在 UI 线程
+    /// （<c>pet:petted</c> 由 PetWindow 的鼠标处理发出），与宿主 <c>[ThreadStatic]</c> scope 同线程，无需封送。</para>
+    /// </summary>
+    private void RefreshSlot()
+    {
+        UI.RegisterRadialSlot(new RadialSlot
+        {
+            Id = "affection-status",
+            Label = LevelName(GetLevel(_score)),
+            Icon = "heart",
+            Order = 1,
+            OnInvoke = () => Pet.Say($"好感度：{_score}（{LevelName(GetLevel(_score))}）"),
+        });
     }
 
     /// <summary>

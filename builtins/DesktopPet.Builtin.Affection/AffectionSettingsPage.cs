@@ -9,17 +9,18 @@ namespace DesktopPet.Builtin.Affection;
 /// 好感度插件的自定义设置页（v0.1.5 ISettingsPage 接入示范；v0.1.63 改用 PluginUi 统一深色风格）。
 /// 显示当前好感度分数 + 重置按钮。
 /// Title 必须与 AffectionPlugin.Id 匹配，设置窗口按此嵌入右侧详情区。
+/// v0.1.84：重置改由插件统一处理（<c>onReset</c> 回调）—— 本页不再直接写 Storage，
+/// 避免「只写盘、内存不动」导致下次 flush 把旧值写回（重置静默失效）。
 /// </summary>
 public sealed class AffectionSettingsPage : ISettingsPage
 {
-    private readonly IPluginStorage _storage;
     private readonly Func<int> _getScore;
-    private const string ScoreKey = "score";
+    private readonly Action? _onReset;
 
-    public AffectionSettingsPage(IPluginStorage storage, Func<int> getScore)
+    public AffectionSettingsPage(Func<int> getScore, Action? onReset = null)
     {
-        _storage = storage;
         _getScore = getScore;
+        _onReset = onReset;
     }
 
     public string Id => "com.lantern.affection";
@@ -49,8 +50,10 @@ public sealed class AffectionSettingsPage : ISettingsPage
 
         resetBtn.Click += (_, _) =>
         {
-            _storage.Set(ScoreKey, 0);
-            Refresh();
+            // 重置交给插件统一处理（改内存 + 落盘 + 刷新槽位）；本页不再自己写 Storage，
+            // 否则「只写盘、内存不动」会让旧值在下次 flush 时写回（重置静默失效）。
+            _onReset?.Invoke();
+            Refresh();   // 此时 _getScore() 已为 0，页面文本同步
             MessageBox.Show("好感度已重置为 0", "好感度设置", MessageBoxButton.OK, MessageBoxImage.Information);
         };
 

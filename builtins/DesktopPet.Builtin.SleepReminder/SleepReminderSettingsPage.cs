@@ -8,16 +8,23 @@ namespace DesktopPet.Builtin.SleepReminder;
 /// <summary>
 /// 睡眠提醒设置页：时/分步进（0-23 / 0-59），持久化到 Storage（remindHour / remindMinute）。
 /// v0.1.63：改用 PluginUi 统一深色风格；修复"步进后顶部提醒时间 label 不实时刷新"的问题。
+/// v0.1.84：保存后通过 <c>onSaved</c> 回调通知插件刷新径向槽位文案（即时生效，不再"下次启动才同步"）。
+/// UI 统一走 SDK 的 <see cref="PluginUi"/> 深色控件工厂（v0.1.63）。
 /// </summary>
 public sealed class SleepReminderSettingsPage : ISettingsPage
 {
     private readonly IPluginStorage _storage;
+    private readonly Action? _onSaved;
     private const string HourKey = "remindHour";
     private const string MinuteKey = "remindMinute";
     private const int DefaultHour = 23;
     private const int DefaultMinute = 0;
 
-    public SleepReminderSettingsPage(IPluginStorage storage) => _storage = storage;
+    public SleepReminderSettingsPage(IPluginStorage storage, Action? onSaved = null)
+    {
+        _storage = storage;
+        _onSaved = onSaved;
+    }
 
     public string Id => "com.lantern.sleep";
     public string Title => "com.lantern.sleep";
@@ -47,7 +54,8 @@ public sealed class SleepReminderSettingsPage : ISettingsPage
             _storage.Set(HourKey, hour);
             _storage.Set(MinuteKey, minute);
             RefreshLabel();
-            MessageBox.Show("已保存，下次启动径向菜单文案会同步", "睡眠提醒设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            _onSaved?.Invoke();   // v0.1.84：通知插件刷新径向槽位文案（同 Id upsert，即时生效）
+            MessageBox.Show("已保存，径向菜单文案已同步", "睡眠提醒设置", MessageBoxButton.OK, MessageBoxImage.Information);
         };
 
         stack.Children.Add(label);
