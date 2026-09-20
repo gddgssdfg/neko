@@ -47,7 +47,21 @@ public sealed class SystemImpl : ISystem
         return OnUi(() =>
         {
             try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
-            catch (Exception ex) { HostLog.Warn($"剪贴板读取失败: {ex.Message}"); return null; }
+            catch (Exception ex)
+            {
+                // v0.1.86：**区分「瞬时竞争」与「真失败」**。
+                // CLIPBRD_E_CANT_OPEN(0x800401D0) 的语义是"**别的程序正拿着剪贴板**"——
+                // 这是正常竞争（任何程序复制时都会短暂独占），重试即可，**不是剪贴板坏了**。
+                // 尤其事件驱动监听下：WM_CLIPBOARDUPDATE 可能在写方 SetClipboardData 之后、
+                // 尚未 CloseClipboard 时投递 → 首次直读**必然有概率**撞上它。
+                // 若不降级，用户每复制一次就留一条 WARN → 日志被淹没、真问题反而看不见（狼来了效应）。
+                // 实测证据：连写两条即产生 1 条 WARN（且业务结果是正确的，已由延后重读兜住）。
+                if ((uint)ex.HResult == 0x800401D0u)
+                    HostLog.Debug($"剪贴板暂时被占用（瞬时竞争，调用方可重试）: {ex.Message}");
+                else
+                    HostLog.Warn($"剪贴板读取失败: {ex.Message}");
+                return null;
+            }
         }, null);
     }
 
@@ -56,7 +70,15 @@ public sealed class SystemImpl : ISystem
         OnUi(() =>
         {
             try { Clipboard.SetText(text); }
-            catch (Exception ex) { HostLog.Warn($"剪贴板写入失败: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                // v0.1.86：同 ReadClipboard —— 写入也会撞 CLIPBRD_E_CANT_OPEN（别的程序占着），
+                // 属瞬时竞争、降为 Debug；其它失败仍是 Warn。
+                if ((uint)ex.HResult == 0x800401D0u)
+                    HostLog.Debug($"剪贴板暂时被占用（瞬时竞争，写入未生效）: {ex.Message}");
+                else
+                    HostLog.Warn($"剪贴板写入失败: {ex.Message}");
+            }
         });
     }
 
