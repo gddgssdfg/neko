@@ -137,17 +137,57 @@ public static class ConfigManager
         try
         {
             File.WriteAllText(tmp, JsonSerializer.Serialize(config, JsonOpts));
-            if (File.Exists(path))
-                File.Replace(tmp, path, null);      // 原子替换（Windows 走 ReplaceFile）
-            else
-                File.Move(tmp, path);
         }
         catch (Exception ex)
         {
-            Log.Error("配置保存失败", ex);
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 清理失败不影响主流程 */ }
+            Log.Error("配置写入临时文件失败", ex);
+            return;
+        }
+
+        // v0.1.86（试运行实测）：**原子替换会瞬时失败，必须兜住**。
+        // 证据：真机 errors.log 出现 `[ERROR] 配置保存失败` + `IOException: 操作成功完成`
+        // 来自 FileSystem.ReplaceFile —— 这是 Win32 ReplaceFile 的经典怪象，
+        // 通常是**有进程/杀毒软件正短暂持有目标文件**。同一台机器 46 秒后的下一次保存就成功了。
+        // 危害：失败一次就等于**用户这次改的设置丢了**；而旧代码还会把 tmp 删掉 → 连恢复机会都没有。
+        // 策略：**重试几次 → 仍不行就退回非原子 Move（保住数据优先于原子性）→ 全失败则保留 tmp 不删**。
+        const int attempts = 3;
+        for (int i = 0; i < attempts; i++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Replace(tmp, path, null);      // 原子替换（Windows 走 ReplaceFile）
+                else
+                    File.Move(tmp, path);
+                return;                                  // 成功
+            }
+            catch (Exception ex) when (i < attempts - 1)
+            {
+                Log.Warn($"配置原子替换失败（第 {i + 1}/{attempts} 次），{RetryDelayMs}ms 后重试：{ex.Message}");
+                try { Thread.Sleep(RetryDelayMs); } catch { /* Sleep 不该失败，真失败就继续重试 */ }
+            }
+            catch (Exception ex)
+            {
+                // 最后一次原子替换仍失败 → 退回非原子覆盖写（牺牲原子性，优先不丢用户设置）
+                try
+                {
+                    File.Move(tmp, path, overwrite: true);
+                    Log.Warn($"配置已用【非原子】方式保存（原子替换连续 {attempts} 次失败）：{ex.Message}");
+                    return;
+                }
+                catch (Exception ex2)
+                {
+                    Log.Error("配置保存失败（原子替换与非原子覆盖均失败）", ex2);
+                    // ⚠️ **故意不删 tmp**：留着，用户/下次启动还有机会找回刚才那次设置。
+                    //    （旧实现失败即删 tmp —— 那等于把"刚才那次修改"彻底抹掉。）
+                    return;
+                }
+            }
         }
     }
+
+    /// <summary>原子替换失败后的重试间隔（毫秒）。120ms 足够让"短暂持有文件的进程/杀软"松开。</summary>
+    private const int RetryDelayMs = 120;
 
     /// <summary>把解析失败的配置文件改名保留，供用户手工找回；改名失败仅记日志，不抛异常。</summary>
     private static void PreserveCorruptFile(string path, Exception cause)

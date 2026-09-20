@@ -4,6 +4,44 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.86] - 2026-09-20
+
+**试运行（灯灯实机使用）发现并修掉一个会「丢用户设置」的健壮性问题：配置原子替换瞬时失败。**
+
+### 现象（真机 `errors.log` 实证）
+```
+[ERROR] 配置保存失败
+System.IO.IOException: 操作成功完成。
+   at System.IO.FileSystem.ReplaceFile(...)
+   at DesktopPet.App.Core.ConfigManager.Save(...)  Config.cs:line 141
+```
+同目录 `config.json` 在 **21:07:16** 被成功修改，而错误发生在 **21:06:30** —— 说明是**瞬时**失败，46 秒后下一次保存就成功了。
+
+### 根因
+`ConfigManager.Save` 的原子写用 `File.Replace`（Windows 走 Win32 `ReplaceFile`）。
+`IOException: 操作成功完成` 是 **`ReplaceFile` 的经典怪象**（API 失败但 `GetLastError` 返回 0），
+通常是**有进程 / 杀毒软件 / 索引器正短暂持有目标文件**。
+- **排除环境性**：单独直调 Win32 `ReplaceFileW` 返回 True / `GetLastError=0` / 替换成功 → 不是 Windows/文件系统不支持。
+- **危害**：失败一次 = **用户这次改的设置丢了**；而旧实现失败后还会 `File.Delete(tmp)` → **连恢复机会都没有**。
+
+### 修法（`ConfigManager.Save`）
+1. **重试 3 次**（每次间隔 120ms）—— 针对"短暂持有"这个本质
+2. 仍失败 → **退回非原子 `File.Move(overwrite: true)`**（**牺牲原子性，优先不丢用户设置**）
+3. 全部都失败 → `Log.Error` 且 **故意保留 tmp 不删**（用户/下次启动还有机会找回刚才那次修改）
+
+### 验证：**故障注入**（新增 `tests/ConfigSaveProbe`）
+用后台线程以 `FileShare.None` **独占持有目标文件 100ms**，制造"第 1 次 `Replace` 必然失败"的场景：
+```
+耗时 138ms；已命中重试路径 ✓
+PASS: 原子替换被独占持有阻挡时，Save 仍不丢数据（重试救回）
+PASS: 正常路径（无竞争）不产生任何 WARN，且原子替换生效
+=== 全部通过 ===
+```
+- 断言 ①：保存后内容**是新值**（数据没丢）
+- 断言 ②：**不残留 `config.json.tmp`**（成功路径消费掉 tmp）
+- 断言 ③：日志里**确实出现**「配置原子替换失败」→ 证明**重试路径真被执行过**，排除"碰巧没失败"的**假绿**
+- 断言 ④：无竞争的正常保存**不新增任何 WARN**
+
 ## [0.1.85] - 2026-09-20
 
 **顺着审计 P2-2 一路挖出的「改了设置不生效 / 该响的不响」一族问题：共 5 处，外加剪贴板从轮询改事件驱动。**

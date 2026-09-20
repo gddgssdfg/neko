@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ConfigSaveProbe</AssemblyName>
+    <RootNamespace>DesktopPet.Tests.ConfigSaveProbe</RootNamespace>
+    <!-- 与 UiProbe 保持一致：仓库根的 sln 不含 tests/，本工程需单独构建 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
+  </ItemGroup>
+
+</Project>
