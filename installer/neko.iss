@@ -5,7 +5,7 @@
 ;     · installer/build_setup.py   —— 一键出包（依赖 gen_setup_wxs.py 生成 .wxs）
 ;     · 用法：python installer/build_setup.py <version>   （version 必须与
 ;       src/DesktopPet.App/DesktopPet.App.csproj 的 <Version> 一致，脚本会强校验）
-; 废弃原因（见 docs/project-audit-2026-09-11.md 第 4 条「安装器双轨并存且双双陈旧」）：
+; 废弃原因（见 docs/dev-log.md 附录「2026-09-11 项目审计」批次 B P1-4「安装器双轨并存且双双陈旧」）：
 ;     · 两套安装器并存且各自停在陈旧版本，Inno 脚本更停在 v0.1.42，无人维护；
 ;     · 双轨导致「无法从源码一键得到当前版安装包」，发布流程实质中断。
 ; 处理建议：本文件为 git 跟踪文件，故暂留作历史参考；后续可由维护者手动

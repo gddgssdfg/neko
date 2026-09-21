@@ -64,22 +64,22 @@ python tools/check_version.py
 
 | 文档 | 同步点 | 当前状态提示 |
 |---|---|---|
-| `docs/plugin-development-guide.md` | 头部「对应宿主版本」；API 签名 / 权限表 / 线程规则 | v0.1.82（较新） |
-| `docs/skin-development-guide.md` | 头部版本；`skin.json` 字段 / `fps` 语义 / 工具命令 | v0.1.82（较新） |
-| `docs/plugin-authoring-guide.md` | **头部「对应宿主版本」**；`PetState` 枚举；权限键；事件表 | ⚠️ 头部停在 **v0.1.61**，落后多版，发布时应评估是否更新 |
-| `README.md` | 目录结构 / 设置窗口章节 / 常用命令 / 版本号引用 | 本版已核（v0.1.82） |
-| `docs/release-sop.md`（本文件） | 版本引用、打包命令、表单路径 | 本版 v0.1.82 |
+| `docs/plugin-development-guide.md` | 头部「最后核对日期 + 核对到的宿主版本」；API 签名 / 权限表 / 线程规则 / 踩坑清单 / 维护约定 | v0.1.83（较新） |
+| `docs/skin-development-guide.md` | 头部「最后核对日期 + 核对到的宿主版本」；`skin.json` 字段 / `fps` 语义 / 工具命令 | v0.1.83（较新） |
+| `docs/architecture.md` | 现状速览 / 资源红线 / 分层 / 径向菜单设计 | 已合并原 `desktop-pet-plan.md` + `system_design.md` + 类图/时序图 |
+| `README.md` | 目录结构 / 设置窗口章节 / 常用命令 / 版本号引用 | 本版已核 |
+| `docs/release-sop.md`（本文件） | 版本引用、打包命令、表单路径 | 本版 |
 
 **检查手段：**
 
 ```bash
-# 宿主的「单一权威源」手册头部版本号（改宿主 API 必须同步）
-#   docs/plugin-authoring-guide.md 头部「对应宿主版本」
+# 「单一权威源」插件手册头部（改宿主 API 必须同步：更新「最后核对日期 + 核对到的宿主版本」两行）
+#   docs/plugin-development-guide.md 头部表格
 # 双语完整性（README / 界面文案若有中英双语要求）
 python tools/check_i18n.py
 ```
 
-> ⚠️ 审计结论：「权威文档停在 60 个版本前」是历史债。**发布时若发现手册头部落后，要么同步、要么在 README 注明「以源码为准」**（本 README 已注明）。
+> ⚠️ 审计结论：「权威文档停在 60 个版本前」是历史债。**发布时若发现开发指南头部落后，要么核对同步、要么在 README 注明「以源码为准」**（本 README 已注明）。
 
 ---
 
@@ -244,9 +244,9 @@ python tools/check_version.py
     [ ] python tools/check_version.py  → 通过（退出码 0）
 
 [ ] 2. 文档同步
-    [ ] 两份开发指南头部版本已更新（或确认无需）
+    [ ] 两份开发指南头部「最后核对日期 + 核对到的宿主版本」已更新（或确认无需）
     [ ] README 的设置窗口/目录结构/命令章节与现状一致
-    [ ] plugin-authoring-guide 头部版本已评估（落后则同步或注明"以源码为准"）
+    [ ] docs/architecture.md 的现状速览 / 资源红线 / 分层是否需同步
     [ ] python tools/check_i18n.py → 通过
 
 [ ] 3. 构建与测试闸门

@@ -79,11 +79,11 @@ var t = ctx.Capability.Storage.Get<DateTime>("lastRemind");
 
 ## 写一个插件
 
-📘 **完整教程：[`docs/plugin-authoring-guide.md`](../docs/plugin-authoring-guide.md)**
+📘 **完整教程：[`docs/plugin-development-guide.md`](../docs/plugin-development-guide.md)**
 
-这份手册是**自包含**的：完整 API 签名、权限表、事件表、可编译示例、排错清单都在里面。
-**贴给任意 AI 就能让它按手册生成插件。**
-宿主 API 一旦变更，只需同步更新这一份手册（维护约定写在手册第 0 节）。
+这份文档是**自包含**的：完整 API 签名、权限表、事件表、可编译示例、排错清单都在里面。
+**贴给任意 AI 就能让它按文档生成插件**（最省事的入口见其 §0「给 AI 的最简清单」）。
+宿主 API 一旦变更，只需同步更新这一份文档（维护约定写在其附录 C）。
 
 快速入口：
 

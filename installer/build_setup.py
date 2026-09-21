@@ -6,7 +6,7 @@
 产物：installer/NekoSetup-<version>.msi
 依赖：wix.exe 4.0.5（dotnet tool install --global wix --version 4.0.5）
 
-设计约定（v0.1.82 起，见 docs/project-audit-2026-09-11.md 第 4 条）：
+设计约定（v0.1.82 起，见 docs/dev-log.md 附录「2026-09-11 项目审计」批次 B P1-4）：
   · 版本号 **必填**，且必须与 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`
     **完全一致** —— 否则直接报错退出。这是史上 v0.1.42 / v0.1.53 版本漂移的根因防线
     （旧写法只把版本当字符串用，打出的包名与实际程序集版本可以不一致，且无人察觉）。

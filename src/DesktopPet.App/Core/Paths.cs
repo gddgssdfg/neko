@@ -3,7 +3,7 @@ using System.IO;
 namespace DesktopPet.App.Core;
 
 /// <summary>
-/// 运行时目录布局（与 desktop-pet-plan.md 5.4 一致）：
+/// 运行时目录布局（与 docs/architecture.md 的「分层架构 / 现状速览」一致）：
 ///   程序根目录/
 ///   ├── plugins/           用户可自由增删
 ///   ├── data/

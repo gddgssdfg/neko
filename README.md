@@ -145,22 +145,20 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 ## 文档
 
 **插件开发**
-- `docs/plugin-development-guide.md` — 📘 **插件开发标准文档（v0.1.82，可执行）**：5 分钟上手 / 契约全签名 /
-  `plugin.toml` 与权限表 / 生命周期铁律 / **⚠️ 线程规则** / 存储 / UI 注册 / 调试 / **踩坑清单**
-- `docs/plugin-authoring-guide.md` — 插件开发手册（自包含，面向 AI 生成代码；头部版本较旧，以本 README 与源码为准）
+- `docs/plugin-development-guide.md` — 📘 **插件开发标准文档（可执行，v0.1.83）**：§0 给 AI 的最简清单 / 5 分钟上手 /
+  契约全签名 / `plugin.toml` 与权限表 / 生命周期铁律 / **⚠️ 线程规则** / 存储 / UI 注册 / 调试 / **踩坑清单** /
+  附录（权限·事件速查 / 一致性核对 / 维护约定 / API 版本历史）
 - `templates/plugin-skeleton/` — 可直接复制的最小插件骨架（**勿加入 sln**）
 - `plugins/README.md` — 插件目录约定、数据存放、启用禁用（部署者视角）
-- `docs/plugin-system-notes.md` — 插件系统内部实现备忘
 
 **皮肤开发**
-- `docs/skin-development-guide.md` — 🎨 **皮肤开发标准文档（v0.1.82，可执行）**：`skin.json` 字段表 /
-  **`fps` 语义** / 9 状态 / 帧图布局 / 眼球层 / `thumb.png` / 素材管线工具 / CSProj 白名单 / AI 生图要点 / 常见错误速查
-- `docs/neko-sprite-spec.md` — 像素素材规格
+- `docs/skin-development-guide.md` — 🎨 **皮肤开发标准文档（可执行，v0.1.83）**：`skin.json` 字段表 /
+  **`fps` 语义** / 9 状态 / 帧图布局 / 眼球层 / `thumb.png` / 素材管线工具 / CSProj 白名单 / AI 生图要点 /
+  常见错误速查 / 附录：自绘素材规格（调色板 · Aseprite 导出 · 质检清单）
 
 **项目**
 - `CHANGELOG.md` — 版本记录（改版本时同步更新）
-- `docs/dev-log.md` — **开发日志**：开发过程、踩过的坑、决策依据
+- `docs/dev-log.md` — **开发日志**：开发过程、踩过的坑、决策依据（文末附 2026-09-11 项目审计存档）
+- `docs/architecture.md` — 🏛 **架构文档**：分层 / 技术选型 / Core API / 宿主内核要点 / 资源红线 / 径向菜单设计 / 立项决策与差异校准
 - `docs/release-sop.md` — 🚀 **发布 SOP**：版本/文档同步 → 构建与测试闸门 → 发布形态 → 打包 → 清场 checklist
-- `docs/desktop-pet-plan.md` — 主技术方案（⚠️ 2026-09-01 立项快照，现状以本 README / CHANGELOG / dev-log 为准）
 - `docs/ai-asset-prompts.md` — AI 素材生成提示词
-- `docs/project-audit-2026-09-11.md` — 项目健康度审计（问题分 A/B/C 批）

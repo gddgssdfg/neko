@@ -5,10 +5,16 @@
 >
 > | 项 | 值 |
 > |---|---|
-> | 对应宿主版本 | **v0.1.82** |
-> | Core API 版本 | **1** |
+> | **最后核对日期** | **2026-09-19** |
+> | **核对到的宿主版本** | **v0.1.83** |
+> | Core API 版本 | **1**（稳定契约，公开发布后只增不改） |
 > | 目标框架 | **net8.0-windows**（DesktopPet.Sdk 自带 WPF 引用） |
 > | 依赖 | 只需引用 `src/DesktopPet.Sdk/DesktopPet.Sdk.csproj` |
+> | 宿主程序版本「权威来源」 | `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件**不承诺**等于当前版本；一致性由 `tools/check_version.py` 守护） |
+>
+> 📌 **为什么用「最后核对日期 + 核对到的版本」而不是硬编码一个版本号**：本文件面向的是**稳定的 Core API 版本 1**。宿主小版本迭代里绝大多数**没有动 `DesktopPet.Core` 的签名**，无需逐版改写；只需**每次核对后更新上表这两行**。
+>
+> 🤖 **本文件同时是「给 AI 的最简喂料」**：把整个文件贴给任意 AI，说「按这份文档写一个 XXX 插件」，即可产出可直接编译的代码（所有 API 签名、权限键、事件名均已对照宿主 `src/` 源码逐项核实）。最省事的入口见 **§0**；维护契约见 **附录 C**。
 >
 > 不确定的地方本文件一律写「待确认」，**不编**。若发现文档与实现不一致，请在文件末尾的
 > 【附录 B：文档-实现一致性核对】里记录。
@@ -17,6 +23,7 @@
 
 ## 目录（TOC）
 
+0. [给 AI 的最简清单](#0-给-ai-的最简清单)
 1. [5 分钟上手：最小可用插件](#1-5-分钟上手最小可用插件)
 2. [插件契约：IPlugin / PluginBase / IPluginContext](#2-插件契约)
 3. [plugin.toml 字段表 + 权限表](#3-plugintoml-字段表--权限表)
@@ -27,8 +34,40 @@
 8. [调试与验证手段](#8-调试与验证手段)
 9. [🔴 踩坑清单（现象 / 根因 / 正确做法）](#9-踩坑清单)
 10. [完整骨架 `templates/plugin-skeleton/`](#10-完整骨架)
-11. [附录 A：权限 / 事件速查](#附录-a权限--事件速查)
+11. [附录 A：权限 / 事件速查（含「是否已广播」与 payload 读取）](#附录-a权限--事件速查)
 12. [附录 B：文档-实现一致性核对](#附录-b文档-实现一致性核对)
+13. [附录 C：维护约定（改宿主 API 的人必读）](#附录-c维护约定)
+14. [附录 D：API 版本历史](#附录-dapi-版本历史)
+
+---
+
+## 0. 给 AI 的最简清单
+
+> 若你要**让 AI 生成一个插件**，把本文件整个贴给它，并让它严格按下面这份清单产出。**这一节是「粘给 AI 的最小上下文」**，其余章节是展开细节。
+
+**一个 Neko 插件 = 一个目录，三样东西：**
+
+```
+plugins/com.yourname.myplugin/          # 目录名必须 == plugin.toml 的 [plugin].id
+├── plugin.toml      # 清单：id、入口 dll、权限声明
+├── MyPlugin.dll     # 编译产物（文件名要和 [plugin].entry 对上）
+└── assets/          # 可选：插件自带资源
+```
+
+**AI 生成时必须遵守的 8 条（其余细节见对应章节）：**
+
+1. **入口类继承 `DesktopPet.Sdk.PluginBase`**，`Id` 与目录名、`plugin.toml` 的 `id` **三者一致**（§1.1 / §2.2）。
+2. **`OnLoad(IPluginContext ctx)` 第一行必须 `base.OnLoad(ctx)`**，否则 `Pet`/`UI`/`Capability` 为 null（§2.2）。
+3. **不要用 `OnTick`**——宿主**不调用**它；周期任务一律 `Capability.Scheduler.Every/At`（§2.1 / §5 / §9 踩坑 6）。
+4. **只声明你真正用到的最小权限**；`other` 段**不加前缀**，`pet`/`ui`/`storage` 段**自动加前缀**（§3.2 / §3.3）。
+5. **不要声明 `file` / `process`**（高危 → 第三方一律拒载）；写自己的数据目录用 `file.own` 或直接用 `Capability.Storage`（§3.6 / §9 踩坑 6）。
+6. **数据只写 `Capability.Storage`**（= `data/plugins/<id>/`），**禁止写进插件目录**（§6.1）。
+7. **不做裸 `catch {}`**；要留痕用 `Capability.System.Log(PluginLogLevel.Warn, msg, ex)`（§2.3 / §9 踩坑 3）。
+8. **`OnUnload` 必须清理**：`Dispose` 所有 `IScheduleHandle`、调用事件取消订阅委托（§4）。
+
+**不要做的事**：不要把 `DesktopPet.Core.dll` / `DesktopPet.Sdk.dll` 拷进插件目录（宿主对它们做「复用宿主实例」白名单路由，带副本无效）；不要用 `dynamic` 读事件 payload；不要用 `JsonSerializer` 反射序列化**插件内定义的类型**（会钉住可回收 ALC，§5.4）。
+
+**可编译的完整示例**见 §1.3（三件套）；更完整的「事件订阅 + 定时器 + 存储 + 径向菜单 + 通知」示例见仓库内置插件 `builtins/DesktopPet.Builtin.HourlyChime`，可直接复制改造。
 
 ---
 
@@ -1070,6 +1109,29 @@ B) 机理对照（`--probe`，对插件自定义类型做一次序列化）：
   3. 相关构建坑：`DesktopPet.App.csproj` 必须用 `<PublishSelfContained>` 而**不是** `<SelfContained>`
      （后者会影响 Debug 构建，导致所有插件加载失败）。这条是**宿主侧**的坑，但你若自行搭建宿主构建脚本会踩到。
 
+### 踩坑 8 —— 类型分裂：插件 ALC 里出现 `DesktopPet.Core` 的副本
+
+- **现象**：宿主 `IsAssignableFrom` 判定失败，插件**加载不进来**（`IPetPlugin` 被识别成两个不同类型）。
+- **根因**：插件 ALC 里又加载了一份 `DesktopPet.Core`（或 `DesktopPet.Sdk`）→ 同一个接口在**两个程序集实例**里各有一份类型。
+- **正确做法**：宿主已用 **`PluginLoadContext.HostSharedAssemblies` 白名单**把 `DesktopPet.Core` / `DesktopPet.Sdk` 路由回**宿主已加载的实例**。
+  **插件侧对策**：**不要**把 `DesktopPet.Core.dll` / `DesktopPet.Sdk.dll` 拷进插件目录（只拷「自己的 dll + plugin.toml」，别整份 `bin/`）。
+- **依据**：立项第一天 dogfooding 示例插件一跑就抓到（`docs/dev-log.md` 2026-09-01「坑 1」）。
+
+### 踩坑 9 —— 权限前缀不匹配：声明了却全部变 `None`
+
+- **现象**：所有插件权限全变成 `None`。
+- **根因**：清单写 `pet = ["animate"]`，查表却用 `pet.animate` 匹配（或把 `scheduler` 写进了 `pet`/`ui` 段）。
+- **正确做法**：宿主按段自动加前缀（`pet.` / `ui.` / `storage.`），**只有 `other` 段不加前缀**（§3.2）。把 `scheduler`/`notify`/`clipboard`/`network`/`media`/`file.own` 放进 `other`。
+- **依据**：`docs/dev-log.md` 2026-09-01「坑 2」。
+
+### 踩坑 10 —— 宿主没引用 Sdk 导致「发布形态」加载失败
+
+- **现象**：无头启动 `Neko.exe` 后插件数据目录没被创建 → 插件在**真实运行时根本没加载**（但源码 bin 下的 `LoaderTest` 却是绿的）。
+- **根因**：宿主 `App.csproj` **没引用 `DesktopPet.Sdk`** → App 输出目录缺 `DesktopPet.Sdk.dll` → 插件 ALC 的白名单找不到 Sdk → 路由失败。
+- **正确做法**：宿主必须显式引用 Sdk（`ProjectReference`，App 侧已修复）。**这条是宿主开发侧的坑**——插件作者无影响，但你自己搭宿主时必须注意。
+- **教训（比 bug 更重要）**：`LoaderTest` 直接测源码 `bin`（自带 Sdk.dll）会**完美掩盖发布形态的缺失** → 必须补「加载真实 App 输出目录」的测试（现已固化）。
+- **依据**：`docs/dev-log.md` 2026-09-01「坑 3」。
+
 ---
 
 ## 10. 完整骨架
@@ -1104,18 +1166,20 @@ bash /c/Users/Lantern/neko-dotnet-env.sh build plugins/com.yourname.myplugin/MyP
 
 ### A.1 `PetEvents` 常量（`src/DesktopPet.Core/ICapabilityApi.cs`）
 
-| 常量 | 值 |
-|---|---|
-| `AppReady` | `"app:ready"` |
-| `AppWake` | `"app:wake"` |
-| `AppSleep` | `"app:sleep"` |
-| `PetPetted` | `"pet:petted"` |
-| `PetDragged` | `"pet:dragged"` |
-| `PetLanded` | `"pet:landed"` |
-| `PetEdge` | `"pet:edge"` |
-| `MouseMoved` | `"mouse:moved"` |
-| `ScreenChange` | `"screen:change"` |
-| `Tick` | `"tick"` |
+> ⚠️ **注意「是否已广播」列**：订阅**未广播**的事件**不会报错**，只是**永远不触发**。**别依赖它们**——初始化逻辑放 `OnLoad`，或订阅已广播的 `app:ready`。
+
+| 常量 | 事件名 | payload 类型 | 是否已广播 |
+|---|---|---|---|
+| `AppReady` | `"app:ready"` | `null` | ✅ v0.1.1+（插件全部加载完成后广播，可用于替代部分 `OnLoad` 内的延迟初始化） |
+| `PetPetted` | `"pet:petted"` | `null` | ✅ |
+| `PetDragged` | `"pet:dragged"` | `PetDraggedArgs(X, Y)` | ✅ |
+| `PetLanded` | `"pet:landed"` | `null` | ✅ |
+| `PetEdge` | `"pet:edge"` | `PetEdgeArgs(Side, Attached)`（Side: 0左 1右 2上 3下） | ✅ |
+| `MouseMoved` | `"mouse:moved"` | `MouseMovedArgs(X, Y)` 全局鼠标坐标，**约 5Hz 节流** | ✅ |
+| `AppWake` | `"app:wake"` | — | ❌ 预留，未广播 |
+| `AppSleep` | `"app:sleep"` | — | ❌ 预留，未广播 |
+| `ScreenChange` | `"screen:change"` | — | ❌ 预留，未广播 |
+| `Tick` | `"tick"` | — | ❌ 预留，未广播（⚠️ **不能用 `OnTick(delta)` 代替——宿主未调用它**；周期逻辑改用 `Capability.Scheduler.Every`） |
 
 ### A.2 强类型事件 payload（可跨程序集直接 cast）
 
@@ -1137,6 +1201,35 @@ public readonly record struct Rect2(double X, double Y, double Width, double Hei
     public double Right  => X + Width;
     public double Bottom => Y + Height;
 }
+```
+
+### A.4 如何读取事件 payload（v0.1.1+ 强类型直接 cast）
+
+从 v0.1.1 起，宿主 payload 用 **public record**（替代之前的匿名类型），跨程序集**可以直接 cast**，不用反射：
+
+```csharp
+// ✅ 推荐（v0.1.1+，强类型 cast）
+Capability.Events.On(PetEvents.MouseMoved, p =>
+{
+    if (p is MouseMovedArgs a) { var x = a.X; var y = a.Y; }
+});
+
+// ✅ 或模式匹配
+Capability.Events.On(PetEvents.PetEdge, p =>
+{
+    if (p is PetEdgeArgs { Side: 0, Attached: true }) { /* 贴左边 */ }
+});
+
+// ✅ 旧反射方式（v0.1.0 兼容，仍可用；payload 字段名稳定）
+private static double ReadDouble(object? payload, string name)
+{
+    if (payload is null) return 0;
+    var prop = payload.GetType().GetProperty(name);
+    return prop?.GetValue(payload) is double d ? d : 0;
+}
+
+// ❌ 不要用 dynamic：v0.1.1 已确认会抛 RuntimeBinderException
+//     （跨程序集访问 public record 成员的动态绑定仍受可访问性限制）
 ```
 
 ---
@@ -1205,4 +1298,54 @@ public readonly record struct Rect2(double X, double Y, double Width, double Hei
 
 ---
 
-*文档版本：v1.1 ｜ 基于宿主 v0.1.82 源码与 dev-log/CHANGELOG 撰写；踩坑 2 根因按实测二分结论修订。*
+## 附录 C：维护约定
+
+> **改宿主 API 的人（包括 AI）必读。** 本文件是**插件 API 的单一权威源**。修改下列内容后，**必须同步更新本文件对应章节**：
+
+| 改了什么 | 必须同步本文件的哪部分 |
+|---|---|
+| `src/DesktopPet.Core/` 任何接口增删改 | §2 API 参考 + 附录 D 版本历史 |
+| `Enums.cs` 的 `PluginPermissions` | §3.3 权限 token 表 |
+| `Enums.cs` 的 `PetState` / `PetMood` | §2 / 附录 A.3 |
+| `ICapabilityApi.cs` 的 `PetEvents` 常量 | 附录 A.1 事件表 |
+| `PluginLogLevel.cs` / `ISystem.Log` | §2.3 入口 3（插件日志） |
+| `PermissionChecker.cs` 的映射键（`Map`） | §3.2 / §3.3 权限键表 |
+| 新增/移除宿主实际广播的事件 | 附录 A.1 的「是否已广播」列 |
+| `PluginTrust.cs` / `builtins.lock.json` | §3.6 信任通道 |
+| 新增 `neko-assets/icons/*.png` | §7.1 图标 key 列表 |
+| 任何一处核对（即使无签名变化） | 更新**页首表格**的「最后核对日期」与「核对到的宿主版本」 |
+
+**Core API 版本化铁律：公开发布后只增不改。** 已有方法签名不允许删除或改参数；需要变更就新增重载并升 `api` 版本号。
+
+---
+
+## 附录 D：API 版本历史
+
+**Core API 版本 = 1**（自 v0.1.0 起未变）。下表记录**宿主版本演进中影响插件作者的变化**，以及**本文件的核对记录**：
+
+| 日期 | 宿主版本 | API | 变更 |
+|---|---|---|---|
+| 2026-09-01 | v0.1.0 | 1 | 首个可用版本。`IPetApi` / `IUIApi` / `ICapabilityApi` 三大接口；权限；事件常量；payload 为匿名类型 |
+| — | v0.1.1 | 1 | 事件 payload 改**强类型 record**（`MouseMovedArgs`/`PetDraggedArgs`/`PetEdgeArgs`），可跨程序集直接 cast；广播 `app:ready` |
+| — | v0.1.5+ | 1 | `ISettingsPage` 接入宿主设置窗口（`Title == Manifest.Id 或 Name`） |
+| — | v0.1.48 | 1 | `PetState` 新增 **`Work`**（工作模式）→ 共 9 个状态 |
+| — | v0.1.61 | 1 | `IScheduler.Cron` 移除（半成品）；`AppConfig.LogLevel` 日志设施 |
+| — | v0.1.80 | 1 | **权限细分**：新增 `file.own`(`FileOwnDir`) / `media`(`MediaKey`)，均为低危；新增**内置信任通道**（`builtins.lock.json`），是 `file`/`process` 的唯一豁免；`PluginPermissions` 底层类型改 **`ulong`** |
+| 2026-09-11 | v0.1.82 | 1 | 逐项对照源码复核（跨 21 个宿主版本）：补 `file.own`/`media` 权限、补信任通道、补 8 个图标 key、修正 config 键名（`DisabledPlugins`）、**更正 `OnTick` 为「宿主未调用」**、明确其替代方案为 `Scheduler.Every` |
+| 2026-09-19 | v0.1.83 | 1 | **新增插件日志通道**：`PluginLogLevel` 枚举 + `ISystem.Log(level, msg, ex?)`（🔴 只增不改）；宿主加 `[插件:<id>]` 前缀、`Debug`/`Info` 默认不落盘、永不抛 |
+
+**已兑现（历史「待改进」项，现已完成）**：
+- ✅ 事件 payload 改强类型 record（v0.1.1）
+- ✅ 广播 `app:ready`（v0.1.1）；`app:wake`/`app:sleep`/`screen:change`/`tick` **仍为预留未广播**
+- ✅ 设置页插件自定义承载（v0.1.5+ 已接入）
+- ✅ **插件日志 API**（v0.1.83：`ISystem.Log`；历史「四入口含 Log」的规划以「既有 `ISystem` 加成员」落地，未新增 `IPluginContext` 成员）
+- ✅ 内置信任通道**接线**（v0.1.82：`PluginHost.LoadBuiltinTrust`）
+
+**已知仍有出入/未接线（供维护者注意）**：
+- `IPetPlugin.OnTick`：**声明但宿主未调用**（保留契约，勿依赖）。
+- `PetEvents.AppWake/AppSleep/ScreenChange/Tick`：**预留，未广播**。
+
+---
+
+*文档版本：v2.0（合并插件手册）｜ 基于宿主 v0.1.83 源码与 dev-log/CHANGELOG 撰写；踩坑 2 根因按实测二分结论修订。*
+
