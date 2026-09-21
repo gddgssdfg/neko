@@ -74,7 +74,11 @@ public sealed class InputMirrorWindow : Window
     // v0.1.86：底部留白收窄——举手位贴到键盘底边（KbH=96），底部额外预留 36→18（减半）。
     //          爪顶仍在键盘底边（≥KbH，不挡键语义不变）；爪底 96+30=126 ≤ 内容高 129，不截断。
     private const double PawRaisedTop = KbH;       // = 96：爪顶贴键盘底边（键盘之外，不挡键）
-    private const double PawRaisedExtra = 18.0;    // v0.1.86：底部为爪子预留的额外高度（36→18，减半）
+    // v0.1.87：底部预留高度 = 恰好容纳"举起的爪"。
+    // 爪顶在 PawRaisedTop(=KbH)，爪高 PawSize(=30) → 爪底在 KbH+30；
+    // 而高度公式里 KbH+LedH+PlatePad*2+4 已经给出 KbH+31 的内容底 → 底部只需再留 ~2。
+    // 之前取 18 是"加在高度公式上"的，内容却从顶部排 → 那 18 全变成了爪底以下的纯留白（实测 19px）。
+    private const double PawRaisedExtra = 2.0;
 
     // ---- v0.1.44：按键"按着才亮、松开就白"兜底——真实键盘观感 ----
     // GlobalInput 的 UP 事件链路是好的，但连打/热键路径下偶发 UP 丢失会导致键一直亮。
