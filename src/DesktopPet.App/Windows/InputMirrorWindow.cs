@@ -18,6 +18,8 @@ namespace DesktopPet.App.Windows;
 /// 桌面显示一块像素风键盘+鼠标，真实敲键/点击时对应键位实时高亮，松开还原。
 /// 纯 WPF 绘制（Border+TextBlock），零图片素材；底盘风格与径向菜单统一（95% 白+深棕描边）。
 /// 可拖动，位置记忆（MirrorPosX/Y），clamp 进工作区；不抢焦点、不进任务栏。
+/// v0.1.86：视觉优化——底部留白 36→18px（爪顶贴键盘底边、不挡键语义不变）；键帽加立体前脸 +
+/// 受光渐变 + 按下下沉（键程感）、文字加深加粗；鼠标加受光渐变 / 左右键中缝 / 滚轮凹槽；LED 排与键盘左对齐。
 /// </summary>
 public sealed class InputMirrorWindow : Window
 {
@@ -25,6 +27,7 @@ public sealed class InputMirrorWindow : Window
     private const double KeyW = 18.0;          // 1u 键宽（34→22→18）
     private const double KeyH = 18.0;          // 键高
     private const double KeyGap = 1.5;         // 键间距
+    private const double KeyDepth = 3.0;       // v0.1.86：键帽立体“前脸”厚度——键帽面比底座矮 3px，露出暗色下缘（键程层次）
     private const double PlatePad = 6.0;       // 底盘内边距（8→6，更紧凑贴合）
     private const double MouseW = 46.0;        // 鼠标区宽（74→56→46）
     private const double MouseH = 68.0;        // 鼠标区高（185→82→68，保持 1:1.4 真实比例）
@@ -32,9 +35,11 @@ public sealed class InputMirrorWindow : Window
 
     private static readonly Color PlateFillC = Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF);   // 95% 白
     private static readonly Color PlateStrokeC = Color.FromRgb(0x6B, 0x53, 0x34);       // 深棕
-    private static readonly Color KeyFillC = Color.FromRgb(0xFF, 0xFF, 0xFF);
+    private static readonly Color KeyFillC = Color.FromRgb(0xFF, 0xFF, 0xFF);           // 键帽面（松开还原/动画目标色）
     private static readonly Color KeyEdgeC = Color.FromRgb(0xC8, 0xB2, 0x8C);           // 浅棕描边
-    private static readonly Color KeyTextC = Color.FromRgb(0x4A, 0x37, 0x28);           // 深棕文字
+    private static readonly Color KeyBaseC = Color.FromRgb(0xD9, 0xC3, 0x9C);           // v0.1.86：键帽底座/前脸（暗米棕，露在键帽下缘 = 立体感）
+    private static readonly Color KeyShadeC = Color.FromRgb(0xEC, 0xE0, 0xC7);          // v0.1.86：键帽面底部柔和阴影（渐变下端，模拟受光）
+    private static readonly Color KeyTextC = Color.FromRgb(0x33, 0x24, 0x1A);           // v0.1.86：深棕文字（#4A3728→#33241A，提对比）
     private static readonly Color KeyActiveC = Color.FromRgb(0xFF, 0xB3, 0x47);         // 高亮橙（悬停同款）
 
     private readonly GlobalInput _input;
@@ -64,11 +69,12 @@ public sealed class InputMirrorWindow : Window
     private const double MousePawTop = -2;
     private const double MousePawLeft = 322;    // 键盘 291 + 间距 8 + 鼠标居中 23
     // v0.1.72：猫坐在对面——爪子从"窗体底边之外"伸上来。
-    // 举手位 = 键盘底边外（KbH=96 + 几像素缓冲 ≈ 101）→ 抬到 KeyboardPawTop/-2（键面）。
     // v0.1.44 的"不挡键"原则保留——只是从"顶"挪到"底"。
     // ⚠️ 必须是 const（保持编译期常量）。之前改成实例字段导致 UiProbe 回归 NRE（layout pass 触发 null 访问）。
-    private const double PawRaisedTop = KbH + 5;  // = 101：键盘底边外 5px，窗体外
-    private const double PawRaisedExtra = 36.0;  // 底部为爪子预留的额外高度（爪子完全在窗体底外）
+    // v0.1.86：底部留白收窄——举手位贴到键盘底边（KbH=96），底部额外预留 36→18（减半）。
+    //          爪顶仍在键盘底边（≥KbH，不挡键语义不变）；爪底 96+30=126 ≤ 内容高 129，不截断。
+    private const double PawRaisedTop = KbH;       // = 96：爪顶贴键盘底边（键盘之外，不挡键）
+    private const double PawRaisedExtra = 18.0;    // v0.1.86：底部为爪子预留的额外高度（36→18，减半）
 
     // ---- v0.1.44：按键"按着才亮、松开就白"兜底——真实键盘观感 ----
     // GlobalInput 的 UP 事件链路是好的，但连打/热键路径下偶发 UP 丢失会导致键一直亮。
@@ -224,6 +230,8 @@ public sealed class InputMirrorWindow : Window
         row.Children.Add(mouse);
 
         // ---- 锁键 LED 排（v0.1.30：Caps/Num/ScrLk 状态指示，紧贴键盘下方）----
+        // v0.1.86：左缘与键盘左缘对齐（去掉 2px 偏移）；固定高 = LedH（消除行高差造成的底部空档）；
+        //          单元间距收紧（10→7、点字距 4→3），让 LED 排与键盘读成一个整体。
         _ledCaps = MakeLed();
         _ledNum = MakeLed();
         _ledScrLk = MakeLed();
@@ -231,7 +239,9 @@ public sealed class InputMirrorWindow : Window
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(2, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+            Height = LedH,
+            Margin = new Thickness(0, 0, 0, 0),
         };
         ledBar.Children.Add(MakeLedUnit("CAPS", _ledCaps));
         ledBar.Children.Add(MakeLedUnit("NUM", _ledNum));
@@ -264,7 +274,7 @@ public sealed class InputMirrorWindow : Window
         SetMirrored(_config.KeyboardMirrorFlipped);   // v0.1.39：应用持久化的朝向设置
 
         Width = KbW + MouseW + MouseGap + PlatePad * 2 + 4;
-        Height = KbH + LedH + PlatePad * 2 + 4 + PawRaisedExtra;  // v0.1.72：底部多预留 PawRaisedExtra 容纳爪子
+        Height = KbH + LedH + PlatePad * 2 + 4 + PawRaisedExtra;  // 底部预留 PawRaisedExtra 容纳举起的爪（v0.1.86：36→18，收窄底部留白）
         Content = plate;
     }
 
@@ -281,31 +291,74 @@ public sealed class InputMirrorWindow : Window
     }
 
     /// <summary>v0.1.36：Canvas 绝对定位添加键帽。x 为行内游标（自动累加 span 个 u），杜绝 Grid 列溢出重叠。</summary>
+    /// <remarks>v0.1.86：两段式键帽——底座（<see cref="KeyBaseC"/>，满高）画在下、键帽面（矮 <see cref="KeyDepth"/>）画在上，
+    /// 露出的暗色下缘即"前脸/键程"；键帽面叠一层透明→浅阴影渐变（<see cref="KeyShadeC"/>）模拟受光。
+    /// 高亮动画仍作用在键帽面（存入 <see cref="_keyByVk"/> 的那个 Border），语义不变。</remarks>
     private void AddKey(Canvas canvas, int row, ref double x, string label, uint vk, double span)
     {
+        double w = KeyW * span + KeyGap * (span - 1);
+        double top = row * (KeyH + KeyGap);
+
+        // 底座/前脸：满高、暗米棕，画在键帽面之下；键帽面比它矮 KeyDepth → 底部露出暗色下缘
+        var keyBase = new Border
+        {
+            Width = w,
+            Height = KeyH,
+            Background = new SolidColorBrush(KeyBaseC),
+            CornerRadius = new CornerRadius(4),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(keyBase, x);
+        Canvas.SetTop(keyBase, top);
+        canvas.Children.Add(keyBase);
+
+        // 键帽面内容：底部柔和阴影（透明→浅阴影渐变，不动画背景，因而不影响高亮换色）+ 居中标号
+        var capContent = new Grid();
+        capContent.Children.Add(new Border
+        {
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(0, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromArgb(0x00, KeyShadeC.R, KeyShadeC.G, KeyShadeC.B), 0.00),
+                    new GradientStop(Color.FromArgb(0x00, KeyShadeC.R, KeyShadeC.G, KeyShadeC.B), 0.55),
+                    new GradientStop(Color.FromArgb(0x99, KeyShadeC.R, KeyShadeC.G, KeyShadeC.B), 1.00),
+                },
+            },
+            CornerRadius = new CornerRadius(3),
+            IsHitTestVisible = false,
+        });
+        capContent.Children.Add(new TextBlock
+        {
+            Text = label,
+            FontSize = label.Length > 2 ? 8 : 9,   // v0.1.44：18px 键配 8/9px 字
+            FontWeight = FontWeights.SemiBold,     // v0.1.86：Medium→SemiBold，小字更清晰
+            Foreground = new SolidColorBrush(KeyTextC),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        // 键帽面（高亮动画对象）：白面 + 浅棕描边，比底座矮 KeyDepth → 底部露出暗色前脸
         var key = new Border
         {
-            Width = KeyW * span + KeyGap * (span - 1),
-            Height = KeyH,
+            Width = w,
+            Height = KeyH - KeyDepth,
             Background = new SolidColorBrush(KeyFillC),
             BorderBrush = new SolidColorBrush(KeyEdgeC),
-            BorderThickness = new Thickness(1.5),
-            CornerRadius = new CornerRadius(5),
-            Child = new TextBlock
-            {
-                Text = label,
-                FontSize = label.Length > 2 ? 8 : 9,   // v0.1.44：18px 键配 8/9px 字
-                FontWeight = FontWeights.Medium,
-                Foreground = new SolidColorBrush(KeyTextC),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
+            BorderThickness = new Thickness(1.0),
+            CornerRadius = new CornerRadius(4),
+            Child = capContent,
+            RenderTransform = new TranslateTransform(0, 0),   // v0.1.86：按下下沉（键程反馈）
             Tag = vk,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
         };
         Canvas.SetLeft(key, x);
-        Canvas.SetTop(key, row * (KeyH + KeyGap));
+        Canvas.SetTop(key, top);
         canvas.Children.Add(key);
         x += span * Unit;
         // 同 vk 多键位（如左右 Shift 用不同 vk，不会撞；万一撞了保留第一个）
@@ -313,17 +366,30 @@ public sealed class InputMirrorWindow : Window
     }
 
     /// <summary>三键鼠标 + 滚轮区（v0.1.30：1:1.4 真实比例，外形更扁圆）</summary>
+    /// <remarks>v0.1.86：更拟真——机身竖向渐变（受光）、左右键中缝竖线、按键/机身分界横线、
+    /// 滚轮改为带描边的凹槽 + 中缝高光。仍是纯 WPF 绘制，无图片素材。</remarks>
     private FrameworkElement BuildMouse()
     {
         var canvas = new Canvas { Width = MouseW, Height = MouseH };
 
         // 鼠标外形（下半圆、上方小圆角）——v0.1.72：圆头朝下（灯灯"猫坐在对面"心智模型，
         // 用户视觉上鼠标头指向自己），把大半圆放在底边。
+        // v0.1.86：填充改竖向渐变（上亮下暗）→ 一点体积感，不再是一块死白。
         var body = new Border
         {
             Width = MouseW,
             Height = MouseH,
-            Background = new SolidColorBrush(KeyFillC),
+            Background = new LinearGradientBrush
+            {
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(0, 1),
+                GradientStops =
+                {
+                    new GradientStop(Color.FromRgb(0xFF, 0xFF, 0xFF), 0.00),
+                    new GradientStop(Color.FromRgb(0xFF, 0xFF, 0xFF), 0.45),
+                    new GradientStop(KeyShadeC, 1.00),
+                },
+            },
             BorderBrush = new SolidColorBrush(KeyEdgeC),
             BorderThickness = new Thickness(1.5),
             CornerRadius = new CornerRadius(12, 12, MouseW / 2, MouseW / 2),
@@ -332,9 +398,33 @@ public sealed class InputMirrorWindow : Window
         Canvas.SetTop(body, 0);
         canvas.Children.Add(body);
 
-        // 顶部分割线（左/右键分界 + 中键）
         var lh = 0.45 * MouseH;   // 左右键半区高
-        // 左键（0）/ 右键（1）
+
+        // v0.1.86：左右键中缝（竖线）+ 按键/机身分界（横线），让"三键"读得出来
+        var vDiv = new Border
+        {
+            Width = 1.2,
+            Height = lh - 2,
+            Background = new SolidColorBrush(KeyEdgeC),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(vDiv, MouseW / 2 - 0.6);
+        Canvas.SetTop(vDiv, 3);
+        canvas.Children.Add(vDiv);
+
+        var hDiv = new Border
+        {
+            Width = MouseW - 10,
+            Height = 1.2,
+            Background = new SolidColorBrush(KeyEdgeC),
+            CornerRadius = new CornerRadius(1),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(hDiv, 5);
+        Canvas.SetTop(hDiv, lh);
+        canvas.Children.Add(hDiv);
+
+        // 左键（0）/ 右键（1）——透明命中/高亮层，盖在机身上（不遮挡上面的分割线）
         var left = MakeMouseKey(0);
         Canvas.SetLeft(left, 0);
         Canvas.SetTop(left, 0);
@@ -344,23 +434,39 @@ public sealed class InputMirrorWindow : Window
         canvas.Children.Add(left);
         canvas.Children.Add(right);
 
-        // 中键 + 滚轮（竖条）
+        // 中键（2）命中层 + 滚轮（v0.1.86：带描边的凹槽 + 中缝高光，更像真滚轮）
         var mid = MakeMouseKey(2);
         var midW = MouseW - 6;
         Canvas.SetLeft(mid, 3);
         Canvas.SetTop(mid, lh + 1);
         canvas.Children.Add(mid);
+
         var wheel = new Border
         {
-            Width = 6,
-            Height = 16,
-            Background = new SolidColorBrush(KeyEdgeC),
-            CornerRadius = new CornerRadius(3),
+            Width = 7,
+            Height = 18,
+            Background = new SolidColorBrush(KeyBaseC),
+            BorderBrush = new SolidColorBrush(KeyEdgeC),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3.5),
         };
         _wheelFlash = wheel;
-        Canvas.SetLeft(wheel, 3 + (midW - 6) / 2);
-        Canvas.SetTop(wheel, lh + 3);
+        double wheelLeft = 3 + (midW - 7) / 2;
+        Canvas.SetLeft(wheel, wheelLeft);
+        Canvas.SetTop(wheel, lh + 2);
         canvas.Children.Add(wheel);
+
+        var wheelLine = new Border
+        {
+            Width = 1,
+            Height = 10,
+            Background = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF)),
+            CornerRadius = new CornerRadius(0.5),
+            IsHitTestVisible = false,
+        };
+        Canvas.SetLeft(wheelLine, wheelLeft + 3);
+        Canvas.SetTop(wheelLine, lh + 6);
+        canvas.Children.Add(wheelLine);
 
         return canvas;
     }
@@ -390,7 +496,7 @@ public sealed class InputMirrorWindow : Window
         {
             Width = 7, Height = 7,
             Fill = new SolidColorBrush(LedOffC),
-            Margin = new Thickness(0, 0, 4, 0),
+            Margin = new Thickness(0, 0, 3, 0),   // v0.1.86：点↔字距 4→3
             VerticalAlignment = VerticalAlignment.Center,
         };
         return e;
@@ -398,7 +504,7 @@ public sealed class InputMirrorWindow : Window
 
     private FrameworkElement MakeLedUnit(string label, Ellipse led)
     {
-        var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 10, 0) };
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 7, 0) };   // v0.1.86：单元间距 10→7
         sp.Children.Add(led);
         sp.Children.Add(new TextBlock
         {
@@ -441,7 +547,9 @@ public sealed class InputMirrorWindow : Window
                 {
                     _litKeys.Remove(k);
                     // 鼠标键（Tag 是 int btn）还原为透明；键盘键还原为白
-                    AnimateBg(k, k.Tag is int ? Color.FromArgb(0, 0, 0, 0) : KeyFillC);
+                    bool isMouse = k.Tag is int;
+                    AnimateBg(k, isMouse ? Color.FromArgb(0, 0, 0, 0) : KeyFillC);
+                    if (!isMouse) AnimateKeySink(k, false);   // v0.1.86：兜底还原时同步弹回
                 }
             }
         }
@@ -468,6 +576,16 @@ public sealed class InputMirrorWindow : Window
             return;
         }
         scb.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(target, TimeSpan.FromMilliseconds(AniMs)) { EasingFunction = AniEase });
+    }
+
+    /// <summary>v0.1.86：键帽按下下沉 KeyDepth（80ms 位移），松开弹回——配合露出的暗色前脸形成"键程"。</summary>
+    private static void AnimateKeySink(Border key, bool down)
+    {
+        if (key.RenderTransform is TranslateTransform tt)
+        {
+            tt.BeginAnimation(TranslateTransform.YProperty,
+                new DoubleAnimation(down ? KeyDepth : 0.0, TimeSpan.FromMilliseconds(AniMs)) { EasingFunction = AniEase });
+        }
     }
 
     /// <summary>Canvas.Top / Left 80ms 平滑位移（爪子拍下/回弹不再瞬切）</summary>
@@ -651,11 +769,13 @@ public sealed class InputMirrorWindow : Window
             {
                 _litKeys[key] = DateTime.Now;   // v0.1.44：记录按下时刻（兜底还原用）
                 AnimateBg(key, KeyActiveC);
+                AnimateKeySink(key, true);      // v0.1.86：按下下沉（键程）
             }
             else
             {
                 _litKeys.Remove(key);
                 AnimateBg(key, KeyFillC);       // 松开立即白（真实键盘观感）
+                AnimateKeySink(key, false);     // v0.1.86：弹回
             }
         }
         if (down) TapKeyboardPaw(vk);   // v0.1.43：爪滑到该键上方拍下
@@ -686,7 +806,7 @@ public sealed class InputMirrorWindow : Window
         _wheelTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         _wheelTimer.Tick += (_, _) =>
         {
-            _wheelFlash!.Background = new SolidColorBrush(KeyEdgeC);
+            _wheelFlash!.Background = new SolidColorBrush(KeyBaseC);   // v0.1.86：还原到滚轮底色（不再是描边色）
             _wheelTimer.Stop();
         };
         _wheelTimer.Stop();
