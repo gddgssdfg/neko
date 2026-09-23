@@ -54,6 +54,22 @@ public sealed class SpriteAtlas
     /// </summary>
     public double RecommendedScale { get; private set; }
 
+    /// <summary>
+    /// v0.1.88：皮肤源位图相对宿主逻辑尺寸（<see cref="FrameW"/> = 32）的倍数 = 「源像素 / 逻辑像素」。
+    /// 眼神追踪的偏移量以逻辑像素给出，落到源图上会被放大这个倍数 ——
+    /// 高清皮 256 宽时 k=8（±2 逻辑px → ±16 源px），而眼白只有 ~35px 宽 → 瞳孔会甩出眼眶。
+    /// </summary>
+    public double SourcePixelsPerLogical { get; private set; } = 1.0;
+
+    /// <summary>
+    /// v0.1.88：各眼球层允许的最大位移（**源位图像素**，X/Y 分轴）。超过就会「瞳孔跑出眼眶」。
+    /// 由「瞳孔 bbox」与「闭合层 bbox（同源、覆盖整只眼，可当眼眶）」逐眼作差得出：
+    /// <c>safe = 0.45 × (眼眶 − 瞳孔)</c>，取两眼较小者。</summary>
+    private readonly Dictionary<string, Vector> _eyeSafeShift = new();
+
+    /// <summary>该层允许的最大位移（源像素）。返回 (0,0) 表示**无数据、调用方不要限制**（保持旧皮肤行为）。</summary>
+    public Vector GetEyeSafeShift(string key) => _eyeSafeShift.GetValueOrDefault(key);
+
     public IReadOnlyDictionary<string, SpriteState> States => _states;
 
     /// <summary>按皮肤 id 加载（向后兼容旧签名，内部走 <see cref="LoadSkin"/>）。</summary>
@@ -133,6 +149,24 @@ public sealed class SpriteAtlas
             if (File.Exists(p)) atlas._eyes[eye] = LoadPng(p);
         }
 
+        // v0.1.88：算各眼球层的「安全位移」（源像素）。
+        // 为什么需要：眼神追踪的偏移量原本锚在**画幅**上（±2 逻辑px × Scale），
+        // 而皮肤源图尺寸差异极大（pixel 32 宽 / cat_hd 256 宽）→ 同一个逻辑偏移落到源图上
+        // 会被放大 frameWidth/32 倍（高清皮 = ±16 源px），而瞳孔几乎填满眼白（只差 3~5px）
+        // → 瞳孔甩出眼眶。灯灯实机反馈「高清版眼睛超出眼眶，看着太恐怖」即此。
+        // 门控：只对**新管线皮肤**生效（它们才有 `{key}_closed`）—— 内置像素皮等旧皮肤**完全保持原行为**。
+        atlas.SourcePixelsPerLogical = Math.Max(1.0, info.FrameWidth / (double)FrameW);
+        foreach (var eye in info.EyeLayers)
+        {
+            if (!atlas._eyes.TryGetValue(eye, out var pupil)) continue;
+            if (!atlas._eyes.ContainsKey(eye + "_closed")) continue;   // 旧皮肤（无闭合层）→ 不限制
+            var safe = ComputeEyeSafeShift(pupil);
+            if (safe is null) continue;
+            atlas._eyeSafeShift[eye] = safe.Value;
+            // 闭合层共用同一上限：眨眼时眼睛不该比睁眼时跑得更远
+            atlas._eyeSafeShift[eye + "_closed"] = safe.Value;
+        }
+
         // 影子层
         if (info.HasShadow)
         {
@@ -151,6 +185,96 @@ public sealed class SpriteAtlas
     }
 
     public BitmapSource? GetEye(string key) => _eyes.GetValueOrDefault(key);
+
+    /// <summary>
+    /// v0.1.88：算「眼睛允许的瞳孔位移」（源位图像素，X/Y 同一标量）。
+    /// <para><b>为什么以瞳孔自身尺寸为锚</b>：位移的合理上限取决于「瞳孔相对眼眶有多大」。
+    /// 实测高清皮的瞳孔几乎填满眼白（`cat_hd/idle` 瞳 29×29 vs 眶 34×32，只差 3~5px），
+    /// 所以不能按画幅比例给位移 —— 那正是「瞳孔甩出眼眶」的根因。</para>
+    /// <para>做法：列投影切出各瞳孔块 → 丢掉面积 &lt; 最大块 10% 的噪声块
+    /// （闭眼差分会留零星像素，实测有 2×3 / 1×1 的碎块，用 min 会被噪声带偏）
+    /// → 取**保留块的联合 bbox**，其**较小边 × 0.18** 即允许位移。</para>
+    /// </summary>
+    private static Vector? ComputeEyeSafeShift(BitmapSource pupil)
+    {
+        int w = pupil.PixelWidth, h = pupil.PixelHeight;
+        if (w <= 0 || h <= 0) return null;
+
+        const byte TH = 16;
+        var mask = AlphaMask(pupil, TH);
+        var runs = Runs(AlphaColumns(pupil, TH));       // 两眼水平分开 → 列投影天然分段
+        if (runs.Count == 0) return null;
+
+        // 各块的 bbox 与面积
+        var blocks = new List<(int x0, int y0, int x1, int y1, int area)>();
+        foreach (var (x0, x1) in runs)
+        {
+            int bx0 = int.MaxValue, by0 = int.MaxValue, bx1 = -1, by1 = -1, area = 0;
+            for (int x = x0; x <= x1; x++)
+                for (int y = 0; y < h; y++)
+                    if (mask[y * w + x])
+                    {
+                        area++;
+                        if (x < bx0) bx0 = x;
+                        if (x > bx1) bx1 = x;
+                        if (y < by0) by0 = y;
+                        if (y > by1) by1 = y;
+                    }
+            if (area > 0) blocks.Add((bx0, by0, bx1, by1, area));
+        }
+        if (blocks.Count == 0) return null;
+
+        int maxArea = 0;
+        foreach (var b in blocks) maxArea = Math.Max(maxArea, b.area);
+        var kept = blocks.Where(b => b.area >= maxArea * 0.10).ToList();   // 去噪
+        if (kept.Count == 0) return null;
+
+        int ux0 = kept.Min(b => b.x0), ux1 = kept.Max(b => b.x1);
+        int uy0 = kept.Min(b => b.y0), uy1 = kept.Max(b => b.y1);
+        double minDim = Math.Min(ux1 - ux0 + 1, uy1 - uy0 + 1);
+        double safe = Math.Max(0.5, 0.18 * minDim);        // 至少 0.5 源px，避免完全不能动
+        return new Vector(safe, safe);
+    }
+
+    /// <summary>读 alpha（统一转 Bgra32）为布尔掩码，返回**行优先**的一维数组。</summary>
+    private static bool[] AlphaMask(BitmapSource src, byte threshold)
+    {
+        var cv = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+        int w = cv.PixelWidth, h = cv.PixelHeight, stride = w * 4;
+        var buf = new byte[stride * h];
+        cv.CopyPixels(buf, stride, 0);
+        var m = new bool[w * h];
+        for (int i = 0; i < m.Length; i++) m[i] = buf[i * 4 + 3] > threshold;
+        return m;
+    }
+
+    /// <summary>读 alpha（统一转 Bgra32），返回「每列是否存在不透明像素」。</summary>
+    private static bool[] AlphaColumns(BitmapSource src, byte threshold)
+    {
+        var cv = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+        int w = cv.PixelWidth, h = cv.PixelHeight, stride = w * 4;
+        var buf = new byte[stride * h];
+        cv.CopyPixels(buf, stride, 0);
+        var cols = new bool[w];
+        for (int x = 0; x < w; x++)
+            for (int y = 0; y < h; y++)
+                if (buf[y * stride + x * 4 + 3] > threshold) { cols[x] = true; break; }
+        return cols;
+    }
+
+    /// <summary>布尔序列的连续 true 段。</summary>
+    private static List<(int x0, int x1)> Runs(bool[] cols)
+    {
+        var list = new List<(int x0, int x1)>();
+        int s = -1;
+        for (int i = 0; i <= cols.Length; i++)
+        {
+            bool hit = i < cols.Length && cols[i];
+            if (hit && s < 0) s = i;
+            else if (!hit && s >= 0) { list.Add((s, i - 1)); s = -1; }
+        }
+        return list;
+    }
 
     /// <summary>
     /// 加载 PNG 为冻结的 BitmapSource。

@@ -215,34 +215,41 @@ public sealed class PetRenderer
         if (state.EyeLayer is not null)
         {
             BitmapSource? eye;
+            string? eyeKey;
             if (_clockMs < _flashEyesUntilMs)
             {
                 // 瞪眼（键盘反应）：eyes_scared → 本状态眼球层
-                eye = _atlas.GetEye("eyes_scared") ?? _atlas.GetEye(state.EyeLayer);
+                eyeKey = FirstEyeKey("eyes_scared", state.EyeLayer);
+                eye = eyeKey is null ? null : _atlas.GetEye(eyeKey);
             }
             else
             {
-                eye = _blinkPhase switch
+                eyeKey = _blinkPhase switch
                 {
                     // 半闭：per-state `_half` → per-state `_closed`（无半闭就用完全闭合顶）→ 全局 → 状态层
-                    BlinkPhase.Half => _atlas.GetEye(state.EyeLayer + "_half")
-                                       ?? _atlas.GetEye(state.EyeLayer + "_closed")
-                                       ?? _atlas.GetEye("eyes_half") ?? _atlas.GetEye("eyes_blink")
-                                       ?? _atlas.GetEye(state.EyeLayer),
+                    BlinkPhase.Half => FirstEyeKey(state.EyeLayer + "_half", state.EyeLayer + "_closed",
+                                                   "eyes_half", "eyes_blink", state.EyeLayer),
                     // 闭合：per-state `_closed` → 全局 eyes_blink → 状态层
-                    BlinkPhase.Closed => _atlas.GetEye(state.EyeLayer + "_closed")
-                                       ?? _atlas.GetEye("eyes_blink")
-                                       ?? _atlas.GetEye(state.EyeLayer),
-                    _ => _atlas.GetEye(state.EyeLayer),
+                    BlinkPhase.Closed => FirstEyeKey(state.EyeLayer + "_closed", "eyes_blink", state.EyeLayer),
+                    _ => FirstEyeKey(state.EyeLayer),
                 };
+                eye = eyeKey is null ? null : _atlas.GetEye(eyeKey);
             }
-            if (eye is not null)
+            if (eye is not null && eyeKey is not null)
             {
-                // 眼神偏移：眼球层整体平移 ±2px（×Scale）；v0.1.47 打字时眼球下移（看键盘）
+                // 眼神偏移：眼球层整体平移；v0.1.47 打字时眼球下移（看键盘）
                 double eyeDown = (_clockMs < _typingUntilMs) ? _eyeLookDownOffset : 0;
-                var offset = new Vector(_eyeOffset.X * Scale, _eyeOffset.Y * Scale + eyeDown);
+                var offset = ScreenEyeOffset(eyeKey, eyeDown);
                 var eyeRect = new Rect(offset.X, offset.Y, SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale);
+
+                // v0.1.88：用「眼眶」（该状态的闭合层轮廓）当遮罩，把平移后的瞳孔**裁在眼内**。
+                // 为什么仅限制位移还不够：高清皮的瞳孔几乎填满眼白（实测 cat_hd 瞳 29×29 vs 眶 34×32，
+                // 白圈只有 2~5px）→ 只要一动就贴边。裁剪后瞳孔滑到边界自然被切掉（真猫斜视时虹膜
+                // 也被眼睑遮挡），永远不会出现在眼眶之外 —— 即灯灯实报的「眼睛超出眼眶，看着太恐怖」。
+                var socketBrush = SocketMaskBrush(state.EyeLayer, eyeKey);
+                if (socketBrush is not null) dc.PushOpacityMask(socketBrush);
                 dc.DrawImage(eye, eyeRect);
+                if (socketBrush is not null) dc.Pop();
             }
         }
 
@@ -255,6 +262,74 @@ public sealed class PetRenderer
                 32 * Scale, 16 * Scale);
             dc.DrawImage(_atlas.Shadow, sh);
         }
+    }
+
+    /// <summary>v0.1.88：眼眶遮罩画刷缓存（key = 眼球层名 + Scale）。每帧新建画刷会拖慢渲染，故缓存并 Freeze。</summary>
+    private readonly Dictionary<string, ImageBrush?> _socketBrushCache = new();
+
+    /// <summary>
+    /// v0.1.88：取「眼眶遮罩」—— 该状态闭合层（`{eyeLayer}_closed`）的 alpha 轮廓，**固定在原坐标、不随瞳孔平移**。
+    /// 用它做 <c>PushOpacityMask</c> 即可把平移后的瞳孔裁在眼内。
+    /// <para>返回 null 表示不该裁：皮肤没有闭合层（旧皮肤 → 完全保持原行为），或当前画的**就是**闭合层本身
+    /// （闭眼时整只眼都在动，裁它没意义）。</para>
+    /// </summary>
+    private ImageBrush? SocketMaskBrush(string? stateEyeLayer, string currentKey)
+    {
+        if (string.IsNullOrEmpty(stateEyeLayer)) return null;
+        if (currentKey == stateEyeLayer + "_closed") return null;      // 闭眼层自己不需要裁
+        string cacheKey = stateEyeLayer + "@" + Scale.ToString("0.##");
+        if (_socketBrushCache.TryGetValue(cacheKey, out var cached)) return cached;
+
+        ImageBrush? brush = null;
+        var socket = _atlas.GetEye(stateEyeLayer + "_closed");
+        if (socket is not null)
+        {
+            // ⚠️ Viewport 必须用**绝对**坐标锚在画幅原点：默认的相对模式会把遮罩跟着被绘制的矩形一起平移，
+            //    那样等于没裁（瞳孔带着遮罩跑）。
+            brush = new ImageBrush(socket)
+            {
+                Stretch = Stretch.Fill,
+                ViewportUnits = BrushMappingMode.Absolute,
+                Viewport = new Rect(0, 0, SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale),
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top,
+            };
+            brush.Freeze();
+        }
+        _socketBrushCache[cacheKey] = brush;
+        return brush;
+    }
+
+    /// <summary>按顺序返回第一个**实际存在**的眼球层 key（全都不存在则 null）。
+    /// 兜底链的核心语义：缺素材 = 该相位不生效（眼睛保持有神），而不是把整层丢掉变空白。</summary>
+    private string? FirstEyeKey(params string?[] keys)
+    {
+        foreach (var k in keys)
+            if (!string.IsNullOrEmpty(k) && _atlas.GetEye(k!) is not null) return k;
+        return null;
+    }
+
+    /// <summary>
+    /// v0.1.88：把逻辑眼球偏移换算成屏幕像素，并按该层的「眼眶」限制幅度。
+    /// <para><b>为什么需要限制</b>：偏移量原本锚在**画幅**上（±2 逻辑px × Scale）。但皮肤源位图尺寸差异极大
+    /// （`pixel` 32 宽 / `cat_hd` 256 宽），同一个逻辑偏移落到源图上会被放大 <c>frameWidth/32</c> 倍 ——
+    /// 高清皮相当于 ±16 源px，而眼白只有 ~35px 宽 → 瞳孔一半甩出眼眶（灯灯实机反馈「看着太恐怖」）。</para>
+    /// <para>改以**源像素**为口径限制位移；上限由皮肤 `{layer}_closed`（覆盖整只眼，可当眼眶）与瞳孔的
+    /// bbox 差算出。皮肤没提供闭合层时 <see cref="SpriteAtlas.GetEyeSafeShift"/> 返回 (0,0)
+    /// → **不做限制，完全保持旧行为**（内置像素皮因此零变化）。</para>
+    /// </summary>
+    private Vector ScreenEyeOffset(string eyeKey, double eyeDownLogical)
+    {
+        double k = _atlas.SourcePixelsPerLogical;          // 源像素 / 逻辑像素
+        double srcX = _eyeOffset.X * k;
+        double srcY = _eyeOffset.Y * k + eyeDownLogical * k;
+        var safe = _atlas.GetEyeSafeShift(eyeKey);
+        if (safe.X > 0 || safe.Y > 0)
+        {
+            srcX = Math.Clamp(srcX, -safe.X, safe.X);
+            srcY = Math.Clamp(srcY, -safe.Y, safe.Y);
+        }
+        return new Vector(srcX * Scale / k, srcY * Scale / k);   // 源像素 → 屏幕像素
     }
 
     /// <summary>眼神追踪：设置眼球偏移（由宿主每帧从鼠标位置计算）。

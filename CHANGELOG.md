@@ -4,6 +4,43 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.88] - 2026-09-24
+
+**修复：高清皮肤「眼神追踪时瞳孔跑出眼眶」（灯灯实机反馈「看着太恐怖」）。**
+
+### 现象
+`cat_hd` / `phoebe_hd` / `cat_pixel` / `phoebe_pixel` 做眼神追踪时，瞳孔明显跑出眼白之外。
+
+### 根因（两层）
+1. **偏移量锚错了参照物**：`PetRenderer` 把眼球层整体平移 `_eyeOffset × Scale` **屏幕像素**，
+   而绘制框恒为 `32 × Scale`（`SpriteAtlas.FrameW` 恒为 32）。换算成**源位图像素**后位移 = `2 × frameWidth / 32`
+   —— **皮肤源图越细，位移越大**：`pixel`(32) ±2px → `cat_pixel`(64) ±4px → **`cat_hd`(256) ±16px（8 倍）**。
+2. **瞳孔几乎填满眼白**：实测 `cat_hd/idle` 瞳孔 29×29、眼眶 34×32 —— 白圈只有 2~5px，
+   ±16px 的位移自然整颗甩出去。
+   实测「瞳孔掉出眼眶」占比：**cat_hd 59.7% / phoebe_hd 61.0% / cat_pixel 63.9% / phoebe_pixel 64.3%**。
+
+### 修法（`SpriteAtlas` + `PetRenderer`）
+1. **按皮肤算「安全位移」**（源像素）：取瞳孔层连通块的联合 bbox（丢掉面积 < 最大块 10% 的噪声块 ——
+   实测有 2×3 / 1×1 碎块，用 min 会被带偏），其**较小边 × 0.18** 即上限。
+   新增 `SpriteAtlas.SourcePixelsPerLogical` 做「逻辑 ↔ 源像素」换算。
+2. **用「眼眶」遮罩把平移后的瞳孔裁在眼内**：拿该状态的闭合层 `{eyeLayer}_closed`（覆盖整只眼）
+   的 alpha 作 `PushOpacityMask` —— 瞳孔滑到边界自然被切掉（真猫斜视时虹膜也被眼睑遮挡）。
+   ⚠️ 遮罩的 `Viewport` 必须用**绝对坐标**锚在画幅原点；默认的相对模式会让遮罩跟着被绘制的矩形一起平移，等于没裁。
+3. **旧皮肤零影响**：门控是「该层存在 `{key}_closed`」—— 内置 `pixel` 的眼球层是
+   `eyes_open/_half/_blink/_pet/_scared`，**没有 `_closed`** → 走原路径、行为逐像素不变。
+
+### 效果
+| 皮肤 | 旧最大位移 | 新最大位移 | 瞳孔掉出眼眶 |
+|---|---|---|---|
+| cat_hd/idle | ±16 源px | ±5 源px | 59.7% → **10.7%**，且超界部分被遮罩裁掉 |
+| phoebe_hd/idle | ±16 源px | ±6 源px | 61.0% → 被遮罩裁掉 |
+
+### 附：测试工具缺陷（真实事故）
+`tools/ci.py` 只构建 `src/DesktopPet.sln` + 3 个测试工程，**不构建 `samples/SamplePlugin`**，
+而 `LoaderTest` 要从它取示例插件 → SOP §7「涉及素材/打包的改动先清 bin 再测」一旦执行，
+LoaderTest 必挂 `DirectoryNotFoundException`（本轮清 bin 出包后即踩到）。
+→ 新增 `AUX_PROJECTS`：把测试的**间接依赖**一起构建（用默认 `bin/Debug` 输出，不是 `bin_ci/`）。
+
 ## [0.1.87] - 2026-09-23
 
 **AI 素材接入链路打通：4 套皮肤恢复「眼神追踪」、学会「眨眼」，猫的 4 个动作态升级为真·视频动画。**

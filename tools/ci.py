@@ -79,6 +79,15 @@ TEST_PROJECTS = [
     ("PluginSmoke", REPO_ROOT / "tests" / "PluginSmoke" / "PluginSmoke.csproj", "PluginSmoke.exe"),
 ]
 
+# 🔴 测试的**间接依赖**（v0.1.87 补）：必须与测试工程一起构建，否则「清 bin 之后必挂」。
+#   `LoaderTest` 的 DeployPlugin 会去 `samples/SamplePlugin/bin/Debug/net8.0-windows` 取示例插件；
+#   `src/DesktopPet.sln` 与 TEST_PROJECTS 都不含它 —— 于是 SOP §7「涉及素材/打包的改动先清 bin 再测」
+#   一旦执行，LoaderTest 就会抛 DirectoryNotFoundException（本项为真实事故补丁）。
+#   ⚠️ 路径用 `bin/Debug/...`（默认输出），不是测试工程的 `bin_ci/`。
+AUX_PROJECTS = [
+    ("samples/SamplePlugin", REPO_ROOT / "samples" / "SamplePlugin" / "SamplePlugin.csproj"),
+]
+
 # 测试产物 / 日志根目录（均被 .gitignore 的 bin_ci*/ 覆盖）
 CI_OUTPUT_DIR = "bin_ci/"          # BaseOutputPath（相对各工程目录）
 LOG_DIR = REPO_ROOT / "bin_ci_logs"
@@ -293,7 +302,7 @@ def step_build_solution() -> StepResult:
 
 
 def step_build_tests() -> StepResult:
-    """步骤 2：逐个单独构建三个测试工程（sln 不含 tests/，必须单独构建）。"""
+    """步骤 2：逐个单独构建三个测试工程（sln 不含 tests/，必须单独构建）+ 测试的间接依赖。"""
     name = "build tests (LoaderTest/UiProbe/PluginSmoke)"
     duration = 0.0
     for label, csproj, _exe in TEST_PROJECTS:
@@ -305,7 +314,21 @@ def step_build_tests() -> StepResult:
             return StepResult(name, False, duration, f"构建 {label} 超时", log)
         if r.rc != 0:
             return StepResult(name, False, duration, f"构建 {label} 失败（退出码 {r.rc}）", log)
-    return StepResult(name, True, duration, "3 个测试工程均构建成功", None)
+
+    # 🔴 间接依赖（v0.1.87 补）：LoaderTest 要从 samples/SamplePlugin/bin/Debug 部署示例插件。
+    # sln 和上面 3 个工程都不覆盖它 → 清过 bin 之后 LoaderTest 必挂（真实事故）。
+    # 注意「默认输出路径」：LoaderTest 找的是 bin/Debug/net8.0-windows，不能用 bin_ci/。
+    for label, csproj in AUX_PROJECTS:
+        log = LOG_DIR / f"02_build_{Path(label).name}.log"
+        cmd = dotnet(["build", str(csproj), "-c", "Debug"])
+        r = run_captured(cmd, log, timeout=BUILD_TIMEOUT, echo=True)
+        duration += r.duration
+        if r.timed_out:
+            return StepResult(name, False, duration, f"构建依赖 {label} 超时", log)
+        if r.rc != 0:
+            return StepResult(name, False, duration, f"构建依赖 {label} 失败（退出码 {r.rc}）", log)
+
+    return StepResult(name, True, duration, "3 个测试工程 + 1 个测试依赖均构建成功", None)
 
 
 def _find_test_exe(label: str, exe_name: str) -> Path | None:
