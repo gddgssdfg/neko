@@ -75,8 +75,10 @@
 
 - **闭眼版（4 张全齐）**：`cat_still_idle_closed.png` / `cat_still_sit_closed.png` / `phoebe_still_idle_closed.png` / `phoebe_still_sit_closed.png`
 - **静态图**：`{cat,phoebe}_still_{idle,sit,sleep}.png`（6 张）
-- **动画单图**：`cat_walk_single.png` `cat_pet_single.png` `phoebe_walk_single.png` `phoebe_pet_single.png`
-- **动画视频**：`cat_walk.mp4` `cat_pet.mp4`
+- **动画单图（10 张全齐 ✅）**：`cat_{walk,pet,drag,fall,climb,work}_single.png` · `phoebe_{walk,pet,drag,fall,climb,work}_single.png`
+- **动画视频**：✅ 可用 `cat_walk.mp4` `cat_pet.mp4` `cat_drag.mp4` `cat_fall.mp4`
+  ❌ **需重做** `cat_climb.mp4`（猫被画幅底边**平切** —— 见 §3.4 硬约束 4）
+  ⏳ 待生成 `cat_work.mp4` + 菲比 6 段
 - **基准九宫格**（仅作角色定妆参考图，不再作素材）：`cat_base_3x3.png` `phoebe_base_3x3.png`
 - **待机小动作变体**（可选）：`cat_fidget_{tail,lick,stretch}.png` `phoebe_fidget_{turn,stretch,talk}.png`
 - **UI**：`bubble_cloud.png` `keycap_up.png` `keycap_down.png` `ui_icons_5x4.png` `ui_settings_icons.png`
@@ -250,6 +252,12 @@
 让画面里的这个角色原地重复「<动作名>」，动作幅度小、速度均匀、可以无缝循环。
 镜头完全固定不动；角色不要移动位置、不要放大缩小、不要变形、不要改变画风。
 背景保持原来的纯绿色不变。时长 3 秒，循环动作。
+
+【取景（很重要，务必守住）】
+- 角色必须【完整】出现在画面内：耳朵、四肢、尾巴都不能被画幅边缘切到，
+  尤其画面【底部】必须留出绿色空白，不能出现"身体被画幅底边平切"。
+- 角色高度约占画面的 70%（上方留约 15%、下方留约 15% 绿色空白）。
+- 全程取景不变：角色不要忽大忽小、不要漂移到画面边缘。
 ```
 > 📎 **保存文件名（照抄其一）**：`G:\lantetn-li\neko\neko-assets\_airaw\cat_work.mp4`
 > （其余同目录：`cat_{walk,pet,drag,fall,climb,work}.mp4`）
@@ -263,12 +271,19 @@
 | `cat_climb.mp4` | `cat_climb_single.png` | 前爪交替向上够 |
 | `cat_work.mp4` | `cat_work_single.png` | 前爪交替下拍 |
 
-> ### ⚠️ 三条硬约束（违反就接不上，必须让豆包守住）
+> ### ⚠️ 五条硬约束（违反就接不上，必须让豆包守住）
 > 1. **镜头完全固定** —— 不能推拉摇移，否则抽帧后角色跑出格子
 > 2. **角色不整体位移 / 缩放** —— 只做局部动作（腿、爪、尾巴、头）
 > 3. **背景纯绿 #00FF00** —— 视频没有透明通道，我靠色键抠背景
+> 4. 🔴 **角色必须完整在画幅内** —— 尤其**底部不能切**。首轮 `cat_climb.mp4` 就是猫被放大到撑满画幅、
+>    身体平切在底边（实测底部 3 行有 600+ 个前景像素的直边）→ **整段报废、必须重做**。
+> 5. 🔴 **各段"镜头远近"要一致** —— 猫占画幅高度统一到 **约 70%**。
+>    首轮实测差异极大：`fall` 只占 49%、`drag` 82%、`climb` 72% —— 差 1.75 倍，
+>    虽然我能在管线里按状态统一缩放补救，但**素材侧一致**能省掉这道补救，也更不容易出错。
 >
-> ✅ `cat_walk.mp4` / `cat_pet.mp4` 已完成；其余 4 个见 §6 待办。
+> ✅ **可直接使用**：`cat_walk.mp4` / `cat_pet.mp4` / `cat_drag.mp4` / `cat_fall.mp4`
+> ❌ **需重做**：`cat_climb.mp4`（猫被裁，见约束 4）
+> ⏳ **待生成**：`cat_work.mp4` + 菲比 6 段（见 §6）
 
 ---
 
@@ -395,27 +410,30 @@ Q版卡通风格、扁平、深棕色描边、柔和暖色配色（奶油白/橘
 
 **一次全做完可能一大批，容易整批废。按下面顺序做：**
 
-### 第 1 批 · 验全链路（**先做这 4 个**，见 §1.2）
-| # | 产出 | 步骤 |
-|---|---|---|
-| 1 | `cat_work_single.png` | §3.3（绿幕单图） |
-| 2 | `cat_work.mp4` | §3.4（图生视频） |
-| 3 | `cat_still_idle.png` | §3.1（透明底静图，**睁眼**） |
-| 4 | `cat_still_idle_closed.png` | §3.2（**以第 3 张为参考**只闭眼） |
+### 第 1 批 · 验全链路（**先做这 4 个**，见 §1.2）—— ⏳ 部分完成
+| # | 产出 | 步骤 | 状态 |
+|---|---|---|---|
+| 1 | `cat_work_single.png` | §3.3（绿幕单图） | ✅ 已生成 |
+| 2 | `cat_work.mp4` | §3.4（图生视频） | ⏳ 待生成（额度 9/30 恢复） |
+| 3 | `cat_still_idle.png` | §3.1（透明底静图，**睁眼**） | ✅ 已生成 |
+| 4 | `cat_still_idle_closed.png` | §3.2（**以第 3 张为参考**只闭眼） | ✅ 已生成 |
 
 → 我接上后，**橘猫 idle 的「眼神追踪 + 眨眼」+ work 的逐帧动画**就能同时看到。
 > 🔴 第 3、4 个**必须成对同源**——闭眼版以同一张睁眼版为参考；**要重画睁眼版就一起重画闭眼版**（否则瞳孔差分错位）。
 > 灯灯对比满意 → 再往下。
 
-### 第 2 批 · 橘猫补齐（4 动画）
-`cat_{drag,fall,climb,work}_single.png` + 对应 4 个 mp4。
+### 第 2 批 · 橘猫补齐（4 动画）—— ⏳ 部分完成
+- 单图 `cat_{drag,fall,climb,work}_single.png` ✅ **4 张全齐**
+- mp4 ⏳ `cat_drag.mp4` ✅ / `cat_fall.mp4` ✅ / `cat_climb.mp4` ❌ **需重做（被裁）** / `cat_work.mp4` ⏳ 待生成
 
-### 第 3 批 · 菲比补齐（6 动画）
-先出 4 个缺的单图 `phoebe_{drag,fall,climb,work}_single.png`；
-再做全部 6 段 mp4（`phoebe_{walk,pet,drag,fall,climb,work}.mp4`）。
+### 第 3 批 · 菲比补齐（6 动画）—— ⏳ 部分完成
+- 单图 ✅ **6 张全齐**（`phoebe_{walk,pet,drag,fall,climb,work}_single.png`）
+- mp4 ⏳ **6 段全待生成**（`phoebe_{walk,pet,drag,fall,climb,work}.mp4`）
 
 > 💡 **强烈建议**：每批先做**1~2 个**让我接上看效果，满意再补齐其余——万一豆包某条硬约束守不住，不至于一批全废。
-> **每个 mp4 都要挑"镜头最稳、角色不漂"的那一版**（这是三条硬约束里最容易失守的）。
+> **每个 mp4 都要挑"镜头最稳、角色不漂"的那一版**（这是五条硬约束里最容易失守的）。
+> ⚠️ **生成前先看 §3.4 的"取景"两条**（角色完整在画幅内 + 各段镜头远近一致）——
+> 首轮 `cat_climb.mp4` 就是踩了"底部被切"这条，整段报废。
 
 ---
 
