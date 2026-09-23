@@ -82,9 +82,53 @@ internal static class Program
 
         GcAndReport("AFTER_THREAD_EXIT");   // 口径 B：WPF 线程已退出
 
+        // ---- 硬判定哨兵（v0.1.87 QA 补丁）：从 Report 核对关键断言 → 机器可读结论 + 退出码 ----
+        // 背景：此前本工具无论断言真假都 return 0，也不打印统一结论，自动化闸门只能靠人眼读 out.txt
+        //      （run_probes.py 找 "CLIP_OK=OK" 永远落空 → 判为未知）。现补：CLIP_OK=OK/FAIL 哨兵
+        //      + 失败清单 + 失败时非零退出码，CI 可直接据此 PASS/FAIL，杜绝“静默红”。
+        var required = new (string Key, string Want)[]
+        {
+            ("LOAD1", "OK"),
+            ("MAIN_PATH_ENGAGED", "True"),
+            ("LOG_EVENT_DRIVEN", "True"),
+            ("LIVE_LISTENER_WORKS", "True"),
+            ("UNLOAD_EXCEPTION", "none"),
+            ("LOG_UNREGISTER_FAIL", "False"),
+            ("LOG_CLEANUP_FAIL", "False"),
+            ("HWND_ISWINDOW_AFTER_UNLOAD", "False"),
+            ("LISTENER_UNREGISTERED", "True"),
+            ("RELOAD", "OK"),
+            ("RELOAD_MAIN_PATH", "True"),
+            ("HWND_RELOAD_DISTINCT", "True"),
+            ("OLD_HWND_STILL_DEAD", "True"),
+            ("RELOAD_WORKS", "True"),
+            ("RELOAD_HWND_ISWINDOW_AFTER_UNLOAD", "False"),
+            ("WPF_THREAD_ALIVE_ALC_COLLECTED", "True"),
+            ("WPF_THREAD_ALIVE_AFTER_IDLE_ALC_COLLECTED", "True"),
+            ("AFTER_THREAD_EXIT_ALC_COLLECTED", "True"),
+            ("AFTER_THREAD_EXIT_INSTANCE_COLLECTED", "True"),
+        };
+        var fails = new List<string>();
+        foreach (var (key, want) in required)
+        {
+            var hit = Report.FirstOrDefault(l => l.StartsWith(key + "=", StringComparison.Ordinal));
+            var got = hit is null ? "(missing)" : hit[(key.Length + 1)..];
+            if (!string.Equals(got, want, StringComparison.Ordinal))
+                fails.Add($"{key}={got} (want {want})");
+        }
+        if (fails.Count == 0)
+        {
+            W("CLIP_OK=OK");
+        }
+        else
+        {
+            W("CLIP_OK=FAIL");
+            foreach (var f in fails) W("  CLIP_FAIL: " + f);
+        }
+
         try { File.WriteAllText(_outFile, string.Join("\r\n", Report), System.Text.Encoding.UTF8); }
         catch (Exception ex) { Console.WriteLine("WRITE_OUT_FAIL=" + ex.Message); }
-        return 0;
+        return fails.Count == 0 ? 0 : 1;
     }
 
     /// <summary>从 exe 目录向上找到含 src/DesktopPet.sln 的仓库根（避免写死本机绝对路径）。</summary>
