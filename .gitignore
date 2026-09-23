@@ -78,6 +78,9 @@ installer/*.wixpdb
 # ===== 测试工具的运行产物（tests/ClipHarness 每次跑会重写）=====
 tests/ClipHarness/out.txt
 
+# ===== 根级 _ 开头的临时产物（约定：根目录 _ 前缀 = scratch）=====
+/_*
+
 # ===== 协作临时文件（teammate 排查用，别入库）=====
 gitstat.txt
 _gitstatus_tmp.txt
