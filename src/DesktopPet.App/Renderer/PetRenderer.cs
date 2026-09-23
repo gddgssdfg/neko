@@ -204,10 +204,14 @@ public sealed class PetRenderer
         dc.DrawImage(frame.Bitmap, target);
 
         // 眼球层（叠加）—— 键盘反应瞪眼优先，其次 3 步眨眼相位（half/closed），最后正常眼球层。
-        // v0.1.86：**本方法按名引用的全局眼球层键只有 3 个**（eyes_scared / eyes_half / eyes_blink，
-        // 均只有像素系皮肤提供，见 SpriteAtlas.GetEye）。皮肤未提供某键时，若直接取到 null 会把
-        // 整层丢弃 → 露出「被抹掉瞳孔的身体帧」→ 眼睛短暂空白。故**每个全局键都套同款兜底**：
-        // 缺该素材 → 该特效/相位不生效（眼睛保持有神），而不是"变空白"。新增全局键务必照此兜底。
+        // v0.1.86：眨眼相位**优先用皮肤自己的 per-state 层**（`{state.EyeLayer}_half` / `_closed`），
+        // 再退回**全局** blink 层（eyes_half / eyes_blink，仅像素系皮肤有），最后退回状态睁眼层。
+        //   为什么需要 per-state：一套皮肤里 idle 与 sit 的眼睛位置不同，**一个全局 blink 层必然
+        //   对其中一个错位**（这也正是「新皮肤要么没有眨眼、要么眨眼错位」的死结）。per-state 闭合层
+        //   由「同一张静图的闭眼版」生成（见 tools/build_skin_v2.py），与身体帧同源同位置 → 天然对齐。
+        // ⚠️ 所有「按键名取眼球层」处都套「取不到 → 退下一级」兜底：皮肤未提供某键时若直接得到 null，
+        //   会把整层丢弃 → 露出「被抹掉瞳孔的身体帧」→ 眼睛短暂空白。缺素材 = 该特效/相位不生效
+        //   （眼睛保持有神），而不是"变空白"。以后新增按键名取层处务必照此兜底。
         if (state.EyeLayer is not null)
         {
             BitmapSource? eye;
@@ -220,10 +224,15 @@ public sealed class PetRenderer
             {
                 eye = _blinkPhase switch
                 {
-                    // 半闭：eyes_half → eyes_blink → 本状态眼球层
-                    BlinkPhase.Half => _atlas.GetEye("eyes_half") ?? _atlas.GetEye("eyes_blink") ?? _atlas.GetEye(state.EyeLayer),
-                    // 闭合：eyes_blink → 本状态眼球层
-                    BlinkPhase.Closed => _atlas.GetEye("eyes_blink") ?? _atlas.GetEye(state.EyeLayer),
+                    // 半闭：per-state `_half` → per-state `_closed`（无半闭就用完全闭合顶）→ 全局 → 状态层
+                    BlinkPhase.Half => _atlas.GetEye(state.EyeLayer + "_half")
+                                       ?? _atlas.GetEye(state.EyeLayer + "_closed")
+                                       ?? _atlas.GetEye("eyes_half") ?? _atlas.GetEye("eyes_blink")
+                                       ?? _atlas.GetEye(state.EyeLayer),
+                    // 闭合：per-state `_closed` → 全局 eyes_blink → 状态层
+                    BlinkPhase.Closed => _atlas.GetEye(state.EyeLayer + "_closed")
+                                       ?? _atlas.GetEye("eyes_blink")
+                                       ?? _atlas.GetEye(state.EyeLayer),
                     _ => _atlas.GetEye(state.EyeLayer),
                 };
             }

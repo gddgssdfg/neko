@@ -13,6 +13,11 @@
     ⚠️ 不能用九宫格差分静态状态 —— 九宫格与静图是两张不同的图，差分瞳孔会错位成脸上
     漂浮的色块（正是「换新皮肤后眼神追踪消失」的根因）。动画状态无闭眼版、瞳孔跟随价值低
     → 不加眼球层（眼睛画在身体帧里）。`--grid-eyes` 可启用旧九宫格路径（默认关闭）。
+  - **闭合层（眨眼）**：**同一对静图**（睁眼 / 闭眼）顺带再产出 per-state 闭合层
+    `neko_eyes_{st}_closed.png` —— 内容 = 闭眼图在「眼睛区域」的样子，区域外**全透明**。
+    引擎眨眼相位优先取它（`PetRenderer`：`{eyeLayer}_closed`）。**必须 per-state**：一套皮肤里
+    idle 与 sit 的眼睛位置不同，单个全局 blink 层必然对其中一个错位；per-state 层与身体帧同源
+    → 天然对齐。一份素材同时支撑「眼神追踪 + 眨眼」。
 
 用法：
     python tools/build_skin_v2.py --prefix cat    --mode pixel --id cat_pixel    --name "像素猫（动态）"
@@ -220,6 +225,94 @@ def extract_pupil_layer(base_cell: Image.Image, closed_cell: Image.Image, blk: i
     return body, layer
 
 
+def _diff_hotspots(diff: Image.Image, blk: int = 16, thr: int = 25, frac: float = 0.45):
+    """在灰度差分图上按 blk 分块计数，返回「强热点块」的连通域坐标集合。
+
+    用途：把闭合层掩膜**限制在眼睛区域**。睁眼图与闭眼图里，唯一「真正强烈变化」的是眼睛；
+    但闭眼图是 AI 重绘的，整只猫轮廓也会有几像素的微弱差异 —— 若不限制，掩膜会连带把
+    「整只猫的淡影」也纳入（`区域外全透明` 就不成立）。分块计数天然把它们区分开：
+    眼睛块计数高（进入热点）、轮廓块计数低（被丢弃）。与 `extract_pupil_layer` 同款阈值策略。
+    """
+    W, H = diff.size
+    dpx = diff.load()
+    bw, bh = W // blk, H // blk
+    grid = []
+    for by in range(bh):
+        row = []
+        for bx in range(bw):
+            cnt = 0
+            for y in range(by * blk, (by + 1) * blk, 2):
+                for x in range(bx * blk, (bx + 1) * blk, 2):
+                    if dpx[x, y] > thr:
+                        cnt += 1
+            row.append(cnt)
+        grid.append(row)
+    peak = max((v for row in grid for v in row), default=0)
+    if peak == 0:
+        return set()
+    hot = {(bx, by) for by, row in enumerate(grid) for bx, v in enumerate(row) if v > peak * frac}
+    seen, keep = set(), set()
+    for p in hot:
+        if p in seen:
+            continue
+        stack, comp = [p], []
+        seen.add(p)
+        while stack:
+            x, y = stack.pop()
+            comp.append((x, y))
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    q = (x + dx, y + dy)
+                    if q in hot and q not in seen:
+                        seen.add(q)
+                        stack.append(q)
+        keep.update(comp)
+    return keep
+
+
+def extract_closed_layer(base_cell: Image.Image, closed_cell: Image.Image,
+                         thr: int = 22, dilate: int = 2, feather: float = 1.2, blk: int = 16):
+    """从 (睁眼, 闭眼) 差分取「眼睛区域」的**闭眼外观**，作为 per-state 闭合层（眨眼用）。
+
+    为什么要它：眼睛在身体帧上是被抹掉瞳孔的睁眼（眼白 + 无瞳），叠加瞳孔层才「有神」；
+    眨眼时必须再叠一层「闭眼」把它盖成闭的。这层**必须 per-state**（idle/sit 眼位不同）。
+
+    内容 = 闭眼图 `closed_cell` 的像素；alpha = 差分掩膜，但**先用 `_diff_hotspots` 把掩膜
+    限制在眼睛热点块内**（否则 AI 重绘闭眼图时整只猫轮廓的微弱差异也会混进来，区域外就不透明了），
+    再轻微膨胀(dilate)+高斯羽化(feather)。结果：**区域外全透明、形状是不规则眼形而非矩形**。
+    """
+    b = base_cell.convert("RGBA")
+    c = closed_cell.convert("RGBA")
+    if c.size != b.size:
+        c = c.resize(b.size, Image.LANCZOS)
+    diff = ImageChops.difference(b.convert("RGB"), c.convert("RGB")).convert("L")
+    fine = diff.point(lambda v: 255 if v > thr else 0)
+    if fine.getbbox() is None:
+        return None
+    # 只保留「强差分热点块」内的像素 —— 排除 AI 重绘造成的整猫轮廓淡影，确保区域外真正全透明。
+    keep = _diff_hotspots(diff, blk=blk, thr=max(20, thr), frac=0.45)
+    if keep:
+        W, H = fine.size
+        fpx = fine.load()
+        for by in range(H // blk + 1):
+            for bx in range(W // blk + 1):
+                if (bx, by) in keep:
+                    continue
+                for y in range(by * blk, min(H, (by + 1) * blk)):
+                    for x in range(bx * blk, min(W, (bx + 1) * blk)):
+                        fpx[x, y] = 0
+        if fine.getbbox() is None:
+            return None
+    mask = fine
+    if dilate > 0:
+        mask = mask.filter(ImageFilter.MaxFilter(dilate * 2 + 1))   # 膨胀：抗眼神偏移 ±2px
+    if feather > 0:
+        mask = mask.filter(ImageFilter.GaussianBlur(feather))       # 羽化：消硬边
+    layer = c.copy()
+    layer.putalpha(mask)
+    return layer
+
+
 def pixel_square(canvas: Image.Image) -> Image.Image:
     """把任意画布缩成 PIXEL_SIZE 方格：等比缩到框内，底对齐 + 水平居中。
 
@@ -273,6 +366,7 @@ def main() -> int:
     # ---------- 1) 取帧 ----------
     pieces: dict[str, list[tuple[Image.Image, int, int]]] = {}   # state → [(内容图, 离底, 格宽)]
     eye_cells: dict[str, Image.Image] = {}   # 静态状态眼球层内容（与内容图同尺寸），供公共画布逐像素对齐
+    closed_cells: dict[str, Image.Image] = {}  # 静态状态闭合层（眨眼用）内容，同上尺寸
     for st in STATES:
         if st in STILL_STATES:
             p = RAW / f"{args.prefix}_still_{st}.png"
@@ -302,7 +396,13 @@ def main() -> int:
                 if body_norm is not None and layer_norm is not None:
                     content = body_norm.crop(bb)          # 身体帧：抹掉瞳孔，眼白留在身体上
                     eye_cells[st] = layer_norm.crop(bb)   # 眼球层：只含瞳孔，与身体帧同尺寸同位置
-                    eye_note = "  +眼球层(闭眼差分)"
+                    # 闭合层（眨眼）：同一对静图顺带产出「闭眼区域」外观，区域外透明、无硬边
+                    closed_norm = extract_closed_layer(src, csrc)
+                    if closed_norm is not None:
+                        closed_cells[st] = closed_norm.crop(bb)
+                        eye_note = "  +眼球层(闭眼差分)+闭合层(眨眼)"
+                    else:
+                        eye_note = "  +眼球层(闭眼差分)  ⚠️闭合层未定位到眼睛区域"
                 else:
                     eye_note = "  ⚠️ 闭眼差分未定位到眼睛，跳过眼球层"
             elif not args.no_eyes:
@@ -355,10 +455,13 @@ def main() -> int:
     # ---------- 4) 渲染到公共画布 ----------
     rendered: dict[str, list[Image.Image]] = {}
     eye_rendered: dict[str, list[Image.Image]] = {}   # 静态状态眼球层，与身体帧同画布坐标（缩放后仍逐像素对齐）
+    closed_rendered: dict[str, list[Image.Image]] = {}  # 静态状态闭合层（眨眼用），同上坐标
     for st, frs in pieces.items():
         out = []
         eye_out: list[Image.Image] = []
+        closed_out: list[Image.Image] = []
         eye_cell = eye_cells.get(st)
+        closed_cell = closed_cells.get(st)
         for (content, gap, cell_w) in frs:
             canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
             x = (cw - content.width) // 2
@@ -369,9 +472,15 @@ def main() -> int:
                 ec = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
                 ec.paste(eye_cell, (x, y), eye_cell)   # 同一 (x, y)：眼球层随公共画布一起缩放 → 永不跑偏
                 eye_out.append(ec)
+            if closed_cell is not None:
+                cc = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+                cc.paste(closed_cell, (x, y), closed_cell)   # 与身体帧/眼球层同一 (x, y)
+                closed_out.append(cc)
         rendered[st] = out
         if eye_out:
             eye_rendered[st] = eye_out
+        if closed_out:
+            closed_rendered[st] = closed_out
 
     # ---------- 5) 尺寸 / 量化 ----------
     if args.mode == "pixel":
@@ -388,9 +497,11 @@ def main() -> int:
         for st in rendered:
             rendered[st] = finals[idx:idx + len(rendered[st])]
             idx += len(rendered[st])
-        # 眼球层：同一套方格规则，逐帧独立取色量化（瞳孔小暗区单独取色更稳）
+        # 眼球层 / 闭合层：同一套方格规则，逐帧独立取色量化（瞳孔小暗区单独取色更稳）
         for st in list(eye_rendered):
             eye_rendered[st] = [quantize_square_fresh(pixel_square(c)) for c in eye_rendered[st]]
+        for st in list(closed_rendered):
+            closed_rendered[st] = [quantize_square_fresh(pixel_square(c)) for c in closed_rendered[st]]
     else:
         scale = min(1.0, args.max_frame / max(cw, ch))
         fw, fh = max(1, int(cw * scale)), max(1, int(ch * scale))
@@ -399,6 +510,8 @@ def main() -> int:
             rendered[st] = [c.resize((fw, fh), Image.LANCZOS) for c in rendered[st]]
         for st in list(eye_rendered):
             eye_rendered[st] = [c.resize((fw, fh), Image.LANCZOS) for c in eye_rendered[st]]
+        for st in list(closed_rendered):
+            closed_rendered[st] = [c.resize((fw, fh), Image.LANCZOS) for c in closed_rendered[st]]
 
     # ---------- 6) 写出 ----------
     states_meta = []
@@ -442,6 +555,14 @@ def main() -> int:
                 lay.save(out_dir / f"neko_eyes_{st}.png")
                 eye_keys.append(f"eyes_{st}")
                 print(f"  ✓ 眼球层 {st}: 瞳孔 {w}x{h}（静图 vs 闭眼静图）")
+                # 闭合层（眨眼）：per-state，与身体帧/瞳孔层同源同公共画布坐标
+                cl = closed_rendered.get(st)
+                if cl is not None and cl[0].getbbox() is not None:
+                    cl[0].save(out_dir / f"neko_eyes_{st}_closed.png")
+                    eye_keys.append(f"eyes_{st}_closed")
+                    print(f"  ✓ 闭合层 {st}: {cl[0].size}（眨眼用；区域外透明、非矩形）")
+                else:
+                    print(f"  ⚠️ {st}: 无闭合层（闭眼差分未定位到眼睛区域）")
         else:
             print("  ⚠️ 静态状态未生成眼球层（缺闭眼静图或未定位到眼睛）")
 
@@ -498,7 +619,9 @@ def main() -> int:
             k = f"eyes_{m['name']}"
             if k in eye_keys:
                 m["eyeLayer"] = k
-        print(f"  眼球层共 {len(eye_keys)}/{len(STATES)}（其余用整帧图里的原眼睛）")
+        n_pupil = sum(1 for k in eye_keys if not k.endswith("_closed"))
+        n_closed = sum(1 for k in eye_keys if k.endswith("_closed"))
+        print(f"  眼球层 {n_pupil} 个 + 闭合层 {n_closed} 个（共 {len(eye_keys)} 键；未覆盖的状态用整帧图里的原眼睛）")
 
     # ---------- 8) skin.json ----------
     skin = {

@@ -8,7 +8,9 @@
   "hasShadow": false,
   "eyeLayers": [
     "eyes_idle",
-    "eyes_sit"
+    "eyes_idle_closed",
+    "eyes_sit",
+    "eyes_sit_closed"
   ],
   "recommendedScale": 4.0,
   "states": [
