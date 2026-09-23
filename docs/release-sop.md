@@ -24,8 +24,9 @@
 5. [打包（MSI）](#5-打包msi)
 6. [素材白名单（新增皮肤时强制）](#6-素材白名单新增皮肤时强制)
 7. [发布前清场](#7-发布前清场)
-8. [发布 checklist（可勾选）](#8-发布-checklist可勾选)
-9. [附录：检查项 ← 真实事故映射](#附录检查项--真实事故映射)
+8. [推送到 Gitee（强制）](#8-推送到-gitee强制)
+9. [发布 checklist（可勾选）](#9-发布-checklist可勾选)
+10. [附录：检查项 ← 真实事故映射](#附录检查项--真实事故映射)
 
 ---
 
@@ -41,6 +42,7 @@
 | `docs/dev-log.md` | 追加本版开发记录（**`check_version.py` 不检查它**，须人工确认 —— 这是历史漂移高发区） |
 | `src/DesktopPet.sln` | 无应用版本号（只有 VS Format/VS 版本）；**确认未被写入应用版本** |
 | git | 打 tag（`check_version.py` 会比对 HEAD tag 与版本号） |
+| **Gitee 远端** | 🔴 **必须推送**：`git push origin master && git push origin --tags`（见 §8） |
 
 **校验命令（发布前必跑，退出码 0 才继续）：**
 
@@ -231,7 +233,36 @@ python tools/check_version.py
 
 ---
 
-## 8. 发布 checklist（可勾选）
+## 8. 推送到 Gitee（强制）
+
+> 🔴 **本节是 2026-09-24 补的**：此前 SOP 只要求「提交 + 打 tag」，**没有推送步骤** ——
+> 结果本地一路提交到 v0.1.88，而远端停在 **v0.1.76**（**12 个版本 / 30 个提交没推**），
+> 且没人发现。**"提交了" ≠ "备份/共享了"**；本地仓库没有异地副本，等于没有版本控制。
+
+远端：`origin` = `https://gitee.com/gddgssdfg/neko.git`（凭据走 Windows 凭据管理器，已配好）
+
+```bash
+git push origin master
+git push origin --tags          # tag 不会随分支自动推，必须显式推
+```
+
+**推送后必须复核（别只看 push 的退出码）：**
+
+```bash
+git fetch origin                                    # 建立/刷新远端跟踪引用
+git status -sb                                      # 应显示 ## master...origin/master（不带 [gone] / [ahead N]）
+git rev-parse --short HEAD origin/master            # 两者必须一致
+git ls-remote --tags origin | grep -v '\^{}'        # 本版 tag 必须出现在列表里
+```
+
+> ⚠️ **已知坑**：本机首次 `git fetch` 后 `refs/remotes/origin/master` 可能**没落盘**
+> （`git status -sb` 一直显示 `[gone]`，而 `git update-ref` 又静默返回 0 不生效）。
+> 排查手段：`ls .git/refs/remotes/origin/` 是否真的有 `master` 文件。
+> 兜底：直接写 `echo <sha> > .git/refs/remotes/origin/master`（实测有效）。
+
+---
+
+## 9. 发布 checklist（可勾选）
 
 ```
 发布版本：v________        发布日期：____________
@@ -276,6 +307,13 @@ python tools/check_version.py
     [ ] git diff --stat 中素材二进制变动均已确认
     [ ] 提交（格式：<版本号>: <主题>）
     [ ] 打 tag（与 <Version> 一致）
+
+[ ] 8. 推送到 Gitee（🔴 2026-09-24 新增，此前漏了 12 个版本）
+    [ ] git push origin master
+    [ ] git push origin --tags
+    [ ] git fetch origin && git status -sb → `## master...origin/master`（不带 [gone]/[ahead N]）
+    [ ] git rev-parse --short HEAD origin/master → 两者一致
+    [ ] git ls-remote --tags origin 里能看到本版 tag
 ```
 
 ---
@@ -295,6 +333,7 @@ python tools/check_version.py
 | **7. 测试不在 sln** | 只跑 sln → 测试工程未编译 → 跑到陈旧二进制 | `tests/` 不属 `src/DesktopPet.sln` | §3.2 显式"各自单独构建/运行" |
 | **8. 版本漂移**（审计 P1-5 / P1-7） | 手册/CHANGELOG/安装器各停在不同版本 | 改版本未全量同步 | §1 + §2 + `check_version.py` |
 | **9. 无留痕回退** | 托盘图标被换回 / `SelfContained` 被改 false，无从追溯 | 当时无版本控制 | §7 `git status --short` / `git diff --stat` 逐项确认 |
+| **10. 发布只提交不推送**（2026-09-24） | 远端停在 **v0.1.76**，本地已到 **v0.1.88** —— **12 个版本 / 30 个提交没有异地副本** | SOP 只写了「提交 + 打 tag」，**根本没有推送步骤**，也没人复核远端 | §8 推送到 Gitee（含 4 条复核命令）+ checklist 第 8 项 |
 
 ---
 
