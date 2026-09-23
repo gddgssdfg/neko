@@ -6,13 +6,16 @@
   "frameHeight": 64,
   "frames": 8,
   "hasShadow": false,
-  "eyeLayers": [],
+  "eyeLayers": [
+    "eyes_idle",
+    "eyes_sit"
+  ],
   "recommendedScale": 4.0,
   "states": [
     {
       "name": "idle",
       "fps": 0,
-      "eyeLayer": null
+      "eyeLayer": "eyes_idle"
     },
     {
       "name": "walk",
@@ -22,7 +25,7 @@
     {
       "name": "sit",
       "fps": 0,
-      "eyeLayer": null
+      "eyeLayer": "eyes_sit"
     },
     {
       "name": "sleep",

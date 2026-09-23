@@ -46,6 +46,10 @@ neko-assets/_airaw/
 /_scroll_*.png
 /_gaze_*.png
 /_kb_*.png
+/_eyes_*.png
+/_live_eyes*.png
+/_px_cmp.png
+/_thumb_cmp.png
 /_cmp_*.png
 /_icons_ports*.png
 /_preview_skins.html

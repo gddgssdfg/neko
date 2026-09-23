@@ -7,11 +7,18 @@
     但上一版素材位置会漂移。所以先按等分切并校验（无空格 + 高度离散 <20%），不合格再退回孤岛切。
   - **跨画布尺寸归一**：序列条每格 512、静态图整张 1024，两者内容占比都约 78%，
     所以按"画布比"缩放（1024→×0.5）就能对齐，不能直接用原始像素尺寸。
+  - **眼球层来源（眼神追踪）**：静态状态（idle/sit）用「同一张静图的闭眼版」
+    （`{prefix}_still_{st}_closed.png`）差分，只取瞳孔、眼白留在身体帧上；差分与铺帧
+    共用同一公共画布坐标，缩放后瞳孔逐像素对齐。
+    ⚠️ 不能用九宫格差分静态状态 —— 九宫格与静图是两张不同的图，差分瞳孔会错位成脸上
+    漂浮的色块（正是「换新皮肤后眼神追踪消失」的根因）。动画状态无闭眼版、瞳孔跟随价值低
+    → 不加眼球层（眼睛画在身体帧里）。`--grid-eyes` 可启用旧九宫格路径（默认关闭）。
 
 用法：
-    python tools/build_skin_v2.py --prefix cat    --mode pixel --id cat_pixel --name "像素猫（动态）"
-    python tools/build_skin_v2.py --prefix cat    --mode hd    --id cat_hd    --name "高清猫（动态）"
-    python tools/build_skin_v2.py --prefix phoebe --mode hd    --id phoebe_hd --name "菲比（高清）"
+    python tools/build_skin_v2.py --prefix cat    --mode pixel --id cat_pixel    --name "像素猫（动态）"
+    python tools/build_skin_v2.py --prefix cat    --mode hd    --id cat_hd       --name "高清猫（动态）"
+    python tools/build_skin_v2.py --prefix phoebe --mode pixel --id phoebe_pixel --name "菲比（像素）"
+    python tools/build_skin_v2.py --prefix phoebe --mode hd    --id phoebe_hd    --name "菲比（高清）"
 """
 
 from __future__ import annotations
@@ -114,10 +121,14 @@ def segment_auto(img: Image.Image, expected: int) -> tuple[list[tuple[int, int]]
 # ---------------------------------------------------------------- 眼球层
 
 def extract_pupil_layer(base_cell: Image.Image, closed_cell: Image.Image, blk: int = 16):
-    """从 (基准, 闭眼) 差分里定位眼睛区域，再取其中的深色瞳孔作为眼球层。
+    """从 (基准, 闭眼) 差分里定位【所有】眼睛区域，逐只取深色瞳孔合成到同一眼球层。
 
     只取瞳孔（不取整只眼）：整只眼取出来就得把脸上的眼睛抹掉（需 inpaint），
     抹掉后一平移会露出色块缺口；只取瞳孔则眼白留在身体上，瞳孔在其内部平移——经典眼神追踪做法。
+
+    ⚠️ 一张脸通常有【两只】眼，差分热点会形成两个连通块，必须都取：只取最大块会导致
+    只有一只瞳孔跟随鼠标、另一只死死留在身体帧上（左右眼不同步，观感像斜视）。
+    故取所有"够大"的连通块（≥ 最大块的 30%）。
     """
     b = base_cell.convert("RGBA")
     c = closed_cell.convert("RGBA")
@@ -156,47 +167,85 @@ def extract_pupil_layer(base_cell: Image.Image, closed_cell: Image.Image, blk: i
                         seen.add(q)
                         stack.append(q)
         groups.append(comp)
-    groups.sort(key=len, reverse=True)
-    main = groups[0]
-    xs = [x for x, _ in main]
-    ys = [y for _, y in main]
-    x0, x1 = min(xs) * blk, (max(xs) + 1) * blk
-    y0, y1 = min(ys) * blk, (max(ys) + 1) * blk
-
-    region = b.crop((x0, y0, x1, y1)).convert("RGBA")
-    rw, rh = region.size
-    lum = region.convert("L")
-    lpx = lum.load()
-    vals = sorted(lpx[x, y] for y in range(0, rh, 2) for x in range(0, rw, 2))
-    thr = max(60, vals[int(len(vals) * 0.35)])
-
-    pupil = Image.new("RGBA", (rw, rh), (0, 0, 0, 0))
-    rpx, ppx = region.load(), pupil.load()
-    light = []
-    for y in range(rh):
-        for x in range(rw):
-            r, g, bb, a = rpx[x, y]
-            if a > ALPHA_THR and lpx[x, y] < thr:
-                ppx[x, y] = (r, g, bb, a)
-            elif a > ALPHA_THR:
-                light.append((r, g, bb))
-    pm = pupil.getchannel("A").filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
-    pupil.putalpha(pm)
-    if not light:
+    if not groups:
         return None, None
-    fill = tuple(int(median([c_[i] for c_ in light])) for i in range(3))
+    groups.sort(key=len, reverse=True)
+    # 取所有够大的连通块（通常 = 两只眼）。只取最大块会漏掉另一只眼的瞳孔。
+    min_blocks = max(2, int(len(groups[0]) * 0.30))
+    regions = [g for g in groups if len(g) >= min_blocks]
 
     body = b.copy()
     bpx = body.load()
-    p2 = pupil.load()
-    for y in range(rh):
-        for x in range(rw):
-            if p2[x, y][3] > 100:
-                bpx[x0 + x, y0 + y] = (fill[0], fill[1], fill[2], bpx[x0 + x, y0 + y][3])
-
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    layer.paste(pupil, (x0, y0), pupil)
+    got = False
+    for comp in regions:
+        xs = [x for x, _ in comp]
+        ys = [y for _, y in comp]
+        x0, x1 = min(xs) * blk, (max(xs) + 1) * blk
+        y0, y1 = min(ys) * blk, (max(ys) + 1) * blk
+
+        region = b.crop((x0, y0, x1, y1)).convert("RGBA")
+        rw, rh = region.size
+        lum = region.convert("L")
+        lpx = lum.load()
+        vals = sorted(lpx[x, y] for y in range(0, rh, 2) for x in range(0, rw, 2))
+        thr = max(60, vals[int(len(vals) * 0.35)])
+
+        pupil = Image.new("RGBA", (rw, rh), (0, 0, 0, 0))
+        rpx, ppx = region.load(), pupil.load()
+        light = []
+        for y in range(rh):
+            for x in range(rw):
+                r, g, bb, a = rpx[x, y]
+                if a > ALPHA_THR and lpx[x, y] < thr:
+                    ppx[x, y] = (r, g, bb, a)
+                elif a > ALPHA_THR:
+                    light.append((r, g, bb))
+        pm = pupil.getchannel("A").filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+        pupil.putalpha(pm)
+        if not light or pupil.getbbox() is None:
+            continue   # 该连通块没抠出瞳孔（本就是闭眼/噪点）→ 跳过，不影响其它眼
+        fill = tuple(int(median([c_[i] for c_ in light])) for i in range(3))
+
+        p2 = pupil.load()
+        for y in range(rh):
+            for x in range(rw):
+                if p2[x, y][3] > 100:
+                    bpx[x0 + x, y0 + y] = (fill[0], fill[1], fill[2], bpx[x0 + x, y0 + y][3])
+        layer.paste(pupil, (x0, y0), pupil)
+        got = True
+
+    if not got:
+        return None, None
     return body, layer
+
+
+def pixel_square(canvas: Image.Image) -> Image.Image:
+    """把任意画布缩成 PIXEL_SIZE 方格：等比缩到框内，底对齐 + 水平居中。
+
+    与身体帧像素化用的是同一套规则，保证身体帧与眼球层落在同一相对位置。
+    """
+    inner = canvas.copy()
+    inner.thumbnail((PIXEL_SIZE, PIXEL_SIZE), Image.LANCZOS)
+    sq = Image.new("RGBA", (PIXEL_SIZE, PIXEL_SIZE), (0, 0, 0, 0))
+    sq.paste(inner, ((PIXEL_SIZE - inner.width) // 2, PIXEL_SIZE - inner.height), inner)
+    return sq
+
+
+def quantize_square(sq: Image.Image, palette: Image.Image) -> Image.Image:
+    """按共享调色板量化一个方格，并保留硬边 alpha（≥128 记不透明）。"""
+    a = sq.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+    q = sq.convert("RGB").quantize(palette=palette).convert("RGBA")
+    q.putalpha(a)
+    return q
+
+
+def quantize_square_fresh(sq: Image.Image) -> Image.Image:
+    """对单个方格独立取色量化（瞳孔是小暗区，单独取色更稳，属旧行为）。"""
+    a = sq.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+    q = sq.convert("RGB").quantize(colors=PIXEL_COLORS).convert("RGBA")
+    q.putalpha(a)
+    return q
 
 
 # ---------------------------------------------------------------- 主流程
@@ -211,6 +260,8 @@ def main() -> int:
     ap.add_argument("--max-frame", type=int, default=256)
     ap.add_argument("--recommended-scale", type=float, default=4.0)
     ap.add_argument("--no-eyes", action="store_true")
+    ap.add_argument("--grid-eyes", action="store_true",
+                    help="启用九宫格差分旧路径（默认关闭；见第 7 步注释：它会与静图/序列条取景错位）")
     args = ap.parse_args()
 
     out_dir = Path(args.out) if args.out else ROOT / "neko-assets" / args.skin_id
@@ -221,6 +272,7 @@ def main() -> int:
 
     # ---------- 1) 取帧 ----------
     pieces: dict[str, list[tuple[Image.Image, int, int]]] = {}   # state → [(内容图, 离底, 格宽)]
+    eye_cells: dict[str, Image.Image] = {}   # 静态状态眼球层内容（与内容图同尺寸），供公共画布逐像素对齐
     for st in STATES:
         if st in STILL_STATES:
             p = RAW / f"{args.prefix}_still_{st}.png"
@@ -237,8 +289,26 @@ def main() -> int:
                 continue
             content = src.crop(bb)
             gap = src.height - bb[3]
+            # 眼球层来源（docs §7.2 铁律）：静态状态必须用「同一张静图的闭眼版」差分。
+            # 九宫格与静图是两张不同的图，差分出来的瞳孔会与最终帧错位、变成脸上漂浮的色块 —— 这正是
+            # 新皮肤眼神追踪失效的根因。此处直接拿静图 vs 闭眼静图，得到的身体帧与眼球层天然同尺寸同位置。
+            closed_p = RAW / f"{args.prefix}_still_{st}_closed.png"
+            eye_note = ""
+            if not args.no_eyes and closed_p.is_file():
+                csrc = Image.open(closed_p).convert("RGBA")
+                if csrc.size != src.size:
+                    csrc = csrc.resize(src.size, Image.LANCZOS)   # 强制同几何，保证逐像素可比
+                body_norm, layer_norm = extract_pupil_layer(src, csrc)
+                if body_norm is not None and layer_norm is not None:
+                    content = body_norm.crop(bb)          # 身体帧：抹掉瞳孔，眼白留在身体上
+                    eye_cells[st] = layer_norm.crop(bb)   # 眼球层：只含瞳孔，与身体帧同尺寸同位置
+                    eye_note = "  +眼球层(闭眼差分)"
+                else:
+                    eye_note = "  ⚠️ 闭眼差分未定位到眼睛，跳过眼球层"
+            elif not args.no_eyes:
+                eye_note = "  （缺闭眼静图，无眼球层）"
             pieces[st] = [(content, gap, src.width)]
-            print(f"  {st:<6} 静态图 → 1 帧  归一化系数 {sc:.2f}  内容 {content.size}")
+            print(f"  {st:<6} 静态图 → 1 帧  归一化系数 {sc:.2f}  内容 {content.size}{eye_note}")
         else:
             p = RAW / f"{args.prefix}_seq_{st}.png"
             if not p.is_file():
@@ -284,53 +354,51 @@ def main() -> int:
 
     # ---------- 4) 渲染到公共画布 ----------
     rendered: dict[str, list[Image.Image]] = {}
+    eye_rendered: dict[str, list[Image.Image]] = {}   # 静态状态眼球层，与身体帧同画布坐标（缩放后仍逐像素对齐）
     for st, frs in pieces.items():
-        # 水平锚点：取各帧内容中心的中位数，保留帧间相对位移（逐帧重新居中会把动作抹平）
-        anchor = median([(fr[0].width) / 2 + fr[1] * 0 for fr in frs]) if False else None
-        centers = []
-        for (content, gap, cell_w) in frs:
-            centers.append(cell_w / 2)      # 内容已被裁到包围盒，用格心代表原位
         out = []
+        eye_out: list[Image.Image] = []
+        eye_cell = eye_cells.get(st)
         for (content, gap, cell_w) in frs:
             canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
             x = (cw - content.width) // 2
-            y = ch - PAD - gap - content.height
-            canvas.paste(content, (x, max(0, y)), content)
+            y = max(0, ch - PAD - gap - content.height)
+            canvas.paste(content, (x, y), content)
             out.append(canvas)
+            if eye_cell is not None:
+                ec = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+                ec.paste(eye_cell, (x, y), eye_cell)   # 同一 (x, y)：眼球层随公共画布一起缩放 → 永不跑偏
+                eye_out.append(ec)
         rendered[st] = out
+        if eye_out:
+            eye_rendered[st] = eye_out
 
     # ---------- 5) 尺寸 / 量化 ----------
     if args.mode == "pixel":
         fw = fh = PIXEL_SIZE
         flat = [f for v in rendered.values() for f in v]
-        thumb = []
-        for c in flat:
-            inner = c.copy()
-            inner.thumbnail((PIXEL_SIZE, PIXEL_SIZE), Image.LANCZOS)
-            sq = Image.new("RGBA", (PIXEL_SIZE, PIXEL_SIZE), (0, 0, 0, 0))
-            sq.paste(inner, ((PIXEL_SIZE - inner.width) // 2, PIXEL_SIZE - inner.height), inner)
-            thumb.append(sq)
+        thumb = [pixel_square(c) for c in flat]
         print(f"像素模式：帧 {fw}x{fh}，全皮肤共享调色板 {PIXEL_COLORS} 色（{len(thumb)} 帧统一量化）")
         big = Image.new("RGBA", (PIXEL_SIZE * len(thumb), PIXEL_SIZE), (0, 0, 0, 0))
         for i, t in enumerate(thumb):
             big.paste(t, (i * PIXEL_SIZE, 0), t)
         pal = big.convert("RGB").quantize(colors=PIXEL_COLORS, method=Image.MEDIANCUT)
-        finals = []
-        for t in thumb:
-            a = t.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
-            q = t.convert("RGB").quantize(palette=pal).convert("RGBA")
-            q.putalpha(a)
-            finals.append(q)
+        finals = [quantize_square(t, pal) for t in thumb]
         idx = 0
         for st in rendered:
             rendered[st] = finals[idx:idx + len(rendered[st])]
             idx += len(rendered[st])
+        # 眼球层：同一套方格规则，逐帧独立取色量化（瞳孔小暗区单独取色更稳）
+        for st in list(eye_rendered):
+            eye_rendered[st] = [quantize_square_fresh(pixel_square(c)) for c in eye_rendered[st]]
     else:
         scale = min(1.0, args.max_frame / max(cw, ch))
         fw, fh = max(1, int(cw * scale)), max(1, int(ch * scale))
         print(f"高清模式：帧 {fw}x{fh}（下采样 {scale:.3f}）")
         for st in rendered:
             rendered[st] = [c.resize((fw, fh), Image.LANCZOS) for c in rendered[st]]
+        for st in list(eye_rendered):
+            eye_rendered[st] = [c.resize((fw, fh), Image.LANCZOS) for c in eye_rendered[st]]
 
     # ---------- 6) 写出 ----------
     states_meta = []
@@ -347,59 +415,90 @@ def main() -> int:
 
     # ---------- 7) 眼球层 ----------
     eye_keys: list[str] = []
-    if not args.no_eyes and base_sheet.is_file() and closed_sheet.is_file():
-        bs = Image.open(base_sheet).convert("RGBA")
-        cs = Image.open(closed_sheet).convert("RGBA")
-        BW, BH = bs.size
-        # 基准九宫格每格尺寸 → 和序列条格宽对齐（同样按画布比）
-        sc = REF_CELL / (BW // 3)
-        fw_cell = max(1, int((BW // 3) * sc))
-        # 先全部提取，再做离群校验：
-        # sleep / pet 这类"本来就是闭眼/眯眼"的状态，差分出来的不是眼睛（实测 112x14、15x32 这种畸形尺寸），
-        # 直接把畸形结果画上去会在脸上多出一块错位的色斑，必须剔除。
-        raw: list[tuple[str, Image.Image, tuple[int, int, int, int]]] = []
-        for i, st in enumerate(STATES):
-            r, c = divmod(i, 3)
-            box = (c * BW // 3, r * BH // 3, (c + 1) * BW // 3, (r + 1) * BH // 3)
-            bcell = bs.crop(box).resize((fw_cell, fw_cell), Image.LANCZOS)
-            ccell = cs.crop(box).resize((fw_cell, fw_cell), Image.LANCZOS)
-            _body, layer = extract_pupil_layer(bcell, ccell)
-            if layer is None:
-                print(f"  ⚠️ {st}: 没找到集中的眼睛区域，跳过眼球层")
+    if args.no_eyes:
+        print("（按 --no-eyes 跳过眼球层）")
+    else:
+        # 7a) 静态状态（idle/sit）：来自第 1 步的「静图 vs 闭眼静图」差分，已在第 4/5 步按公共画布坐标对齐。
+        #     这是正解（docs §7.2 铁律）：只取瞳孔、眼白留在身体帧上，瞳孔在其内部平移 = 经典眼神追踪。
+        still_raw: list[tuple[str, Image.Image]] = []
+        for st in STATES:
+            if st not in eye_rendered:
                 continue
-            lb = layer.getbbox()
-            if lb is None:
+            lay = eye_rendered[st][0]
+            if lay.getbbox() is None:
                 continue
-            raw.append((st, layer, lb))
-
-        if raw:
-            mw = median([lb[2] - lb[0] for _, _, lb in raw])
-            mh = median([lb[3] - lb[1] for _, _, lb in raw])
-            print(f"  瞳孔尺寸中位数 {mw:.0f}x{mh:.0f}，按 0.35 倍下限做离群校验")
-            for st, layer, lb in raw:
-                w, h = lb[2] - lb[0], lb[3] - lb[1]
+            still_raw.append((st, lay))
+        if still_raw:
+            bbs = [l.getbbox() for _, l in still_raw]
+            mw = median([b[2] - b[0] for b in bbs])
+            mh = median([b[3] - b[1] for b in bbs])
+            print(f"  [静图差分] 瞳孔尺寸中位数 {mw:.0f}x{mh:.0f}，按 0.35 倍下限做离群校验")
+            for st, lay in still_raw:
+                b = lay.getbbox()
+                w, h = b[2] - b[0], b[3] - b[1]
                 if w < mw * 0.35 or h < mh * 0.35:
                     print(f"  ✗ {st}: 瞳孔 {w}x{h} 明显偏离（该状态本就闭眼/眯眼），剔除眼球层")
                     continue
-                if args.mode == "pixel":
-                    inner = layer.copy()
-                    inner.thumbnail((PIXEL_SIZE, PIXEL_SIZE), Image.LANCZOS)
-                    sq = Image.new("RGBA", (PIXEL_SIZE, PIXEL_SIZE), (0, 0, 0, 0))
-                    sq.paste(inner, ((PIXEL_SIZE - inner.width) // 2, PIXEL_SIZE - inner.height), inner)
-                    lay = sq.convert("RGB").quantize(colors=PIXEL_COLORS).convert("RGBA")
-                    lay.putalpha(sq.getchannel("A").point(lambda v: 255 if v >= 128 else 0))
-                else:
-                    lay = layer.resize((fw, fh), Image.LANCZOS)
                 lay.save(out_dir / f"neko_eyes_{st}.png")
                 eye_keys.append(f"eyes_{st}")
-                print(f"  ✓ 眼球层 {st}: 瞳孔 {w}x{h}")
-        if eye_keys:
-            for m in states_meta:
-                if f"eyes_{m['name']}" in eye_keys:
-                    m["eyeLayer"] = f"eyes_{m['name']}"
-        print(f"  眼球层共 {len(eye_keys)}/9（其余用整帧图里的原眼睛）")
-    elif args.no_eyes:
-        print("（按 --no-eyes 跳过眼球层）")
+                print(f"  ✓ 眼球层 {st}: 瞳孔 {w}x{h}（静图 vs 闭眼静图）")
+        else:
+            print("  ⚠️ 静态状态未生成眼球层（缺闭眼静图或未定位到眼睛）")
+
+        # 7b) 九宫格差分旧路径（默认关闭，需 --grid-eyes 显式开启）：
+        #     基准九宫格与静图/序列条是【不同取景】，其差分瞳孔常与最终帧错位成漂浮色块 ——
+        #     正是本次「新皮肤眼神消失」的根因。故默认不跑；仅对尚无眼球层的状态生效，
+        #     保留旧能力但不污染默认产物。动画状态（walk/pet/drag/fall/climb/work）无闭眼版、
+        #     瞳孔跟随价值低 → 保持 eyeLayer=null（眼睛画在身体帧里）。
+        if args.grid_eyes and base_sheet.is_file() and closed_sheet.is_file():
+            bs = Image.open(base_sheet).convert("RGBA")
+            cs = Image.open(closed_sheet).convert("RGBA")
+            BW, BH = bs.size
+            sc = REF_CELL / (BW // 3)
+            fw_cell = max(1, int((BW // 3) * sc))
+            raw: list[tuple[str, Image.Image, tuple[int, int, int, int]]] = []
+            for i, st in enumerate(STATES):
+                if f"eyes_{st}" in eye_keys:
+                    continue                       # 静图差分已给出的，不覆盖（避免错位色斑）
+                r, c = divmod(i, 3)
+                box = (c * BW // 3, r * BH // 3, (c + 1) * BW // 3, (r + 1) * BH // 3)
+                bcell = bs.crop(box).resize((fw_cell, fw_cell), Image.LANCZOS)
+                ccell = cs.crop(box).resize((fw_cell, fw_cell), Image.LANCZOS)
+                _body, layer = extract_pupil_layer(bcell, ccell)
+                if layer is None:
+                    print(f"  ⚠️ [九宫格] {st}: 没找到集中的眼睛区域，跳过眼球层")
+                    continue
+                lb = layer.getbbox()
+                if lb is None:
+                    continue
+                raw.append((st, layer, lb))
+            if raw:
+                mw = median([lb[2] - lb[0] for _, _, lb in raw])
+                mh = median([lb[3] - lb[1] for _, _, lb in raw])
+                print(f"  [九宫格] 瞳孔尺寸中位数 {mw:.0f}x{mh:.0f}，按 0.35 倍下限做离群校验")
+                for st, layer, lb in raw:
+                    w, h = lb[2] - lb[0], lb[3] - lb[1]
+                    if w < mw * 0.35 or h < mh * 0.35:
+                        print(f"  ✗ [九宫格] {st}: 瞳孔 {w}x{h} 明显偏离（该状态本就闭眼/眯眼），剔除眼球层")
+                        continue
+                    if args.mode == "pixel":
+                        lay = quantize_square_fresh(pixel_square(layer))
+                    else:
+                        lay = layer.resize((fw, fh), Image.LANCZOS)
+                    lay.save(out_dir / f"neko_eyes_{st}.png")
+                    eye_keys.append(f"eyes_{st}")
+                    print(f"  ✓ [九宫格] 眼球层 {st}: 瞳孔 {w}x{h}")
+        elif args.grid_eyes:
+            print("  ⚠️ [九宫格] 缺 base/closed 九宫格素材，跳过")
+        else:
+            print("（九宫格旧路径默认关闭，加 --grid-eyes 才跑；动画状态保持 eyeLayer=null）")
+
+        # 汇总：眼球层键写回 states_meta
+        for m in states_meta:
+            k = f"eyes_{m['name']}"
+            if k in eye_keys:
+                m["eyeLayer"] = k
+        print(f"  眼球层共 {len(eye_keys)}/{len(STATES)}（其余用整帧图里的原眼睛）")
 
     # ---------- 8) skin.json ----------
     skin = {
