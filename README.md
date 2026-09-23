@@ -162,3 +162,34 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 - `docs/architecture.md` — 🏛 **架构文档**：分层 / 技术选型 / Core API / 宿主内核要点 / 资源红线 / 径向菜单设计 / 立项决策与差异校准
 - `docs/release-sop.md` — 🚀 **发布 SOP**：版本/文档同步 → 构建与测试闸门 → 发布形态 → 打包 → 清场 checklist
 - `docs/ai-asset-prompts.md` — AI 素材生成提示词
+
+---
+
+## 许可证（License）
+
+本项目采用 **代码与素材分离** 的双许可：
+
+| 范围 | 许可 | 允许商用 |
+|---|---|---|
+| **源代码** —— `src/` `builtins/` `tools/` `tests/` `samples/` `templates/` 及全部 `.md` `.toml` `.json` 文本 | **MIT** | ✅ 允许 |
+| **美术素材** —— `neko-assets/` 下全部图像、图标、截图等 | **CC BY-NC 4.0** | ❌ **不允许**（商用需另行授权） |
+
+- MIT 全文 → [`LICENSE`](LICENSE)
+- 素材许可、署名要求与商用授权 → [`LICENSE-ASSETS`](LICENSE-ASSETS)
+
+> ⚠️ **要商用请注意**：代码部分（MIT）可直接商用；
+> 但**猫 / 菲比的形象素材不能商用**——请替换为自绘素材，或联系作者取得授权。
+
+### 第三方依赖
+
+| 依赖 | 许可 | 用途 |
+|---|---|---|
+| [Hardcodet.NotifyIcon.Wpf](https://github.com/hardcodet/wpf-notifyicon) | MIT | 托盘图标 |
+| [Tomlyn](https://github.com/xoofx/Tomlyn) | MIT | `plugin.toml` 解析 |
+| [lunar-csharp](https://github.com/6tail/lunar-csharp) | MIT | 农历 / 八字换算 |
+| `System.Drawing.Common` · `System.Security.Cryptography.ProtectedData` | MIT | .NET 官方库 |
+
+### 免责声明
+
+「Neko」是**个人学习项目**，与任何公司或组织无关，按「原样」提供、不附带任何担保。
+隐私说明见 [`PRIVACY.md`](PRIVACY.md)，安全问题反馈见 [`SECURITY.md`](SECURITY.md)。

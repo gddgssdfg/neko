@@ -1,0 +1,64 @@
+# 美术素材许可（Art Assets License）
+
+本仓库的**美术素材**采用 **Creative Commons Attribution-NonCommercial 4.0 International（CC BY-NC 4.0）**，
+**不适用**根目录 [`LICENSE`](LICENSE)（MIT）的条款。
+
+> 简单说：**代码可以商用，图不行。**
+
+---
+
+## 1. 适用范围
+
+**适用（CC BY-NC 4.0）** —— 仓库内全部图像类素材：
+
+| 路径 | 内容 |
+|---|---|
+| `neko-assets/**` | 各皮肤帧图 `neko_*.png`、眼球层 `neko_eyes_*.png`、`skin.json` 中的图像、`thumb.png`、`tray.ico` |
+| `neko-assets/icons/` `neko-assets/ui/` `neko-assets/mirror/` | 图标与 UI 图像 |
+| `README.md` / `docs/**` 中的截图、示意图 | 文档配图 |
+| 其它目录下的 `.png` / `.ico` / `.gif` / `.jpg` 文件 | 图像文件 |
+
+**不适用（走 MIT）** —— 源代码与文本：
+
+`src/` · `builtins/` · `tools/` · `tests/` · `samples/` · `templates/` · 根目录与 `docs/` 下的 `.md` `.toml` `.json` `.wxs` 等文本文件。
+
+---
+
+## 2. 在 CC BY-NC 4.0 下你可以
+
+- **署名后非商业性**地复制、分发、公开传播这些素材
+- **改编 / 二次创作**（例如做自己的皮肤、改色、拼贴）
+- 用于个人学习、评测、非商业的视频 / 直播 / 同人作品
+
+## 3. 你必须
+
+- **署名（Attribution）** —— 注明素材来源与作者，例如：
+
+  > 素材来自 **Neko 桌宠项目** <https://gitee.com/gddgssdfg/neko>
+  > 作者 **Lantern**，许可 **CC BY-NC 4.0**
+
+  并在改编时**标明做了哪些修改**。
+
+- **非商业（NonCommercial）** —— 不得用于商业目的，包括但不限于：
+  售卖、捆绑进商业产品、用于商业广告/推广、以付费墙提供等。
+  **商用需另行取得作者授权。**
+
+- **相同方式共享（ShareAlike）** —— 你改编后的素材，分发时须沿用 CC BY-NC 4.0 或兼容许可。
+
+## 4. 许可全文
+
+- 法律全文（中文）：<https://creativecommons.org/licenses/by-nc/4.0/legalcode.zh-Hans>
+- 通俗摘要（中文）：<https://creativecommons.org/licenses/by-nc/4.0/deed.zh-Hans>
+
+## 5. 商业授权
+
+如需**商业使用**这些素材，请联系仓库作者另行协商授权。
+
+---
+
+## 6. 说明
+
+- 本项目是**个人学习项目**，与任何公司或组织无关。
+- 「Neko」的形象与角色设定为作者原创（部分素材由 AI 生成后人工筛选/加工）。
+- 若你认为本仓库中有素材侵犯了你的权利，请通过仓库 Issue 联系，会尽快处理。
+- **二次分发时请同时保留 `LICENSE` 与 `LICENSE-ASSETS` 两个文件。**
