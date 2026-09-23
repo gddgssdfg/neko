@@ -1,0 +1,12 @@
+=== 全部通过 ===
+ 汇总：加载 18/18 成功；OnLoad 异常 0；OnUnload 异常 0
+ 结论：PASS
+=== 全部通过 ===
+ [PASS] build sln (Debug, 0 warn/0 err)                  6.4s  0 警告 0 错误
+ [PASS] build tests (LoaderTest/UiProbe/PluginSmoke)    29.1s  3 个测试工程均构建成功
+ [PASS] run LoaderTest                                   0.5s  全部通过（exit 0）
+ [PASS] run PluginSmoke                                 58.4s  18/18 加载成功，ALC 未回收 0 个
+ [PASS] run UiProbe                                     32.6s  全部通过（进程未自行退出，已被脚本终止）
+ [PASS] git status --short                               0.5s  25 项未提交改动
+ 结论：全部闸门通过 ✅
+ci_exit=0

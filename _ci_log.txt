@@ -1,0 +1,415 @@
+Neko 本地 CI 开始
+  仓库根        : G:\lantetn-li\neko
+  dotnet 包装器 : /c/Users/Lantern/neko-dotnet-env.sh
+  Determining projects to restore...
+  所有项目均是最新的，无法还原。
+  DesktopPet.Core -> G:\lantetn-li\neko\src\DesktopPet.Core\bin\Debug\net8.0\DesktopPet.Core.dll
+  DesktopPet.Runtime -> G:\lantetn-li\neko\src\DesktopPet.Runtime\bin\Debug\net8.0\DesktopPet.Runtime.dll
+  DesktopPet.Sdk -> G:\lantetn-li\neko\src\DesktopPet.Sdk\bin\Debug\net8.0-windows\DesktopPet.Sdk.dll
+  DesktopPet.Builtin.ColorPicker -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.ColorPicker\bin\Debug\net8.0-windows\ColorPicker.dll
+  DesktopPet.Builtin.HourlyChime -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.HourlyChime\bin\Debug\net8.0-windows\HourlyChime.dll
+  DesktopPet.Builtin.Fortune -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Fortune\bin\Debug\net8.0-windows\Fortune.dll
+  DesktopPet.Builtin.Affection -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Affection\bin\Debug\net8.0-windows\Affection.dll
+  DesktopPet.Builtin.TodoList -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.TodoList\bin\Debug\net8.0-windows\TodoList.dll
+  DesktopPet.Builtin.WordCard -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.WordCard\bin\Debug\net8.0-windows\WordCard.dll
+  DesktopPet.Builtin.ClipboardHistory -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.ClipboardHistory\bin\Debug\net8.0-windows\ClipboardHistory.dll
+  DesktopPet.Builtin.SystemInfo -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.SystemInfo\bin\Debug\net8.0-windows\SystemInfo.dll
+  DesktopPet.Builtin.Quote -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Quote\bin\Debug\net8.0-windows\Quote.dll
+  DesktopPet.Builtin.MusicControl -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.MusicControl\bin\Debug\net8.0-windows\MusicControl.dll
+  DesktopPet.Builtin.Weather -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Weather\bin\Debug\net8.0-windows\Weather.dll
+  DesktopPet.Builtin.Notes -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Notes\bin\Debug\net8.0-windows\Notes.dll
+  DesktopPet.Builtin.Countdown -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Countdown\bin\Debug\net8.0-windows\Countdown.dll
+  DesktopPet.Builtin.Pomodoro -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Pomodoro\bin\Debug\net8.0-windows\Pomodoro.dll
+  DesktopPet.Builtin.Bazi -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Bazi\bin\Debug\net8.0-windows\Bazi.dll
+  DesktopPet.Builtin.Screenshot -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Screenshot\bin\Debug\net8.0-windows\Screenshot.dll
+  DesktopPet.Builtin.SleepReminder -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.SleepReminder\bin\Debug\net8.0-windows\SleepReminder.dll
+  DesktopPet.Builtin.QuickSearch -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.QuickSearch\bin\Debug\net8.0-windows\QuickSearch.dll
+  DesktopPet.App -> G:\lantetn-li\neko\src\DesktopPet.App\bin\Debug\net8.0-windows\win-x64\Neko.dll
+  [gen_builtins_lock] 宸插啓鍏?bin\Debug\net8.0-windows\win-x64\builtins.lock.json锛?8 涓唴缃彃浠讹級
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:05.24
+  Determining projects to restore...
+  所有项目均是最新的，无法还原。
+  DesktopPet.Core -> G:\lantetn-li\neko\src\DesktopPet.Core\bin_ci\Debug\net8.0\DesktopPet.Core.dll
+  DesktopPet.Sdk -> G:\lantetn-li\neko\src\DesktopPet.Sdk\bin_ci\Debug\net8.0-windows\DesktopPet.Sdk.dll
+  DesktopPet.Runtime -> G:\lantetn-li\neko\src\DesktopPet.Runtime\bin_ci\Debug\net8.0\DesktopPet.Runtime.dll
+  SamplePlugin -> G:\lantetn-li\neko\samples\SamplePlugin\bin_ci\Debug\net8.0-windows\SamplePlugin.dll
+  DesktopPet.Builtin.Affection -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Affection\bin_ci\Debug\net8.0-windows\Affection.dll
+  LoaderTest -> G:\lantetn-li\neko\tests\LoaderTest\bin_ci\Debug\net8.0-windows\LoaderTest.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:05.91
+  Determining projects to restore...
+  所有项目均是最新的，无法还原。
+  DesktopPet.Core -> G:\lantetn-li\neko\src\DesktopPet.Core\bin_ci\Debug\net8.0\DesktopPet.Core.dll
+  DesktopPet.Runtime -> G:\lantetn-li\neko\src\DesktopPet.Runtime\bin_ci\Debug\net8.0\DesktopPet.Runtime.dll
+  DesktopPet.Sdk -> G:\lantetn-li\neko\src\DesktopPet.Sdk\bin_ci\Debug\net8.0-windows\DesktopPet.Sdk.dll
+  DesktopPet.Builtin.Quote -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Quote\bin_ci\Debug\net8.0-windows\Quote.dll
+  DesktopPet.Builtin.Affection -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Affection\bin_ci\Debug\net8.0-windows\Affection.dll
+  DesktopPet.Builtin.SystemInfo -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.SystemInfo\bin_ci\Debug\net8.0-windows\SystemInfo.dll
+  DesktopPet.Builtin.QuickSearch -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.QuickSearch\bin_ci\Debug\net8.0-windows\QuickSearch.dll
+  DesktopPet.Builtin.SleepReminder -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.SleepReminder\bin_ci\Debug\net8.0-windows\SleepReminder.dll
+  DesktopPet.Builtin.Notes -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Notes\bin_ci\Debug\net8.0-windows\Notes.dll
+  DesktopPet.Builtin.ClipboardHistory -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.ClipboardHistory\bin_ci\Debug\net8.0-windows\ClipboardHistory.dll
+  DesktopPet.Builtin.Screenshot -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Screenshot\bin_ci\Debug\net8.0-windows\Screenshot.dll
+  DesktopPet.Builtin.Pomodoro -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Pomodoro\bin_ci\Debug\net8.0-windows\Pomodoro.dll
+  DesktopPet.Builtin.MusicControl -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.MusicControl\bin_ci\Debug\net8.0-windows\MusicControl.dll
+  DesktopPet.Builtin.Countdown -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Countdown\bin_ci\Debug\net8.0-windows\Countdown.dll
+  DesktopPet.Builtin.HourlyChime -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.HourlyChime\bin_ci\Debug\net8.0-windows\HourlyChime.dll
+  DesktopPet.Builtin.Weather -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Weather\bin_ci\Debug\net8.0-windows\Weather.dll
+  DesktopPet.Builtin.WordCard -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.WordCard\bin_ci\Debug\net8.0-windows\WordCard.dll
+  DesktopPet.Builtin.Bazi -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Bazi\bin_ci\Debug\net8.0-windows\Bazi.dll
+  DesktopPet.Builtin.ColorPicker -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.ColorPicker\bin_ci\Debug\net8.0-windows\ColorPicker.dll
+  DesktopPet.Builtin.Fortune -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.Fortune\bin_ci\Debug\net8.0-windows\Fortune.dll
+  DesktopPet.Builtin.TodoList -> G:\lantetn-li\neko\builtins\DesktopPet.Builtin.TodoList\bin_ci\Debug\net8.0-windows\TodoList.dll
+  DesktopPet.App -> G:\lantetn-li\neko\src\DesktopPet.App\bin_ci\Debug\net8.0-windows\win-x64\Neko.dll
+  [gen_builtins_lock] 宸插啓鍏?bin_ci/Debug\net8.0-windows\win-x64\builtins.lock.json锛?8 涓唴缃彃浠讹級
+  UiProbe -> G:\lantetn-li\neko\tests\UiProbe\bin_ci\Debug\net8.0-windows\win-x64\UiProbe.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:17.09
+  Determining projects to restore...
+  所有项目均是最新的，无法还原。
+  DesktopPet.Core -> G:\lantetn-li\neko\src\DesktopPet.Core\bin_ci\Debug\net8.0\DesktopPet.Core.dll
+  DesktopPet.Runtime -> G:\lantetn-li\neko\src\DesktopPet.Runtime\bin_ci\Debug\net8.0\DesktopPet.Runtime.dll
+  DesktopPet.Sdk -> G:\lantetn-li\neko\src\DesktopPet.Sdk\bin_ci\Debug\net8.0-windows\DesktopPet.Sdk.dll
+  PluginSmoke -> G:\lantetn-li\neko\tests\PluginSmoke\bin_ci\Debug\net8.0-windows\PluginSmoke.dll
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:01.82
+插件目录: C:\Users\Lantern\AppData\Local\Temp\neko-loader-test-e59536515b5d43149b4840de71eedd69\plugins\com.lantern.sample
+包含文件: DesktopPet.Core.dll, DesktopPet.Sdk.dll, plugin.toml, SamplePlugin.dll
+
+插件目录: C:\Users\Lantern\AppData\Local\Temp\neko-loader-test-e59536515b5d43149b4840de71eedd69\plugins\com.lantern.affection
+包含文件: Affection.dll, DesktopPet.Core.dll, DesktopPet.Sdk.dll, plugin.toml
+
+=== 测试 1：示例插件加载链路 ===
+PASS: 示例插件加载成功
+  Id = com.lantern.sample, 权限掩码 = PetAnimate, PetRead, UIRegister, Storage, ALC 可回收 = True
+PASS: 权限授予正确 = PetAnimate, PetRead, UIRegister, Storage
+PASS: 示例插件 OnLoad 成功
+PASS: 径向菜单槽位已注册 = 打个招呼
+
+=== 测试 2：好感度内置插件（dogfooding）===
+PASS: 好感度插件加载成功, 实例 = DesktopPet.Builtin.Affection.AffectionPlugin
+PASS: 好感度槽位已注册 = 陌生
+PASS: 去抖生效：FlushNow() 前磁盘 score = 1（< 11，未每次都写盘）
+PASS: 11 次抚摸 + FlushNow() 后好感度持久化 = 11
+PASS: 升级反应已触发（共 1 条升级消息），例: "好感度提升！我们熟起来了~"
+  全部 Say 共 10 条
+
+=== 测试 3：卸载 ===
+PASS: 所有插件 ALC 可回收（IsCollectible=true，支持卸载）
+PASS: 全部插件卸载成功 (OnUnload + Dispose + Context.Unload 均未抛)
+PASS: 卸载前已登记事件订阅（PetPetted 处理器 = 1）
+PASS: OnUnload 已解绑事件（PetPetted 处理器 1 → 0）
+
+=== 测试 4：加载 App 输出目录插件（发布形态）===
+PASS: App 输出目录成功加载好感度插件, 实例 = DesktopPet.Builtin.Affection.AffectionPlugin
+PASS: OnLoad 创建了插件数据目录
+PASS: 发布形态去抖生效：FlushNow() 前磁盘 score = 1（< 11）
+PASS: 发布形态插件 11 次抚摸 + FlushNow() 后好感度 = 11
+
+=== 测试 5：命理插件（第三方依赖 lunar.dll 的 ALC 解析）===
+插件目录文件: Bazi.deps.json, Bazi.dll, Bazi.pdb, lunar.dll, plugin.toml
+PASS: 命理插件加载成功（Bazi.dll 在 ALC 下实例化）
+PASS: 权限授予正确 = PetAnimate, PetRead, UIRegister, Storage, Scheduler, Notify, Network
+PASS: OnLoad 成功（lunar 计算未抛异常 → 第三方依赖在插件 ALC 下可用）
+  [内存] 加载前 37.07 MB → OnLoad+算盘后 47.55 MB，差值 10.48 MB
+PASS: 径向槽位已注册 = bazi-ask（问问猫）+ bazi-today（今日运势）
+PASS: 设置页已注册且 Title == Manifest.Id
+PASS: lunar 已知用例回归通过（1981-01-29→1989-02-18 / 2020-01-06→2020-02-06 / 立春边界）
+PASS: DailyFortuneBuilder 自检通过（五行生克 5 例 + 播报冒烟 + MBTI 16 型全覆盖/按类型分支 + 开关默认关/关闭残留回退）
+PASS: MbtiQuiz 计分自检通过（93 题 + EI23/SN26/TF24/JP20 四维题量 + 全选A→ESTJ / 全选B→INFP / 平局取首极）
+PASS: 「今日运势」手动播报 Say = "今日庚子日：今日金当前，你的火日主克之有余，适合主动出击。宜祭祀、沐浴、修饰垣墙，忌嫁娶、入宅、安床。"
+PASS: 完整运势已走 System.Notify（首条 165 字，含「能量基调」）
+PASS: ApiKeyProtector 自检通过（DPAPI 往返 + 明文兼容）
+PASS: FortunePrompt 自检通过（含铁律 + 四柱/日主/五行/今日干支/宜忌）
+PASS: DeepSeekClient 自检通过（空 Key 返回可读错误而非抛异常）
+PASS: ChatHistory 落盘与旧版 STJ 默认逐字节一致（[{"Role":"user","Content":"q1"},{"Role":"assistant","Content":"a1"}]）
+PASS: ChatHistory 向后兼容：旧版 STJ 存档读回 2 条
+PASS: 无 Key 点「问问猫」给出可读提示 = "先在设置页填写 DeepSeek API Key，我才能开启 AI 咨询~"
+  [内存] 全链路跑完后 48.85 MB（较加载前 +11.78 MB）
+
+=== 测试 6：内置插件信任通道（审计 P0-4 T02）===
+PASS: 夹具被正确判为高危（UIRegister, Process）
+PASS: 断言1: Empty 信任集 → 高危插件被拒载（插件声明了高风险权限且未受信任，拒绝自动加载: UIRegister, Process（插件 'com.lantern.highrisk-fixture' 不在内置信任清单内））
+PASS: 断言1b: Empty.IsTrusted 恒 false（插件 'com.lantern.highrisk-fixture' 不在内置信任清单内）
+PASS: 断言3a: 缺失清单 → Empty + warning 且不抛（未找到内置插件信任清单「C:\Users\Lantern\AppData\Local\Temp\neko-trust-d1b4cb71a33d4e7fae6b1b2152b935dd\missing.lock.json」，按「一律不信任」处理）
+PASS: 断言3b: 损坏清单 → Empty + warning 且不抛（信任清单加载失败（按「一律不信任」处理）: 'not a json ][ {' is an invalid JSON literal. Expected the literal 'null'. Path: $ | LineNumber: 0 | BytePositionInLine: 1.）
+PASS: 断言2 前置: 合法清单无 warning
+PASS: 断言2: 含 id 的信任清单 → 高危插件被放行（实例 SamplePlugin.SamplePlugin）
+PASS: 断言4a: 摘要不匹配 → IsTrusted=false（入口 dll 摘要不匹配（清单 000000000000…，现场 33568f39b386…））
+PASS: 断言4b: 摘要不匹配 → 仍拒载（插件声明了高风险权限且未受信任，拒绝自动加载: UIRegister, Process（入口 dll 摘要不匹配（清单 000000000000…，现场 33568f39b386…）））
+PASS: 断言4c（正向对照）: 摘要匹配 → 受信放行（命中内置信任清单且内容摘要匹配）
+  [信息/弱验证] com.lantern.music 当前声明非高危（UIRegister, MediaKey）→ 不受信任清单约束，下方「受信后放行」断言对非高危插件恒真；高危信任强用例见 tests/TrustProbe
+PASS: 端到端（弱验证）: 带信任清单时非高危 com.lantern.music 仍可加载（实例 DesktopPet.Builtin.MusicControl.MusicControlPlugin）
+
+=== 全部通过 ===
+============================================================
+ Neko 内置插件冒烟报告
+   App 输出       : G:\lantetn-li\neko\src\DesktopPet.App\bin\Debug\net8.0-windows\win-x64
+   插件根目录     : G:\lantetn-li\neko\src\DesktopPet.App\bin\Debug\net8.0-windows\win-x64\plugins
+   发现插件       : 18 个
+   空闲观测窗口   : 3200 ms / 插件
+   宿主版本(伪造) : 1.0.0    进程位数: x64
+   安全约束       : 不调用槽位回调；截图/媒体键/网络均不触发；不碰真实剪贴板
+============================================================
+
+[ 1/18] com.lantern.affection        ... loaded  cpu=0ms  slots=1  timers=0
+[ 2/18] com.lantern.bazi             ... loaded  cpu=31ms  slots=2  timers=0
+[ 3/18] com.lantern.clipboard        ... loaded  cpu=62ms  slots=1  timers=1
+[ 4/18] com.lantern.colorpicker      ... loaded  cpu=0ms  slots=1  timers=0
+[ 5/18] com.lantern.countdown        ... loaded  cpu=47ms  slots=4  timers=0
+[ 6/18] com.lantern.fortune          ... loaded  cpu=0ms  slots=1  timers=0
+[ 7/18] com.lantern.hourly           ... loaded  cpu=16ms  slots=1  timers=0
+[ 8/18] com.lantern.music            ... loaded  cpu=0ms  slots=3  timers=0
+[ 9/18] com.lantern.notes            ... loaded  cpu=16ms  slots=1  timers=0
+[10/18] com.lantern.pomodoro         ... loaded  cpu=0ms  slots=2  timers=0
+[11/18] com.lantern.quote            ... loaded  cpu=0ms  slots=1  timers=0
+[12/18] com.lantern.screenshot       ... loaded  cpu=0ms  slots=1  timers=0
+[13/18] com.lantern.search           ... loaded  cpu=0ms  slots=1  timers=0
+[14/18] com.lantern.sleep            ... loaded  cpu=16ms  slots=2  timers=0
+[15/18] com.lantern.sysinfo          ... loaded  cpu=0ms  slots=1  timers=0
+[16/18] com.lantern.todo             ... loaded  cpu=16ms  slots=1  timers=0
+[17/18] com.lantern.weather          ... loaded  cpu=16ms  slots=2  timers=0
+[18/18] com.lantern.wordcard         ... loaded  cpu=0ms  slots=2  timers=0
+
+表 A｜加载 / 内存 / CPU / 卸载（一行一个插件）
+----------------------------------------------------------------------------------------------------------------------
+id                        load  onLoad  onUnload  dPrivMB   dHeapMB   rPrivMB   rHeapMB   cpuMs    alc   
+----------------------------------------------------------------------------------------------------------------------
+com.lantern.affection     OK    OK      OK        0.75      0.02      0.76      -0.00     0        Y     
+com.lantern.bazi          OK    OK      OK        1.91      0.10      2.38      0.09      31       Y     
+com.lantern.clipboard     OK    OK      OK        0.87      0.05      2.23      0.04      62       Y     
+com.lantern.colorpicker   OK    OK      OK        0.11      0.02      -0.52     0.00      0        Y     
+com.lantern.countdown     OK    OK      OK        0.05      0.01      0.50      -0.02     47       Y     
+com.lantern.fortune       OK    OK      OK        0.07      0.02      -0.47     -0.01     0        Y     
+com.lantern.hourly        OK    OK      OK        0.00      0.02      1.40      0.00      16       Y     
+com.lantern.music         OK    OK      OK        0.14      0.00      -0.75     -0.01     0        Y     
+com.lantern.notes         OK    OK      OK        0.21      0.02      0.03      0.00      16       Y     
+com.lantern.pomodoro      OK    OK      OK        0.02      0.02      -0.52     0.00      0        Y     
+com.lantern.quote         OK    OK      OK        -0.16     0.02      0.32      0.00      0        Y     
+com.lantern.screenshot    OK    OK      OK        0.00      0.02      0.05      -0.00     0        Y     
+com.lantern.search        OK    OK      OK        0.00      0.02      -0.39     0.00      0        Y     
+com.lantern.sleep         OK    OK      OK        0.20      0.02      0.14      0.00      16       Y     
+com.lantern.sysinfo       OK    OK      OK        0.00      0.02      -0.20     0.00      0        Y     
+com.lantern.todo          OK    OK      OK        0.45      0.00      1.61      -0.01     16       Y     
+com.lantern.weather       OK    OK      OK        0.07      0.02      0.86      0.00      16       Y     
+com.lantern.wordcard      OK    OK      OK        0.80      0.02      -1.04     0.00      0        Y     
+----------------------------------------------------------------------------------------------------------------------
+  dPrivMB/dHeapMB = OnLoad 后 相对 加载前 的进程私有内存 / GC 堆增量
+  rPrivMB/rHeapMB = OnUnload+GC 后 的残留（≈负值代表压缩回收；明显正值 = 卸载没退干净）
+  cpuMs           = 空闲窗口内的进程累计 CPU 增量（越大越说明「闲着也烧 CPU」）
+  alc             = 卸载并强制 GC 后 ALC 是否真的被回收（Y=可回收，N=有根引用残留）
+
+表 B｜注册与闲置行为明细
+------------------------------------------------------------------------------------------------------------------------------------------
+id                        slot  page  tray  tmrC  tmrL  clip  say   say!  cbThr  cbErr  notify activeTimers 
+------------------------------------------------------------------------------------------------------------------------------------------
+com.lantern.affection     1     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.bazi          2     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.clipboard     1     0     0     1     0     1     0     0     0      0      0      0            
+com.lantern.colorpicker   1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.countdown     4     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.fortune       1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.hourly        1     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.music         3     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.notes         1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.pomodoro      2     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.quote         1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.screenshot    1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.search        1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.sleep         2     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.sysinfo       1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.todo          1     0     0     0     0     0     0     0     0      0      0      0            
+com.lantern.weather       2     1     0     0     0     0     0     0     0      0      0      0            
+com.lantern.wordcard      2     0     0     0     0     0     0     0     0      0      0      0            
+------------------------------------------------------------------------------------------------------------------------------------------
+  slot/page/tray = OnLoad 注册的径向槽位 / 设置页 / 托盘项数量
+  tmrC = 空闲期创建的定时器数；tmrL = OnUnload 后仍未 Dispose 的定时器数（>0 = 泄漏）
+  clip = 空闲期 ReadClipboard 调用次数；say/notify = 空闲期 Pet.Say / System.Notify 次数
+  say!/cbThr = Say 调用 / 定时回调 发生在「非主线程」上的次数（>0 = 宿主 Pet.Say 跨线程隐患）
+
+问题清单
+------------------------------------------------------------------------------
+[加载失败] 0 个
+  （无）
+[OnLoad 抛异常] 0 个
+  （无）
+[OnUnload 抛异常] 0 个
+  （无）
+[Dispose/ALC.Unload 抛异常] 0 个
+  （无）
+[定时器泄漏（OnUnload 后仍有活动句柄）] 0 个
+[事件未解绑（OnUnload 后处理器数 > 加载前）] 0 个
+[ALC 未能回收（强制 GC 后弱引用仍存活）] 0 个
+[常驻内存增量 Top（OnLoad 后 进程私有内存增量）]
+  · com.lantern.bazi           dPriv=1.91 MB  dHeap=0.10 MB
+  · com.lantern.clipboard      dPriv=0.87 MB  dHeap=0.05 MB
+  · com.lantern.wordcard       dPriv=0.80 MB  dHeap=0.02 MB
+  · com.lantern.affection      dPriv=0.75 MB  dHeap=0.02 MB
+  · com.lantern.todo           dPriv=0.45 MB  dHeap=0.00 MB
+[闲置 CPU 增量 Top]
+  · com.lantern.clipboard      cpu=62 ms / 3200 ms  timers=1  clip=1
+  · com.lantern.countdown      cpu=47 ms / 3200 ms  timers=0  clip=0
+  · com.lantern.bazi           cpu=31 ms / 3200 ms  timers=0  clip=0
+  · com.lantern.hourly         cpu=16 ms / 3200 ms  timers=0  clip=0
+  · com.lantern.notes          cpu=16 ms / 3200 ms  timers=0  clip=0
+[定时器回调抛异常]
+  （无）
+
+OnLoad 副作用标注（本工具已运行这些 OnLoad）
+------------------------------------------------------------------------------
+  · com.lantern.affection      仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.bazi           OnLoad 默认不跑自检（v0.1.84：仅当 NEKO_PLUGIN_SELFTEST=1 时跑 6 项：lunar 排盘 + 运势 + MBTI 计分 + DPAPI 往返），无网络、无写盘
+  · com.lantern.clipboard      OnLoad 读一次剪贴板（本工具用纯内存替身，不碰真实剪贴板）
+  · com.lantern.colorpicker    仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.countdown      仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.fortune        仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.hourly         仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.music          仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.notes          仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.pomodoro       仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.quote          仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.screenshot     OnLoad 创建插件数据目录（写盘，路径在临时目录内）
+  · com.lantern.search         仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.sleep          仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.sysinfo        仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.todo           仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.weather        仅注册 UI / 读 Storage，无外部副作用
+  · com.lantern.wordcard       仅注册 UI / 读 Storage，无外部副作用
+  说明：本工具的系统能力全部为纯内存替身，所谓「写盘」仅落在临时目录；
+        槽位回调（截图 / 媒体键 / 联网 / 打开浏览器）一律未调用。
+
+============================================================
+ 汇总：加载 18/18 成功；OnLoad 异常 0；OnUnload 异常 0
+ 结论：PASS
+============================================================
+PASS: 径向菜单 50 次 Show/Hide
+PASS: 径向菜单 连点 10 次（已显示时重复打开）
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+PASS: 宠物窗口尺寸 102.4x102.4（期望 102.4x102.4）
+PASS: 位置记忆恢复（期望 Left=200 Top=150，实际 200x150）
+PASS: 游戏模式全屏判定：盖满 ≥98% / 普通窗口 / 最小化窗口
+PASS: PetWindow 开/关菜单 20 次
+PASS: PetWindow ToggleRadialMenu 10 轮（热键路径）
+PASS: 拖拽甩动压测：StartFall 连续 30 次（验证落体定时器不再叠加）
+PASS: 抚摸压测：Pet 连续 50 次
+PASS: 边缘吸附压测：AttachEdge/DetachEdge 各 20 次
+PASS: 落体定时器字段持有正确（非 null，证明 #2 修复没回退）
+PASS: 槽位图标 PNG 缓存加载成功（icons/ 目录 + default 回退）
+PASS: 径向菜单 22 槽位分页：单页 ≤ 8，翻页 5 轮不崩
+      [像素] 洞 alpha=0（应≈0），底盘 alpha=242 B=242（应≈255）；截图: C:\Users\Lantern\AppData\Local\Temp\neko-radial-v0.1.25.png
+PASS: 径向菜单渲染像素：中心洞透明（透出猫）+ 底盘近乎不透明（能看清）
+PASS: 键鼠映射窗：66 键注册 + 鼠标 3 区 + 高亮/拍爪切换
+PASS: 设置页：构建 + 5 个 section 切换不崩
+PASS: v0.1.71(径向菜单)：设置页构建 + 关键控件（数量上限 / 顺序显隐列表 / 恢复默认）
+PASS: v0.1.39：键盘镜像 + 轮盘跟随猫 + 映射窗以猫为锚
+PASS: v0.1.40：像素云朵气泡渲染 + 活跃度统计 + 好感度档位
+PASS: v0.1.41：首启引导窗口构建 + 称呼/猫名注入台词
+PASS: v0.1.43：猫爪跟随按键（键盘爪滑到键上 / 鼠标爪滑到按钮上）
+PASS: v0.1.46：插件开关（Disable 卸载 + 撤销 UI + IsEnabled；Enable 重载）
+PASS: v0.1.67：命理插件 ChatWindow（构造 + 关键控件 + 失败路径可读提示）
+PASS: v0.1.73：命理插件人格定制（默认关闭 + 93 题 + 入口显隐 + 问卷窗口控件）
+PASS: v0.1.74：皮肤（skin.json 扫目录发现；pixel/soft 元数据与旧硬编码一致）
+PASS: v0.1.74：损坏 skin.json 被跳过（不抛异常）；无有效皮肤时回退内置默认
+PASS: v0.1.76：skin.json 是 fps 唯一权威（只改 skin.json 的 fps 即生效；anim.json 不再覆盖）
+PASS: v0.1.77：自动更新（IsNewer 语义化比较 + 真实 Gitee 响应解析）
+PASS: v0.1.77：UpdateService 网络失败静默返回 null（不抛）
+PASS: v0.1.50：Config Theme/Language 字段 + SettingsWindow 主题色按主题实例化
+PASS: 设置页 ChoiceCard：点击后选中项实时高亮（150ms ColorAnimation）
+PASS: v0.1.59(P4/⑩/⑨)：渲染时钟统一 _clockMs + 鼠标张望增益 + 好感度驱动心情
+PASS: v0.1.59(⑧)：爱心粒子浮层——Burst 生成 3~5 颗 + 淡出后自动隐藏 + 背景穿透
+PASS: v0.1.59(⑦)：抛物线物理——真实时序水平飞行 + 越界防护 + 触地摩擦常量
+PASS: v0.1.61(日志)：Log.Error 写文件且内容含消息
+PASS: v0.1.61(日志)：多线程并发调用不抛异常
+PASS: v0.1.61(日志)：目录不存在时自动创建
+  off 级别：未写盘 OK
+PASS: v0.1.61(日志)：级别过滤（off 不写 / warn 默认）
+  熔断生效：失败 5 次后定时器停用，异常已落盘
+  宿主进程存活（本探针继续运行即证明）
+PASS: v0.1.61(调度器)：回调抛异常不拖垮宿主 + 记日志 + 熔断
+PASS: v0.1.61(调度器)：正常回调不被熔断 + 连续失败后恢复归零
+  500 个 At(DateTime.Now)(4 线程并发) 回调全部触发；句柄均有效；进程存活；0 未处理异常
+PASS: v0.1.77(调度器)：4 线程 × 125 并发 At(DateTime.Now) 不杀宿主（P0-5 竞态回归）
+  隐藏/覆盖/截断/缺省/冻结/清理 六项全通过
+PASS: v0.1.71(径向菜单)：RadialMenuResolver 隐藏过滤 + Order 覆盖 + 数量上限截断 + 缺省回退
+  隔离/原子写/透传 三项全通过
+PASS: v0.1.74(配置)：损坏文件隔离保留 + 原子写无 tmp 残留 + 未知字段透传
+PASS: v0.1.81：hd 皮肤 recommendedScale 声明 + 切换自动套用（pixel/soft 未声明不改用户缩放）
+PASS: v0.1.82：重复选皮肤重套推荐缩放 + 未声明皮肤零副作用 + 步进器 ± 从活值起算
+PASS: v0.1.82：动画皮肤契约（8 帧 / 静态态 fps=0）+ 设置页缩略图齐备
+PASS: v0.1.82：线程池调 Pet.Say 能弹出气泡（插件定时器跨线程路径）
+
+=== 全部通过 ===
+
+---- git status --short ----
+M src/DesktopPet.App/Renderer/PetRenderer.cs
+?? _blinkA.txt
+?? _blink_ab_all.png
+?? _blink_ab_cat_hd.png
+?? _blink_before_cat_hd.png
+?? _blink_before_cat_hd_blank.png
+?? _blink_before_cat_hd_open.png
+?? _blink_probe.py
+?? _build_app.txt
+?? _ci_log.txt
+?? _gitst.txt
+?? _hbA.txt
+?? _hbB.txt
+?? _hb_after/
+?? _hb_before/
+?? _hb_sheet.py
+?? _hb_sheet.txt
+?? _hb_sheet_edit.txt
+?? _probe_bin.txt
+?? _probe_cfg.txt
+?? _probe_env.txt
+?? _probe_live.txt
+?? _probe_ls.txt
+?? _probe_misc.txt
+?? _probe_py.txt
+?? _probe_uiprobe.txt
+?? _q.py
+?? _q.txt
+?? _q2.py
+?? _q2.txt
+----------------------------
+
+==========================================================================
+ Neko 本地 CI 汇总
+==========================================================================
+ [PASS] build sln (Debug, 0 warn/0 err)                  6.2s  0 警告 0 错误
+ [PASS] build tests (LoaderTest/UiProbe/PluginSmoke)    28.2s  3 个测试工程均构建成功
+ [PASS] run LoaderTest                                   0.5s  全部通过（exit 0）
+ [PASS] run PluginSmoke                                 58.4s  18/18 加载成功，ALC 未回收 0 个
+ [PASS] run UiProbe                                     30.7s  全部通过（进程未自行退出，已被脚本终止）
+ [PASS] git status --short                               0.4s  30 项未提交改动
+==========================================================================
+ 日志目录：G:\lantetn-li\neko\bin_ci_logs
+ 结论：全部闸门通过 ✅
+==========================================================================
+ci_exit=0

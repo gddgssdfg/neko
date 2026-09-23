@@ -1,0 +1,28 @@
+=== build harness (pre-fix) ===
+
+已成功生成。
+    0 个警告
+    0 个错误
+
+已用时间 00:00:12.81
+=== run (pre-fix) ===
+== cat_hd (id=cat_hd) eyes_half=False eyes_blink=False recScale=4
+   - state=idle eyeLayer=eyes_idle
+   - state=sit eyeLayer=eyes_sit
+== phoebe_hd (id=phoebe_hd) eyes_half=False eyes_blink=False recScale=4
+   - state=idle eyeLayer=eyes_idle
+   - state=sit eyeLayer=eyes_sit
+== cat_pixel (id=cat_pixel) eyes_half=False eyes_blink=False recScale=4
+   - state=idle eyeLayer=eyes_idle
+   - state=sit eyeLayer=eyes_sit
+== phoebe_pixel (id=phoebe_pixel) eyes_half=False eyes_blink=False recScale=4
+   - state=idle eyeLayer=eyes_idle
+   - state=sit eyeLayer=eyes_sit
+== pixel (id=pixel) eyes_half=True eyes_blink=True recScale=0
+   - state=idle eyeLayer=eyes_open
+   - state=sit eyeLayer=eyes_open
+== soft (id=soft) eyes_half=False eyes_blink=False recScale=0
+   - state=idle eyeLayer=null
+   - state=sit eyeLayer=null
+[done] G:/lantetn-li/neko/_hb_before
+exit=0

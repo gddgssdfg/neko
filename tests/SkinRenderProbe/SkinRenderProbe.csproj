@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SkinRenderProbe</AssemblyName>
+    <RootNamespace>DesktopPet.Tests.SkinRenderProbe</RootNamespace>
+    <!-- 与 App 保持一致（非自包含），否则 ProjectReference 报 NETSDK1150/1151。
+         参见 UiProbe.csproj 的同样说明。 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
+    <!-- 注意：本工程**不**把 neko-assets 复制到输出目录。工具启动时会从 exe 目录
+         向上查找仓库里的 neko-assets（也可用命令行参数指定素材根）。这样做的理由：
+           1. 永远对「当前仓库里的皮肤」出图，不会误跑旧副本；
+           2. 避免把 neko-assets 下的开发噪声（图标源图 / reference 参考图等）整树
+              拷进 bin 而白白增大输出。
+         这与 UiProbe 自带素材副本以隔离的做法不同，属有意选择。 -->
+  </ItemGroup>
+
+</Project>

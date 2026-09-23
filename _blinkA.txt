@@ -1,0 +1,13 @@
+´íÎó: Ã»ÓĞÕÒµ½½ø³Ì "Neko.exe"¡£
+=== CAPTURE (pre-fix cat_hd) ===
+G:\lantetn-li\neko\_blink_probe.py:62: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  for l, al in zip(g.getdata(), a.getdata()):
+[i] çŒ«çª— 0x408B4 128x128 ''
+[i] å¸§æ•°=1435 æ—¶é•¿=15.99s
+[i] çœ¼çƒå¸¦å¢¨ç‚¹: base(p80)=4367 min=3772 max=4369 p50=4367 p20=4367 ç©ºç™½é˜ˆå€¼=4105
+[i] ç©ºç™½å¸§æ•°=40 å æ¯”=2.8% å‰è‹¥å¹²ä½ç½®=[0, 1, 2, 3, 4, 16, 17, 18, 19, 20, 21, 33, 34, 35, 36, 37, 38, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77]
+[i] ç©ºç™½è¿ç»­æ®µæ•°=5 å„æ®µé•¿åº¦=[5, 6, 6, 11, 12]
+[âœ“] è¯æ®å›¾: _blink_before_cat_hd.png
+[âœ“] çœ¼å¸¦æ”¾å¤§: _blink_before_cat_hd_open.png
+[âœ“] çœ¼å¸¦æ”¾å¤§: _blink_before_cat_hd_blank.png
+³É¹¦: ÒÑÖÕÖ¹½ø³Ì "Neko.exe"£¬Æä PID Îª 34748¡£

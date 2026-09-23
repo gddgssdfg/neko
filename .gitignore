@@ -50,6 +50,11 @@ neko-assets/_airaw/
 /_live_eyes*.png
 /_px_cmp.png
 /_thumb_cmp.png
+/_srp_*/**
+/_srp_*.png
+/_srp_*.txt
+/_blink_ab_*.png
+/_hb_*/**
 /_cmp_*.png
 /_icons_ports*.png
 /_preview_skins.html

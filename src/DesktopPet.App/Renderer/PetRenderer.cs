@@ -203,20 +203,27 @@ public sealed class PetRenderer
         // 身体帧
         dc.DrawImage(frame.Bitmap, target);
 
-        // 眼球层（叠加）—— 键盘反应瞪眼优先，其次 3 步眨眼相位（half/closed），最后正常眼球层
+        // 眼球层（叠加）—— 键盘反应瞪眼优先，其次 3 步眨眼相位（half/closed），最后正常眼球层。
+        // v0.1.86：**本方法按名引用的全局眼球层键只有 3 个**（eyes_scared / eyes_half / eyes_blink，
+        // 均只有像素系皮肤提供，见 SpriteAtlas.GetEye）。皮肤未提供某键时，若直接取到 null 会把
+        // 整层丢弃 → 露出「被抹掉瞳孔的身体帧」→ 眼睛短暂空白。故**每个全局键都套同款兜底**：
+        // 缺该素材 → 该特效/相位不生效（眼睛保持有神），而不是"变空白"。新增全局键务必照此兜底。
         if (state.EyeLayer is not null)
         {
             BitmapSource? eye;
             if (_clockMs < _flashEyesUntilMs)
             {
-                eye = _atlas.GetEye("eyes_scared");
+                // 瞪眼（键盘反应）：eyes_scared → 本状态眼球层
+                eye = _atlas.GetEye("eyes_scared") ?? _atlas.GetEye(state.EyeLayer);
             }
             else
             {
                 eye = _blinkPhase switch
                 {
-                    BlinkPhase.Half => _atlas.GetEye("eyes_half") ?? _atlas.GetEye("eyes_blink"),  // 旧素材缺 half → 退化 blink
-                    BlinkPhase.Closed => _atlas.GetEye("eyes_blink"),
+                    // 半闭：eyes_half → eyes_blink → 本状态眼球层
+                    BlinkPhase.Half => _atlas.GetEye("eyes_half") ?? _atlas.GetEye("eyes_blink") ?? _atlas.GetEye(state.EyeLayer),
+                    // 闭合：eyes_blink → 本状态眼球层
+                    BlinkPhase.Closed => _atlas.GetEye("eyes_blink") ?? _atlas.GetEye(state.EyeLayer),
                     _ => _atlas.GetEye(state.EyeLayer),
                 };
             }

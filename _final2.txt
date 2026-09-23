@@ -1,0 +1,37 @@
+=== tests/SkinRenderProbe tree (excluding bin/obj) ===
+tests/SkinRenderProbe
+tests/SkinRenderProbe/Program.cs
+tests/SkinRenderProbe/SkinRenderProbe.csproj
+tests/SkinRenderProbe/bin
+tests/SkinRenderProbe/obj
+
+=== sln does NOT contain SkinRenderProbe ===
+0
+0 (good)
+
+=== git status --short ===
+ M src/DesktopPet.App/Renderer/PetRenderer.cs
+?? _blinkA.txt
+?? _blink_ab_all.png
+?? _blink_ab_cat_hd.png
+?? _blink_probe.py
+?? _ci_log.txt
+?? _ci_log2.txt
+?? _final.txt
+?? _final2.txt
+?? _hbA.txt
+?? _hbB.txt
+?? _hb_after/
+?? _hb_before/
+?? _hb_sheet.py
+?? _hb_sheet.txt
+?? _srp_ab_cat_hd.png
+?? _srp_ab_pixel.png
+?? _srp_after.txt
+?? _srp_after/
+?? _srp_before.txt
+?? _srp_before/
+?? _srp_sheet.py
+?? _srp_sheet.txt
+?? _tk.txt
+?? tests/SkinRenderProbe/
