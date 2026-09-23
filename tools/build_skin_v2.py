@@ -410,9 +410,16 @@ def main() -> int:
             pieces[st] = [(content, gap, src.width)]
             print(f"  {st:<6} 静态图 → 1 帧  归一化系数 {sc:.2f}  内容 {content.size}{eye_note}")
         else:
-            p = RAW / f"{args.prefix}_seq_{st}.png"
+            # 优先读「视频重建的新格式」`{prefix}_vseq_{st}.png`（由 tools/video_to_frames.py
+            # 从绿幕 mp4 抽出，几何与旧条完全同构），缺则回退旧序列条 `{prefix}_seq_{st}.png`。
+            p = RAW / f"{args.prefix}_vseq_{st}.png"
+            if p.is_file():
+                source = "vseq(视频)"
+            else:
+                p = RAW / f"{args.prefix}_seq_{st}.png"
+                source = "seq(旧)"
             if not p.is_file():
-                print(f"  ⚠️ 缺 {p.name}，跳过 {st}")
+                print(f"  ⚠️ 缺 {args.prefix}_vseq_{st}.png / {args.prefix}_seq_{st}.png，跳过 {st}")
                 continue
             strip = Image.open(p).convert("RGBA")
             segs, how = segment_auto(strip, 8)
@@ -423,7 +430,7 @@ def main() -> int:
                 if bb is None:
                     continue
                 fps_frames.append((cell.crop(bb), cell.height - bb[3], x1 - x0))
-            print(f"  {st:<6} {how} → {len(fps_frames)} 帧")
+            print(f"  {st:<6} [{source}] {how} → {len(fps_frames)} 帧")
             if fps_frames:
                 pieces[st] = fps_frames
 
