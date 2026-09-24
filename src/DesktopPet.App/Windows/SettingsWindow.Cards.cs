@@ -439,6 +439,13 @@ public sealed partial class SettingsWindow : Window
             list);
     }
 
+    // ---- v0.1.88：皮肤缩略图内存缓存 ----
+    // 每次切回 pet 页都要为每套皮肤重读 thumb.png（FileStream + BitmapImage 解码）——
+    // 缓存 Frozen 的 BitmapSource（可跨窗口安全共享），来回切页不再重复解码。
+    // key = 绝对路径 + 文件 mtime：皮肤素材被改写（mtime 变）自动失效；删掉的旧项自然不再命中。
+    private static readonly Dictionary<string, System.Windows.Media.Imaging.BitmapSource> _thumbCache = new();
+    private const int ThumbCacheLimit = 64;   // 8 套皮肤 × 若干版本，足够；超限则整体清空（简化 LRU）
+
     /// <summary>读 neko-assets/&lt;id&gt;/thumb.png（不能叫 preview.png：csproj 的 Remove 规则会排除 *preview*）。用 FileStream+BitmapImage(OnLoad) 避免锁文件 + 避免 PngBitmapDecoder 偶发黑帧。</summary>
     private static System.Windows.Media.Imaging.BitmapSource? LoadSkinPreview(SkinInfo skin)
     {
@@ -446,6 +453,12 @@ public sealed partial class SettingsWindow : Window
         {
             var path = System.IO.Path.Combine(skin.Directory, "thumb.png");
             if (!System.IO.File.Exists(path)) return null;
+
+            // v0.1.88：先查缓存（key 含 mtime → 素材改动即失效）
+            long mtime = System.IO.File.GetLastWriteTimeUtc(path).Ticks;
+            string key = path + "|" + mtime;
+            if (_thumbCache.TryGetValue(key, out var hit)) return hit;
+
             using var fs = System.IO.File.OpenRead(path);
             var bmp = new System.Windows.Media.Imaging.BitmapImage();
             bmp.BeginInit();
@@ -453,6 +466,9 @@ public sealed partial class SettingsWindow : Window
             bmp.StreamSource = fs;
             bmp.EndInit();
             bmp.Freeze();
+
+            if (_thumbCache.Count >= ThumbCacheLimit) _thumbCache.Clear();   // 简化 LRU：超限整体清空
+            _thumbCache[key] = bmp;
             return bmp;
         }
         catch

@@ -44,6 +44,9 @@ public sealed partial class SettingsWindow : Window
             {
                 _config.Theme = i == 1 ? "light" : "dark";
                 Save();
+                // v0.1.88：主题色在构造时按 Config.Theme 选定（改主题需重开窗口才换色），
+                // 但缓存里存的是旧主题构建的整页 → 清空缓存，保证重开后不会残留旧主题页（幂等兜底）。
+                InvalidateAllPages();
                 MessageBox.Show(T("主题已保存，重新打开设置窗口生效。", "Theme saved. Reopen settings to apply."));
             }));
         stack.Children.Add(BuildChoiceCard(
@@ -53,6 +56,9 @@ public sealed partial class SettingsWindow : Window
             {
                 _config.Language = i == 1 ? "en" : "zh";
                 Save();
+                // v0.1.88：中/英文案几乎遍布各页（标题/卡片/小节），缓存页全部作废再重建当前栏，
+                // 否则切到任何已访问页都会显示旧语言的缓存内容（正确性 bug）。
+                InvalidateAllPages();
                 // v0.1.51：语言即时生效——重建当前栏（页面标题/卡片文案立即变英文；sidebar 下次打开变）
                 ShowSection(_currentSection);
             }));
@@ -209,7 +215,7 @@ public sealed partial class SettingsWindow : Window
             "最多显示槽位数",
             "排序后只显示前 N 个槽位，超出隐藏；0 = 不限（全部显示）",
             cfg.MaxVisible, 0, total, 1,
-            v => { cfg.MaxVisible = (int)v; SaveRadialMenu(allSlots); },
+            v => { cfg.MaxVisible = (int)v; SaveRadialMenu(allSlots); RebuildSection("radial"); },   // v0.1.88：改了上限必须重建（否则落到「超出上限」分区的槽位不刷新）
             val => val == 0 ? "不限" : $"{val:F0} 个"));
 
         // 2) 槽位顺序 + 显隐
@@ -232,6 +238,7 @@ public sealed partial class SettingsWindow : Window
         var overLimit = allSlots.Where(s => RadialMenuResolver.IsVisible(s, cfg) && !visibleIds.Contains(s.Id)).ToList();
 
         // 上移/下移/显隐的操作落点：操作后重建整个页面（简单可靠，槽位数 ≤32 性能无虞）
+        // v0.1.88：必须走 RebuildSection（先失效缓存再重建）——否则会命中切页缓存显示旧顺序/旧显隐。
         void MoveAndSave(int fromIdx, int toIdx)
         {
             var list = RadialMenuResolver.Resolve(_pet.UIApi.AllRadialSlots, cfg);
@@ -241,7 +248,7 @@ public sealed partial class SettingsWindow : Window
             list[toIdx] = tmp;
             RadialMenuResolver.FreezeOrder(list, cfg);
             SaveRadialMenu(_pet.UIApi.AllRadialSlots);
-            ShowSection("radial");
+            RebuildSection("radial");
         }
 
         // 可见槽位列表（可上移/下移/隐藏）
@@ -260,7 +267,7 @@ public sealed partial class SettingsWindow : Window
                 {
                     cfg.Visible[slot.Id] = false;
                     SaveRadialMenu(allSlots);
-                    ShowSection("radial");
+                    RebuildSection("radial");
                 },
                 extraNote: null));
         }
@@ -275,7 +282,7 @@ public sealed partial class SettingsWindow : Window
                 {
                     cfg.Visible[slot.Id] = false;
                     SaveRadialMenu(allSlots);
-                    ShowSection("radial");
+                    RebuildSection("radial");
                 },
                 extraNote: "超出上限（提高上限或调顺序可显示）"));
         }
@@ -290,7 +297,7 @@ public sealed partial class SettingsWindow : Window
                 {
                     cfg.Visible[slot.Id] = true;
                     SaveRadialMenu(allSlots);
-                    ShowSection("radial");
+                    RebuildSection("radial");
                 },
                 extraNote: "已隐藏"));
         }
@@ -301,7 +308,7 @@ public sealed partial class SettingsWindow : Window
         {
             _config.RadialMenu = new RadialMenuConfig();
             SaveRadialMenu(_pet.UIApi.AllRadialSlots);
-            ShowSection("radial");
+            RebuildSection("radial");
         }));
 
         return WrapPage(stack, T("径向菜单", "Radial Menu"));
@@ -438,6 +445,12 @@ public sealed partial class SettingsWindow : Window
                 if (on) _config.DisabledPlugins.Remove(idCap);
                 else if (!_config.DisabledPlugins.Contains(idCap)) _config.DisabledPlugins.Add(idCap);
                 Save();
+                // v0.1.88：启停插件可能增删其注册的设置页（内嵌在插件卡内）→ 插件页缓存作废，
+                // 下次进入 plugin 页重建以反映新的插件集合/设置页。
+                InvalidatePage("plugin");
+                // v0.1.88：同一个 UnregisterAll/注册流程还会增删该插件的【径向槽位】（AllRadialSlots 28↔27），
+                // 径向页展示槽位列表 → 一并作废，否则切回径向页会显示旧槽位集合（QA 复验 M2）。
+                InvalidatePage("radial");
             };
             Grid.SetColumn(toggle, 2);
             titleRow.Children.Add(toggle);

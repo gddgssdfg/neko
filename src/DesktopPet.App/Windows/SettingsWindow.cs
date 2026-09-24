@@ -41,6 +41,34 @@ public sealed partial class SettingsWindow : Window
     private readonly List<Border> _sideItems = new();
     private string _currentSection = "general";
 
+    // ---- v0.1.88：切页结果缓存（灯灯反馈「设置菜单处还不够流畅」）----
+    // 真因：每次 ShowSection 都整页重建 UI 树（pet 首建 ~40ms / plugin ~44ms，切回仍 ~13ms）。
+    // 缓存已构建的整页 → 切回已访问页 O(1) 复用（≈0ms）；仅在【内容确实会变】时失效。
+    // 失效触发点：
+    //   · 语言切换 / 主题切换  → InvalidateAllPages()（Pages.cs 对应 ChoiceCard 回调）
+    //   · 插件启停（可能增删插件设置页 + 该插件的径向槽位）→ InvalidatePage("plugin") + InvalidatePage("radial")
+    //   · 径向菜单改顺序/显隐/上限/恢复默认 → RebuildSection("radial")（Pages.cs 各操作回调）
+    //   · 宿主径向注册表运行期真变更（插件增删槽位/改标签）→ OnRadialRegistryChanged() 只失效 radial
+    //       （v0.1.89：订阅 UIApiImpl.RadialRegistryChanged，只在【可见字段真的变了】时触发；OnClosed 退订）
+    //   · 皮肤目录增删改（进程外）／全局热键改缩放·透明度／游戏模式改鼠标穿透／托盘改应用模式
+    //       → PageSignature() 每次进页轻量比对（pet / input 两页）
+    private readonly Dictionary<string, CachedPage> _pageCache = new();
+
+    /// <summary>
+    /// v0.1.88：缓存页条目。<c>Element</c> 是构建好的整页（含 <see cref="ScrollViewer"/>）；
+    /// <c>Signature</c> 是构建时的「外部资源签名」（见 <see cref="PageSignature"/>），
+    /// 进页时比对：不一致即判失效并重建。
+    /// </summary>
+    private sealed record CachedPage(UIElement Element, string Signature);
+
+    /// <summary>
+    /// v0.1.89：窗口是否已开始关闭（<see cref="OnClosed"/> 首行置位）。
+    /// 仅用于 <see cref="OnRadialRegistryChanged"/> 的竞态护栏——丢弃"退订那一瞬间仍在途"的事件回调。
+    /// <para>为什么不能只靠 <see cref="UIElement.IsLoaded"/>：对 <see cref="Window"/> 而言 <c>Closed</c> 先于 <c>Unloaded</c> 触发，
+    /// 关闭瞬间 <c>IsLoaded</c> 可能仍为 <c>true</c>，不足以判定"已关闭"。</para>
+    /// </summary>
+    private bool _closed;
+
     // v0.1.50：主题色（深/浅两套，按 Config.Theme 在 ctor 选择）—— 改实例字段（原 static 常量）
     private readonly Color BgRoot;
     private readonly Color BgSide;
@@ -104,6 +132,10 @@ public sealed partial class SettingsWindow : Window
 
         BuildLayout();
         ShowSection("general");
+
+        // v0.1.89：订阅宿主「径向注册表真变更」——插件运行期增删槽位 / 改标签时只失效 radial 页缓存。
+        // 放在 ctor 最末：构建失败则不订阅，避免把半成品窗口钉在事件上。
+        _pet.UIApi.RadialRegistryChanged += OnRadialRegistryChanged;
     }
 
     private void BuildLayout()
@@ -213,19 +245,131 @@ public sealed partial class SettingsWindow : Window
         }
 
         // v0.1.47：页面切换淡入（新内容 Opacity 0→1 140ms）
-        var newContent = sec switch
+        // v0.1.88：先查缓存——命中且外部资源未变则直接复用（切回已访问页 ≈0ms），否则重建并写回缓存。
+        var sig = PageSignature(sec);
+        if (!_pageCache.TryGetValue(sec, out var cached) || cached.Signature != sig)
         {
-            "general" => BuildGeneralPage(),
-            "pet" => BuildPetPage(),
-            "input" => BuildInputPage(),
-            "radial" => BuildRadialMenuPage(),
-            "plugin" => BuildPluginPage(),
-            "about" => BuildAboutPage(),
-            _ => new TextBlock { Text = "未知栏" },
-        };
+            cached = new CachedPage(BuildPage(sec), sig);
+            _pageCache[sec] = cached;
+        }
+        var newContent = cached.Element;
         newContent.Opacity = 0;
         _mainContent.Content = newContent;
         newContent.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(140)));
+    }
+
+    /// <summary>v0.1.88：按 section 构建对应页（从 <see cref="ShowSection"/> 抽出，供缓存复用）。</summary>
+    private UIElement BuildPage(string sec) => sec switch
+    {
+        "general" => BuildGeneralPage(),
+        "pet" => BuildPetPage(),
+        "input" => BuildInputPage(),
+        "radial" => BuildRadialMenuPage(),
+        "plugin" => BuildPluginPage(),
+        "about" => BuildAboutPage(),
+        _ => new TextBlock { Text = "未知栏" },
+    };
+
+    /// <summary>
+    /// v0.1.88：缓存判活用的「外部/旁路状态签名」——页面会展示、但可由【本页控件之外】改动的状态。
+    /// <list type="bullet">
+    /// <item><description><c>pet</c>：皮肤目录（进程外增删/改 skin.json·thumb.png）+ 缩放/透明度（全局热键
+    /// <c>scale_up/down</c>·<c>opacity_up/down</c> 直接改 config）+ 鼠标穿透（进入游戏模式内部会改）。</description></item>
+    /// <item><description><c>input</c>：应用模式（托盘菜单「工作/摸鱼模式」经 <c>SetAppMode</c> 直接改 config）。</description></item>
+    /// </list>
+    /// <para>每次进页比对该轻量签名；不一致即判失效并重建。其余页的失效由各自交互回调显式调用
+    /// <see cref="InvalidatePage"/> / <see cref="InvalidateAllPages"/> / <see cref="RebuildSection"/>。</para>
+    /// <para>为什么必须带这些值：全局热键 / 托盘菜单在设置窗打开时也会改配置，而缓存页不会自愈
+    /// （v0.1.88 缓存引入的回归——修前每次切页重建所以总会读到新值）。</para>
+    /// </summary>
+    private string PageSignature(string sec) => sec switch
+    {
+        "pet" => ComputeSkinSignature()
+                 + "|scale=" + _config.Scale.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                 + "|opacity=" + _config.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                 + "|passthrough=" + (_pet.IsMousePassthrough ? '1' : '0'),
+        "input" => "mode=" + (_config.AppMode ?? ""),
+        _ => "",
+    };
+
+    /// <summary>失效单页缓存（下次进入时重建）。</summary>
+    private void InvalidatePage(string sec) => _pageCache.Remove(sec);
+
+    /// <summary>失效全部页缓存（文案 / 主题等全局变化时用）。</summary>
+    private void InvalidateAllPages() => _pageCache.Clear();
+
+    /// <summary>失效指定栏并【立即重建】（如径向菜单改顺序后必须马上反映新顺序）。</summary>
+    private void RebuildSection(string sec)
+    {
+        InvalidatePage(sec);
+        ShowSection(sec);
+    }
+
+    /// <summary>
+    /// v0.1.89：宿主径向注册表真变更 → <b>只</b>失效 radial 页缓存（下次进入时重建），不动其它页。
+    /// <para>事件可能来自插件线程（如定时器刷新槽位文案）→ 先 marshal 到 UI 线程再动
+    /// <c>_pageCache</c>（<see cref="Dictionary{TKey,TValue}"/> 非线程安全）。</para>
+    /// </summary>
+    private void OnRadialRegistryChanged()
+    {
+        // v0.1.89 竞态护栏：窗口【已开始关闭】→ 不做任何事（丢弃"退订那一瞬间仍在途"的一发事件）。
+        //   ⚠️ 只读普通 bool 字段 _closed —— 它可在任意线程安全读取。
+        //      绝不能在此处（封送前）读 IsLoaded：IsLoaded 背后是 DependencyProperty(LoadedPending)，
+        //      读它会 VerifyAccess 校验线程亲和性；本事件【可能在插件线程触发】，跨线程读 IsLoaded 会抛
+        //      InvalidOperationException("调用线程无法访问此对象")，并冒泡回插件的 RegisterRadialSlot 调用点。
+        if (_closed) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(OnRadialRegistryChanged));
+            return;
+        }
+        // 已到 UI 线程：此时读 IsLoaded 才安全。未 Loaded（构建期）/ 已 Unloaded → 同样不该动缓存。
+        if (!IsLoaded) return;
+        InvalidatePage("radial");
+    }
+
+    /// <summary>
+    /// v0.1.89：窗口关闭必须<b>退订</b>宿主事件——<see cref="UIApiImpl"/> 生命周期与 App 等长，
+    /// 不退订会把本窗口对象永久钉在订阅列表上（本项目对内存 / 事件未解绑泄漏极敏感）。
+    /// 订阅期 == 窗口存活期（ctor 订阅、OnClosed 退订）。
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _closed = true;   // 先置位（早于退订）：关闭瞬间仍在途的一发事件也会被首行护栏拦下
+        _pet.UIApi.RadialRegistryChanged -= OnRadialRegistryChanged;
+        base.OnClosed(e);
+    }
+
+    /// <summary>
+    /// v0.1.88：皮肤目录签名 —— 目录名集合 + <c>skin.json</c> / <c>thumb.png</c> 的最后写入时间。
+    /// <para>任一皮肤目录新增 / 删除，或皮肤清单 / 缩略图被改写 → 签名变化 → pet 页缓存判为失效并重建，
+    /// 保证「新增或改一个皮肤目录后再切回 pet 页显示的是新内容」。</para>
+    /// <para>IO 异常时返回唯一值（强制本次重建）——宁重建也不显示旧内容。</para>
+    /// </summary>
+    private static string ComputeSkinSignature()
+    {
+        try
+        {
+            var root = Paths.Assets;
+            if (!System.IO.Directory.Exists(root)) return "<no-assets>";
+            var dirs = System.IO.Directory.GetDirectories(root);
+            Array.Sort(dirs, StringComparer.OrdinalIgnoreCase);   // 目录枚举顺序不保证稳定 → 排序后再拼签名
+            var sb = new System.Text.StringBuilder(256);
+            foreach (var dir in dirs)
+            {
+                var json = System.IO.Path.Combine(dir, "skin.json");
+                if (!System.IO.File.Exists(json)) continue;       // 非皮肤目录（icons/mirror/reference…）
+                var thumb = System.IO.Path.Combine(dir, "thumb.png");
+                long jt = System.IO.File.GetLastWriteTimeUtc(json).Ticks;
+                long tt = System.IO.File.Exists(thumb) ? System.IO.File.GetLastWriteTimeUtc(thumb).Ticks : 0L;
+                sb.Append(System.IO.Path.GetFileName(dir)).Append('|').Append(jt).Append('|').Append(tt).Append(';');
+            }
+            return sb.ToString();
+        }
+        catch
+        {
+            return Guid.NewGuid().ToString("N");
+        }
     }
 
     private void Save() => ConfigManager.Save(Paths.ConfigFile, _config);

@@ -46,7 +46,9 @@ public sealed class UIApiImpl : IUIApi
     public void RegisterRadialSlot(RadialSlot slot)
     {
         RequireScope();
-        lock (_gate) AddOrReplace(_radialSlots, _currentScope!, slot, s => s.Id);
+        bool changed;
+        lock (_gate) changed = AddOrReplace(_radialSlots, _currentScope!, slot, s => s.Id, RadialVisualChanged);
+        if (changed) RaiseRadialRegistryChanged();
     }
 
     public void RegisterTrayMenuItem(TrayMenuItem item)
@@ -86,13 +88,33 @@ public sealed class UIApiImpl : IUIApi
 
     public void UnregisterAll(string scopeId)
     {
+        bool radialRemoved;
         lock (_gate)
         {
-            _radialSlots.Remove(scopeId);
+            radialRemoved = _radialSlots.Remove(scopeId);   // 只在确实有径向槽位被移除时才通知
             _trayItems.Remove(scopeId);
             _pages.Remove(scopeId);
         }
+        if (radialRemoved) RaiseRadialRegistryChanged();
     }
+
+    /// <summary>
+    /// v0.1.89：径向注册表【真变更】事件（宿主内部事件，<b>不进 DesktopPet.Core 公共契约</b>——Core 只增不改）。
+    /// <para>触发时机：新增槽位 / 移除某 scope 的径向槽位 / 同 Id 重注册且<b>可见字段</b>（Label·Icon·Order）确有变化。</para>
+    /// <para><b>值相同不发</b>：upsert 只换了回调委托或原样重注册（可见字段不变）时不触发——这是「设置页径向页
+    /// 不过度重建」的前提。</para>
+    /// <para>⚠️ 可能在插件线程触发（插件在定时器/回调里刷新槽位文案）；订阅方须自行 marshal 到 UI 线程。</para>
+    /// </summary>
+    internal event Action? RadialRegistryChanged;
+
+    private void RaiseRadialRegistryChanged() => RadialRegistryChanged?.Invoke();
+
+    /// <summary>径向槽位「可见字段」是否变化。Id 为匹配键必相同；OnInvoke 委托<b>不参与</b>比较——
+    /// 纯换回调无任何视觉变化，不应导致设置页重建。</summary>
+    private static bool RadialVisualChanged(RadialSlot a, RadialSlot b)
+        => !string.Equals(a.Label, b.Label, StringComparison.Ordinal)
+           || !string.Equals(a.Icon, b.Icon, StringComparison.Ordinal)
+           || a.Order != b.Order;
 
     /// <summary>
     /// 把 <paramref name="item"/> 加入 <paramref name="scopeId"/> 对应的列表：若同 scope 下已存在
@@ -101,10 +123,12 @@ public sealed class UIApiImpl : IUIApi
     /// 插件需在状态变化点重注册同 Id 槽位来刷新文案；追加会让每次刷新都多占一个位子（审计 P2-2）。
     /// 该幂等语义对托盘项 / 设置页同样成立（三者都有唯一 <c>Id</c>），故统一复用，
     /// 避免「只有径向槽位特殊」这一处隐蔽的不一致。</para>
-    /// <para>调用方须持有 <see cref="_gate"/>。</para>
+    /// <para>返回是否发生<b>实质变更</b>：新增=true；同 Id 替换时由 <paramref name="changedOf"/> 判定
+    /// （径向传入 <see cref="RadialVisualChanged"/>；未传则退化为默认值相等比较）。调用方须持有 <see cref="_gate"/>。</para>
     /// </summary>
-    private static void AddOrReplace<T>(
-        Dictionary<string, List<T>> map, string scopeId, T item, Func<T, string> idOf)
+    private static bool AddOrReplace<T>(
+        Dictionary<string, List<T>> map, string scopeId, T item, Func<T, string> idOf,
+        Func<T, T, bool>? changedOf = null)
     {
         if (!map.TryGetValue(scopeId, out var list))
         {
@@ -114,7 +138,13 @@ public sealed class UIApiImpl : IUIApi
 
         var id = idOf(item);
         var index = list.FindIndex(existing => string.Equals(idOf(existing), id, StringComparison.Ordinal));
-        if (index >= 0) list[index] = item;   // 同 Id = 更新那一条（保留位置，不改变并列顺序）
-        else list.Add(item);                  // 新 Id = 追加
+        if (index >= 0)
+        {
+            var old = list[index];
+            list[index] = item;   // 同 Id = 更新那一条（保留位置，不改变并列顺序）
+            return changedOf is null ? !EqualityComparer<T>.Default.Equals(old, item) : changedOf(old, item);
+        }
+        list.Add(item);           // 新 Id = 追加
+        return true;
     }
 }

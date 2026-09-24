@@ -27,16 +27,24 @@ public sealed partial class SettingsWindow : Window
             Background = new SolidColorBrush(BgRoot),
         };
         // v0.1.82：WPF 默认滚动条是浅色带箭头的，在深色设置页里非常突兀 → 换成深色细条
-        sv.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), DarkScrollBarStyle());
+        // v0.1.88：改用静态缓存的样式实例（原来每次 WrapPage 都 XamlReader.Parse → ~0.8ms/次切页）
+        sv.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), DarkScrollBar);
         return sv;
     }
+
+    /// <summary>
+    /// v0.1.88：深色细滚动条样式——<b>静态只解析一次</b>并复用（原每次 <see cref="WrapPage"/> 都重建，~0.8ms/次）。
+    /// <para>Style / ControlTemplate 是纯静态资源、无实例状态，作为共享资源被多个 <see cref="ScrollViewer"/> 引用是 WPF 的常规用法
+    /// （同一 UI 线程，且构建后不再修改）。深浅主题沿用同一套样式，与改动前行为一致。</para>
+    /// </summary>
+    private static readonly Style DarkScrollBar = BuildDarkScrollBarStyle();
 
     /// <summary>
     /// v0.1.82：深色细滚动条（10px、圆角滑块、无箭头按钮、悬停变亮）。
     /// <para>用 XAML 字符串 + XamlReader 构造，比在 C# 里手搓 ControlTemplate 短得多也好读。
     /// 模板假设**竖直方向**（设置页只出竖直条）；横向时直接隐藏，避免出现错位的条。</para>
     /// </summary>
-    private static Style DarkScrollBarStyle() =>
+    private static Style BuildDarkScrollBarStyle() =>
         (Style)System.Windows.Markup.XamlReader.Parse(@"
 <Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
        xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
