@@ -316,7 +316,8 @@ public sealed partial class SettingsWindow : Window
     private void OnRadialRegistryChanged()
     {
         // v0.1.89 竞态护栏：窗口【已开始关闭】→ 不做任何事（丢弃"退订那一瞬间仍在途"的一发事件）。
-        //   ⚠️ 只读普通 bool 字段 _closed —— 它可在任意线程安全读取。
+        //   ⚠️ 此处只读 volatile bool 字段 _closed（写：UI 线程 OnClosed；读：任意线程，含插件线程）—— 可安全读取；
+        //      volatile 只做跨线程可见性加固，值语义与普通 bool 一致。
         //      绝不能在此处（封送前）读 IsLoaded：IsLoaded 背后是 DependencyProperty(LoadedPending)，
         //      读它会 VerifyAccess 校验线程亲和性；本事件【可能在插件线程触发】，跨线程读 IsLoaded 会抛
         //      InvalidOperationException("调用线程无法访问此对象")，并冒泡回插件的 RegisterRadialSlot 调用点。
