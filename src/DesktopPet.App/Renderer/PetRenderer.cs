@@ -247,9 +247,21 @@ public sealed class PetRenderer
                 // 白圈只有 2~5px）→ 只要一动就贴边。裁剪后瞳孔滑到边界自然被切掉（真猫斜视时虹膜
                 // 也被眼睑遮挡），永远不会出现在眼眶之外 —— 即灯灯实报的「眼睛超出眼眶，看着太恐怖」。
                 var socketBrush = SocketMaskBrush(state.EyeLayer, eyeKey);
+
+                // v0.1.89（性能修复：高清皮肤卡顿）：把眼球层的绘制区裁到**该层非透明像素的包围盒**
+                // （+ 当前眼神偏移 + 2px 余量）。此矩形覆盖所有可能产生非透明像素的位置，被裁掉的
+                // 都是**已经透明**的像素 → 输出**逐像素不变**（故 SkinRenderProbe 的 offset=0 md5 不变）。
+                // 收益：把 PushOpacityMask 的中间表面 / 位图栅格化的面积从「整画幅」（cat_hd 128×128）
+                // 缩到「眼睛实际占用区」（cat_hd 约 44×20），遮罩开销几乎归零。
+                //   实测（_bench/RenderBench, cat_hd idle, scale=4, NearestNeighbor）：
+                //     眼睛绘制：无遮罩 252µs / 遮罩(全画幅) 588µs / 遮罩+裁到眼bbox **89µs**。
+                // 仅当皮肤提供该层 bbox 时裁剪（新管线皮肤才有）；旧皮肤 TryGetEyeBBox=false → 路径不变。
+                var clip = EyeClipRect(eye, eyeKey, offset);
+                if (clip is not null) dc.PushClip(new RectangleGeometry(clip.Value));
                 if (socketBrush is not null) dc.PushOpacityMask(socketBrush);
                 dc.DrawImage(eye, eyeRect);
                 if (socketBrush is not null) dc.Pop();
+                if (clip is not null) dc.Pop();
             }
         }
 
@@ -298,6 +310,24 @@ public sealed class PetRenderer
         }
         _socketBrushCache[cacheKey] = brush;
         return brush;
+    }
+
+    /// <summary>
+    /// v0.1.89（性能）：眼球层绘制区的裁剪矩形 = 该层非透明像素包围盒 → 目标坐标，再加当前眼神偏移与余量。
+    /// <para>为什么安全：bbox 之外的源像素全透明，裁掉它们不改变任何输出像素；故渲染结果与不裁剪**逐像素一致**。</para>
+    /// <para>为什么高效：它把 <c>PushOpacityMask</c> 需要的中间表面与位图栅格化限制在眼睛的小矩形内。</para>
+    /// <para>返回 null 表示该层无 bbox 数据（旧皮肤）→ 调用方不做裁剪，保持既有渲染路径。</para>
+    /// </summary>
+    private Rect? EyeClipRect(BitmapSource eye, string eyeKey, Vector offset)
+    {
+        if (!_atlas.TryGetEyeBBox(eyeKey, out var bb) || bb.Width <= 0 || bb.Height <= 0) return null;
+        double sx = SpriteAtlas.FrameW * Scale / eye.PixelWidth;    // 源像素 → 屏幕像素（X）
+        double sy = SpriteAtlas.FrameH * Scale / eye.PixelHeight;   // 源像素 → 屏幕像素（Y）
+        var r = new Rect(
+            offset.X + bb.X * sx, offset.Y + bb.Y * sy,
+            bb.Width * sx, bb.Height * sy);
+        r.Inflate(2, 2);   // 余量：覆盖重采样/抗锯齿在边缘向外扩散的 1~2px
+        return r;
     }
 
     /// <summary>按顺序返回第一个**实际存在**的眼球层 key（全都不存在则 null）。

@@ -67,6 +67,19 @@ public sealed class SpriteAtlas
     /// <c>safe = 0.45 × (眼眶 − 瞳孔)</c>，取两眼较小者。</summary>
     private readonly Dictionary<string, Vector> _eyeSafeShift = new();
 
+    /// <summary>
+    /// v0.1.89（性能）：各眼球层非透明像素的包围盒（**源位图像素**）。
+    /// <para>用途：渲染时把眼球层的绘制区裁到该 bbox（+ 偏移 + 余量）——该矩形覆盖所有可能产生
+    /// 非透明像素的位置，被裁掉的都是**已经透明**的像素，故输出逐像素不变；却能把
+    /// <c>PushOpacityMask</c> 的中间表面与位图栅格化面积从「整画幅」缩到「眼睛实际占用区」。</para>
+    /// <para>只对**新管线皮肤**（有 <c>{layer}_closed</c>，即会用遮罩的皮肤）填充——内置像素皮等
+    /// 旧皮肤无此数据 → 渲染路径完全不变（零回归）。</para>
+    /// </summary>
+    private readonly Dictionary<string, Int32Rect> _eyeBBox = new();
+
+    /// <summary>取某眼球层非透明像素包围盒（源位图像素）。返回 false 表示无数据（调用方不做裁剪）。</summary>
+    public bool TryGetEyeBBox(string key, out Int32Rect bbox) => _eyeBBox.TryGetValue(key, out bbox);
+
     /// <summary>该层允许的最大位移（源像素）。返回 (0,0) 表示**无数据、调用方不要限制**（保持旧皮肤行为）。</summary>
     public Vector GetEyeSafeShift(string key) => _eyeSafeShift.GetValueOrDefault(key);
 
@@ -159,12 +172,16 @@ public sealed class SpriteAtlas
         foreach (var eye in info.EyeLayers)
         {
             if (!atlas._eyes.TryGetValue(eye, out var pupil)) continue;
-            if (!atlas._eyes.ContainsKey(eye + "_closed")) continue;   // 旧皮肤（无闭合层）→ 不限制
+            if (!atlas._eyes.TryGetValue(eye + "_closed", out var socket)) continue;   // 旧皮肤（无闭合层）→ 不限制、不裁剪
             var safe = ComputeEyeSafeShift(pupil);
             if (safe is null) continue;
             atlas._eyeSafeShift[eye] = safe.Value;
             // 闭合层共用同一上限：眨眼时眼睛不该比睁眼时跑得更远
             atlas._eyeSafeShift[eye + "_closed"] = safe.Value;
+            // v0.1.89（性能）：记录瞳孔/闭合层的非透明包围盒（源像素）——渲染时据此裁剪绘制区，
+            // 把遮罩中间表面从整画幅缩到眼睛区。仅新管线皮肤有数据，旧皮肤渲染路径零变化。
+            atlas._eyeBBox[eye] = AlphaBBox(pupil);
+            atlas._eyeBBox[eye + "_closed"] = AlphaBBox(socket);
         }
 
         // 影子层
@@ -248,6 +265,25 @@ public sealed class SpriteAtlas
         return m;
     }
 
+    /// <summary>v0.1.89：源位图 alpha&gt;16 的包围盒（源像素）。全透明 / 空图返回 (0,0,0,0)。</summary>
+    private static Int32Rect AlphaBBox(BitmapSource src)
+    {
+        int w = src.PixelWidth, h = src.PixelHeight;
+        if (w <= 0 || h <= 0) return new Int32Rect(0, 0, 0, 0);
+        var m = AlphaMask(src, 16);
+        int x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (m[y * w + x])
+                {
+                    if (x < x0) x0 = x;
+                    if (x > x1) x1 = x;
+                    if (y < y0) y0 = y;
+                    if (y > y1) y1 = y;
+                }
+        if (x1 < x0 || y1 < y0) return new Int32Rect(0, 0, 0, 0);
+        return new Int32Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    }
     /// <summary>读 alpha（统一转 Bgra32），返回「每列是否存在不透明像素」。</summary>
     private static bool[] AlphaColumns(BitmapSource src, byte threshold)
     {
