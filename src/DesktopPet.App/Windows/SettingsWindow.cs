@@ -66,8 +66,11 @@ public sealed partial class SettingsWindow : Window
     /// 仅用于 <see cref="OnRadialRegistryChanged"/> 的竞态护栏——丢弃"退订那一瞬间仍在途"的事件回调。
     /// <para>为什么不能只靠 <see cref="UIElement.IsLoaded"/>：对 <see cref="Window"/> 而言 <c>Closed</c> 先于 <c>Unloaded</c> 触发，
     /// 关闭瞬间 <c>IsLoaded</c> 可能仍为 <c>true</c>，不足以判定"已关闭"。</para>
+    /// <para><c>volatile</c>：写发生在 UI 线程（<see cref="OnClosed"/>），读可能发生在插件线程
+    /// （事件在插件定时器线程触发时）。与 <c>HourlyChimePlugin._enabled</c> 同一模式——保证"关闭置位"对插件线程立即可见，
+    /// 不给"已关闭后仍读到旧值"留理论窗口（即便读到旧值，封送回 UI 线程后的二次判定仍会拦下，故本条为加固而非必需）。</para>
     /// </summary>
-    private bool _closed;
+    private volatile bool _closed;
 
     // v0.1.50：主题色（深/浅两套，按 Config.Theme 在 ctor 选择）—— 改实例字段（原 static 常量）
     private readonly Color BgRoot;
