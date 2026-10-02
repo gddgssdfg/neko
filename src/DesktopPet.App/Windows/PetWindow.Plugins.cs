@@ -33,13 +33,41 @@ public sealed partial class PetWindow : Window
     public void OpenRadialMenu()
     {
         // 单例复用 + Hide() 关闭：反复 Show/Hide 不会触发"窗口关闭期间 Show"异常
-        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, _config, onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
+        var menu = EnsureRadialMenu();
         // v0.1.25：撤销 v0.1.9 的「旁边定位」（用户要求改回围绕猫一圈）。
         // 菜单圆心 = 猫中心，中心挖空（洞半径 = 猫半宽 + 余量）透出猫，
         // 猫可见、可直接抚摸/拖拽，槽位在猫外围一圈不再盖猫。
         // v0.1.32：洞半径 4→10（猫不再贴洞边，视觉更舒适）
         var holeR = Width / 2 + 10;
-        _radialMenu.ShowAt(Left + Width / 2, Top + Height / 2, holeR);
+        menu.ShowAt(Left + Width / 2, Top + Height / 2, holeR);
+    }
+
+    /// <summary>径向菜单单例（懒创建）。抽出供 <see cref="OpenRadialMenu"/> 与 <see cref="PrewarmRadialMenu"/> 共用，
+    /// 避免两处重复构造表达式导致回调/参数漂移。</summary>
+    private RadialMenu EnsureRadialMenu() =>
+        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, _config,
+            onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
+
+    /// <summary>
+    /// v0.1.91 R1：预热径向菜单单例——首次右键的一次性成本（实测 ≈80ms：ctor 扫 neko-assets/icons/
+    /// 解码 PNG + 首次创建本窗 HWND）提前到「首帧后的 Background」付掉。
+    /// <para>构建时不 Show（无闪现）；再用 <see cref="System.Windows.Interop.WindowInteropHelper.EnsureHandle"/>
+    /// 预建窗口句柄（同样不显示、不可见），把"首次 Show 的建窗成本"也一并前置。
+    /// 用户真正首次右键时只剩 <c>ShowAt</c>（≈1.5ms）。槽位在每次 ShowAt 时从 UIApi 现读，预热不影响插件注册。</para>
+    /// </summary>
+    public void PrewarmRadialMenu()
+    {
+        var menu = EnsureRadialMenu();
+        try
+        {
+            // 预建 HWND：不 Show、不激活、不可见，仅把建窗 + OnSourceInitialized 的一次性成本前移。
+            _ = new System.Windows.Interop.WindowInteropHelper(menu).EnsureHandle();
+        }
+        catch (Exception ex)
+        {
+            // 预热失败不影响功能：首次右键会照常懒建。仅留痕。
+            Log.Warn($"[径向菜单] 预热建窗失败（首次打开时再建）：{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     public void CloseRadialMenu() => _radialMenu?.HideMenu();

@@ -113,6 +113,12 @@ public sealed partial class PetWindow : Window
     // ---- v0.1.28 键鼠映射窗（BongoCat 键盘映射核心视觉）----
     private InputMirrorWindow? _mirrorWindow;
 
+    // ---- v0.1.91 冷启动优化：启动关键路径之外的一次性初始化标记 ----
+    // ctor 里只做「记待办」，等首帧（ContentRendered）后由 InitializeAfterFirstFrame() 在
+    // Background 优先级补做；这样 ShowMirror/chat-init 这些重活不再计入「进程→首帧」。
+    private bool _startupMirrorPending;   // P1：启动需显示映射窗（AppMode==work 或 KeyboardMirrorEnabled）
+    private bool _startupChatPending;     // P2：启动需初始化 chat/tracker（ActivityTracker + ChatScheduler）
+
     // ---- v0.1.40 气泡对话（像素云朵 + 猫主动闲聊）----
     private BubbleWindow? _bubble;
     private ActivityTracker? _activity;
@@ -245,14 +251,20 @@ public sealed partial class PetWindow : Window
         _globalInput.MousePressed += OnInputReaction;
 
         // v0.1.30 双模态：work 模式启动即开映射窗 + 猫贴附；slack 模式启动只猫
-        if (_config.AppMode == "work" || _config.KeyboardMirrorEnabled) ShowMirror();
+        // v0.1.91 P1：映射窗创建（InputMirrorWindow ctor + Show 实测 ≈365ms、占冷启动 30%）**移出启动关键路径**——
+        // 这里只记「待办」，等首帧上屏后由 InitializeAfterFirstFrame() 在 Background 优先级补做。
+        // 运行时 SetAppMode("work") 仍同步调用 ShowMirror()（用户切模式须立即见效，不受此延后影响）。
+        _startupMirrorPending = _config.AppMode == "work" || _config.KeyboardMirrorEnabled;
 
         // v0.1.40：气泡对话——Say 通道 + 活跃度跟踪 + 闲聊调度（开关可运行时切换）
         _renderer.SpeechRequested += (text, ms) => ShowBubble(text, ms);
         // 输入跟踪一直开（活跃度数据便宜且未来有用）；调度器按开关启停
         _globalInput.RawKeyEvent += OnTrackerKey;
         _globalInput.RawMouseButtonEvent += OnTrackerMouse;
-        ApplyChatEnabled(_config.ChatEnabled);
+        // v0.1.91 P2：chat/tracker 初始化（ActivityTracker.Load 读盘 + ChatScheduler 计时器 + config 落盘
+        // 实测 ≈112ms、占冷启动 9%）**移出启动关键路径**——首条闲聊本就在 8~20 分钟后，无需现在付这笔钱。
+        // 上面两行输入订阅保留在 ctor：成本低，且活跃度数据越早开始越准。运行时设置页切换仍走 ApplyChatEnabled 同步路径。
+        _startupChatPending = _config.ChatEnabled;
 
         // 内容（NearestNeighbor：3.2 倍非整数缩放，用最近邻保像素锐利，否则像素风会糊）
         var host = new DrawingVisualHost(_renderer);
@@ -306,6 +318,41 @@ public sealed partial class PetWindow : Window
         var work = GetWorkArea();
         Left = Math.Max(work.X, Math.Min(Left, work.X + work.Width - Width));
         Top = Math.Max(work.Y, Math.Min(Top, work.Y + work.Height - Height));
+    }
+
+    /// <summary>
+    /// v0.1.91 冷启动优化：首帧（ContentRendered）之后补做「不在启动关键路径」的初始化。
+    /// <para>由 <c>App.OnStartup</c> 在 <see cref="Window.Show"/> 之后经 ContentRendered 钩子调用恰好一次。</para>
+    /// <para>三块工作全部排入 <see cref="DispatcherPriority.Background"/>——排在渲染之后，**绝不抢首帧**；
+    /// 延后期间用户可见行为不变（镜像窗/闲聊本就有各自的惰性时序，运行时切换仍走同步路径）。</para>
+    /// </summary>
+    public void InitializeAfterFirstFrame()
+    {
+        // ---- P1：镜像窗（InputMirrorWindow ctor+Show 实测 ≈365ms，占冷启 30%）----
+        if (_startupMirrorPending)
+        {
+            _startupMirrorPending = false;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                // 延后期间用户可能已切到 slack（SetAppMode）→ 不再补显，避免"刚关又弹"
+                if (_config.AppMode == "work" || _config.KeyboardMirrorEnabled) ShowMirror();
+            }), DispatcherPriority.Background);
+        }
+
+        // ---- P2：chat/tracker（ActivityTracker.Load 读盘 + ChatScheduler + config 落盘 实测 ≈112ms，占 9%）----
+        if (_startupChatPending)
+        {
+            _startupChatPending = false;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                // 若延后期间用户已在设置页动过开关（ApplyChatEnabled 已跑）→ 不重复建
+                if (_config.ChatEnabled && _chatScheduler is null) ApplyChatEnabled(true);
+            }), DispatcherPriority.Background);
+        }
+
+        // ---- R1：径向菜单预热（首次右键一次性 ≈80ms：ctor 扫 icons/ 解码 + 首次建窗 HWND）----
+        // 见 PetWindow.Plugins.cs 的 PrewarmRadialMenu。只构建 + 预建句柄，全程不 Show、不闪现。
+        Dispatcher.BeginInvoke(new Action(PrewarmRadialMenu), DispatcherPriority.Background);
     }
 
     /// <summary>显隐老板键（BongoCat 借鉴 Ctrl+Shift+B，Neko 默认 Ctrl+Shift+H）：一键藏猫/唤回</summary>
@@ -368,6 +415,9 @@ public sealed partial class PetWindow : Window
         _chatScheduler?.Stop();    // v0.1.40
         _globalInput.Dispose();
         CloseRadialMenu();
+        // v0.1.91：R1 预热会在首帧后预建径向菜单 HWND（EnsureHandle），而 HideMenu 对不可见窗口直接返回、
+        // 不会销毁句柄——这里显式 Close 一次，避免退出时残留一个顶层句柄。
+        _radialMenu?.Close();
         _mirrorWindow?.Close(); // v0.1.28
         _bubble?.Close();        // v0.1.40
         _hearts?.Close();        // v0.1.59(⑧)

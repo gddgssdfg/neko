@@ -24,13 +24,15 @@ public sealed partial class PetWindow : Window
         if (_mirrorWindow is null)
         {
             _mirrorWindow = new InputMirrorWindow(_globalInput, _config, SaveConfigFile, OnMirrorRelocated);
+            AlignMirrorBeforeShow();   // v0.1.91：Show 前先摆好（含同步位置记忆），首帧即在正确位置 → 无"旧位置闪一下"
             _mirrorWindow.Show();
         }
         else if (!_mirrorWindow.IsVisible)
         {
+            AlignMirrorBeforeShow();   // v0.1.91：重新显示前同样先对齐
             _mirrorWindow.Show();
         }
-        SyncMirrorToCat();   // v0.1.39：映射窗来就猫，不是猫去就映射窗
+        SyncMirrorToCat();   // v0.1.39：映射窗来就猫，不是猫去就映射窗（Show 后兜底同步一次，保持等价）
     }
 
     /// <summary>映射窗总开关：v0.1.30 联动 AppMode（开=work 模式，关=slack）</summary>
@@ -72,6 +74,24 @@ public sealed partial class PetWindow : Window
         if (_config.AppMode != "work") return;
         if (_mirrorWindow is null || !_mirrorWindow.IsVisible) return;
 
+        if (ComputeMirrorTarget() is not { } target) return;
+        var (mx, my) = target;
+        MoveWindowIfNeeded(_mirrorWindow, mx, my);   // v0.1.82：同值短路，别再每 tick 空挪一次窗口
+        // 同步位置记忆（只改内存不落盘）：否则下次切回 work 时映射窗会先在旧位置闪一帧再跳过来
+        _config.MirrorPosX = mx;
+        _config.MirrorPosY = my;
+    }
+
+    /// <summary>
+    /// v0.1.91：算出映射窗「应该待」的位置（猫下方居中；放不下改挂猫上方；最后 clamp 进工作区）。
+    /// 复用给 <see cref="SyncMirrorToCat"/>（可见时同步）与 <see cref="AlignMirrorBeforeShow"/>（Show 前预设）。
+    /// 返回 <c>null</c> 表示当前不该定位（非 work 模式，或映射窗尚未创建）。
+    /// </summary>
+    private (double X, double Y)? ComputeMirrorTarget()
+    {
+        if (_config.AppMode != "work") return null;
+        if (_mirrorWindow is null) return null;
+
         var work = GetWorkArea();
         double mx = Left + Width / 2 - _mirrorWindow.Width / 2;
         double my = Top + Height + MirrorGap;
@@ -79,10 +99,20 @@ public sealed partial class PetWindow : Window
         if (my + _mirrorWindow.Height > work.Y + work.Height) my = Top - _mirrorWindow.Height - MirrorGap;
         mx = Math.Max(work.X, Math.Min(mx, work.X + work.Width - _mirrorWindow.Width));
         my = Math.Max(work.Y, Math.Min(my, work.Y + work.Height - _mirrorWindow.Height));
-        MoveWindowIfNeeded(_mirrorWindow, mx, my);   // v0.1.82：同值短路，别再每 tick 空挪一次窗口
-        // 同步位置记忆（只改内存不落盘）：否则下次切回 work 时映射窗会先在旧位置闪一帧再跳过来
-        _config.MirrorPosX = mx;
-        _config.MirrorPosY = my;
+        return (mx, my);
+    }
+
+    /// <summary>
+    /// v0.1.91：在 <c>Show()</c> 之前把映射窗摆到目标位（work 模式）并**同步进位置记忆**——
+    /// <see cref="InputMirrorWindow.OnSourceInitialized"/> 会读 <c>_config.MirrorPosX/Y</c> 定位，
+    /// 先把记忆写成"猫下方"就能让窗口首帧即出现在正确位置，杜绝"先按上次残留位置闪一帧再跳过去"。
+    /// 非 work 模式（如 slack 但 KeyboardMirrorEnabled=true）不干预，沿用记忆/默认位置（与旧行为一致）。
+    /// </summary>
+    private void AlignMirrorBeforeShow()
+    {
+        if (ComputeMirrorTarget() is not { } target) return;
+        _config.MirrorPosX = target.X;
+        _config.MirrorPosY = target.Y;
     }
 
     /// <summary>v0.1.39：键盘朝向镜像（设置页调用，即时生效 + 持久化）。false=朝我，true=朝猫</summary>

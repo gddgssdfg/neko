@@ -78,6 +78,17 @@ CELL = 512               # 序列条每格边长（与旧素材一致）
 # 归一化目标（对齐静态图基准，单位=512 画布 px）
 DEFAULT_TARGET_H = 399.0    # 目标「中位数内容高」（静态 idle≈399 / sit≈403）
 DEFAULT_TARGET_GAP = 52.0   # 目标「中位数离底」（静态 idle≈56 / sit≈48.5 之间）
+# ⚠️ 上面两个只是**兜底**（找不到静态图时用）。**默认改为按前缀自动推导** ——
+#    因为它们原本是**只为「猫」标定的数字**，用在菲比上会小 10.5%。
+#    实测：猫静态基准 399 / 离底 56；菲比静态基准 **446 / 离底 34.5**。
+#    曾因此把 phoebe_pet 做成 399/446 = 89.5% → 切到 pet 会「缩水」（用户可见）。
+
+# 超宽/超高时的策略：
+#   error   —— 默认。**大声报错并跳过该状态**（宁可暴露，绝不静默出错）
+#   contain —— 按宽度兜底缩放（整只保住，但会比基准矮，属"退而求其次"）
+#   clip    —— 旧行为（静默裁掉溢出），仅作兼容保留，会打警告
+DEFAULT_ON_OVERFLOW = "error"
+OVERFLOW_POLICIES = ("error", "contain", "clip")
 # 不越权：让新序列条**不抬高公共画布**。画布高由既有素材（静态 idle 离底 456、
 # 旧 climb/work 的「内容高+离底」=463）钉死；新动画里个别翻滚帧的 (内容高+离底) 会更大，
 # 若不设上限会把画布从 471 顶到 486 → 帧高 231 变 239（尺寸回归）。故对逐帧
@@ -352,19 +363,124 @@ def process_job(job: Job, workdir: Path, dump_dir: Path | None) -> None:
 #   2. 基线：`gap_i = 原始离底_i × s + delta`，`delta = TARGET_GAP - median(原始离底) × s`
 #      → 让「中位数离底」落在 TARGET_GAP，同时**完整保留帧间相对起伏**（只整体平移）。
 
+def still_baseline(prefix: str, ref_cell: int = CELL) -> tuple[float, float, str] | None:
+    """从 ``{prefix}_still_idle.png`` / ``{prefix}_still_sit.png`` 推导**该角色自己的**定标基准。
+
+    为什么必须按角色推导（血案）：静态图走的是「按源画布归一化」，**不同角色的填充率不同** ——
+    实测 **猫 399 / 离底 56**，而 **菲比 446 / 离底 34.5**。本工具原先写死 399/52（只为猫标定），
+    结果把 ``phoebe_pet`` 做成 399/446 = **89.5%** → 切到 pet 时角色**缩水 10%**（用户可见）。
+
+    返回 ``(目标内容高, 目标离底, 来源说明)``；两张静态图都找不到时返回 ``None``
+    （调用方退回 ``DEFAULT_TARGET_H`` / ``DEFAULT_TARGET_GAP`` 兜底并打警告）。
+    """
+    found: dict[str, tuple[float, float]] = {}
+    for st in ("idle", "sit"):
+        p = RAW / f"{prefix}_still_{st}.png"
+        if not p.is_file():
+            continue
+        a = np.asarray(Image.open(p).convert("RGBA"))
+        al = a[:, :, 3] > 16
+        if not al.any():
+            continue
+        ys, _xs = np.where(al)
+        sc = ref_cell / max(a.shape[0], a.shape[1])
+        found[st] = ((ys.max() - ys.min() + 1) * sc,
+                     (a.shape[0] - 1 - ys.max()) * sc)
+    if not found:
+        return None
+    # 口径必须与既有常量一致，否则会改动已产出的素材（零回归要求）：
+    #   · 高度取 **idle**（动画态都是站姿，与 idle 对齐）—— 猫 399 ✓（若取 idle/sit 中位会变成 401，+0.5%）
+    #   · 离底取 idle/sit 的**中位数并取整** —— 猫 median(56, 48.5)=52.25 → 52 ✓ 与常量 52 一致
+    h = round(found.get("idle", next(iter(found.values())))[0])
+    g = round(median([v[1] for v in found.values()]))
+    src = "still_idle" + ("+still_sit" if "sit" in found else "")
+    return (float(h), float(g), src)
+
+
+def stills_max_footprint(prefix: str, ref_cell: int = CELL) -> float | None:
+    """该角色静态图的「内容高 + 离底」最大值 —— 即它天然的**纵向占位**。
+
+    用途：给 ``max_advance`` 定上限，保证新序列条**不把公共画布顶高**（否则帧高会变、尺寸回归）。
+
+    为什么也要按角色推导：``DEFAULT_MAX_ADVANCE = 463`` 同样是**只为猫标定**的。
+    公式 ``max(静态图 h+gap) + 8`` **能精确复现猫的 463**（cat: max(455, 451.5)+8 = 463 ✓），
+    但对菲比会算成 492 —— 用 463 去卡菲比，会把 pet 的离底从 28 硬削到 9（实测），
+    导致 pet 比 sit 低 6px。故改为按角色推导。
+    """
+    vals: list[float] = []
+    for st in ("idle", "sit"):
+        p = RAW / f"{prefix}_still_{st}.png"
+        if not p.is_file():
+            continue
+        a = np.asarray(Image.open(p).convert("RGBA"))
+        al = a[:, :, 3] > 16
+        if not al.any():
+            continue
+        ys, _xs = np.where(al)
+        sc = ref_cell / max(a.shape[0], a.shape[1])
+        vals.append((ys.max() - ys.min() + 1) * sc + (a.shape[0] - 1 - ys.max()) * sc)
+    return max(vals) if vals else None
+
+
 def harmonize_and_strip(jobs: list[Job], cell: int, target_h: float, target_gap: float,
                         delta_override: float | None = None,
-                        max_advance: int | None = DEFAULT_MAX_ADVANCE) -> None:
-    """逐状态定标（尺寸+基线）后，把各帧底对齐放进 ``cell×cell`` 格位、拼成序列条。"""
+                        max_advance: int | None | str = "auto",
+                        auto_baseline: bool = True,
+                        on_overflow: str = DEFAULT_ON_OVERFLOW) -> list[str]:
+    """逐状态定标（尺寸+基线）后，把各帧底对齐放进 ``cell×cell`` 格位、拼成序列条。
+
+    返回 **问题清单**（空 = 全部正常）。调用方据此决定退出码 —— 绝不静默成功。
+    """
+    problems: list[str] = []
     for job in jobs:
         if not job.cutouts:
             continue
         hs = [c.bbox[3] - c.bbox[1] for c in job.cutouts]          # 各帧内容高（原始帧 px）
         ms = [c.raw.height - c.bbox[3] for c in job.cutouts]       # 各帧原始离底
         med_h = median(hs)
-        scale = target_h / med_h
+
+        # ---- 定标目标：**按角色自动推导**（原先写死的 399/52 只为猫标定，菲比会小 10%）----
+        th, tg, src = target_h, target_gap, "常量兜底"
+        if auto_baseline:
+            bl = still_baseline(job.prefix, cell)
+            if bl is not None:
+                th, tg, src = bl
+            else:
+                problems.append(
+                    f"[{job.prefix}/{job.state}] 找不到 {job.prefix}_still_*.png → "
+                    f"退回常量 {target_h:.0f}/{target_gap:.0f}（可能与本皮肤其他状态不对齐）")
+
+        scale = th / med_h
         med_gap = median(ms)
-        delta = (target_gap - med_gap * scale) if delta_override is None else delta_override
+        delta = (tg - med_gap * scale) if delta_override is None else delta_override
+
+        # ---- 🔴 溢出保护（本轮新增）：原先 `x = max(0,(cell-w)//2)` + paste 会**静默裁掉**超出格子的部分 ----
+        raw_ws = [c.image.width for c in job.cutouts]
+        raw_hs = [c.image.height for c in job.cutouts]
+        max_w = max(round(w * scale) for w in raw_ws)
+        max_h = max(round(h * scale) for h in raw_hs)
+        if max_w > cell or max_h > cell:
+            r_max = max(raw_ws[i] / raw_hs[i] for i in range(len(raw_ws)))
+            msg = (f"[{job.prefix}/{job.state}] 内容超出 {cell} 格：缩放后最大 {max_w}x{max_h}"
+                   f"（源内容宽高比最大 {r_max:.2f}；按高度定标要求 ≤ {cell / th:.2f}）")
+            if on_overflow == "error":
+                problems.append(msg + " → **已跳过**（素材需重做；或显式加 --on-overflow contain/clip）")
+                continue
+            if on_overflow == "contain":
+                scale = min(scale, cell / max(raw_ws), cell / max(raw_hs))
+                delta = (tg - med_gap * scale) if delta_override is None else delta_override
+                problems.append(msg + f" → contain: 缩到 scale={scale:.3f}（整只保住，但比基准矮）")
+            else:  # clip：旧行为，仅兼容
+                problems.append(msg + " → clip: **静默裁掉溢出**（不推荐）")
+
+        # ---- 逐帧 (内容高+离底) 上限：**按角色推导**，保证不把公共画布顶高 ----
+        # "auto" = max(该角色静态图 h+gap) + 8（该公式能精确复现猫的 463）
+        cap = max_advance
+        cap_src = "显式指定"
+        if cap == "auto":
+            fp = stills_max_footprint(job.prefix, cell)
+            cap = round(fp + 8) if fp is not None else DEFAULT_MAX_ADVANCE
+            cap_src = f"静态图{cap}" if fp is not None else f"常量兜底{cap}"
 
         cells: list[Image.Image] = []
         capped = 0
@@ -374,8 +490,8 @@ def harmonize_and_strip(jobs: list[Job], cell: int, target_h: float, target_gap:
             w = max(1, round(cut.image.width * scale))
             h = max(1, round(cut.image.height * scale))
             gap = round((cut.raw.height - cut.bbox[3]) * scale + delta)
-            if max_advance is not None and h + gap > max_advance:
-                gap = max_advance - h           # 只裁离群帧余量，不改中位数
+            if cap is not None and h + gap > cap:
+                gap = cap - h                   # 只裁离群帧余量，不改中位数
                 capped += 1
             gap = max(0, min(gap, cell - h))
             used_h.append(h)
@@ -398,7 +514,8 @@ def harmonize_and_strip(jobs: list[Job], cell: int, target_h: float, target_gap:
         print(f"[{job.state}] scale={scale:.3f} delta={delta:+.1f} "
               f"内容高(格内px)={sorted(used_h)} 离底={sorted(used_gap)} "
               f"{'(裁余量 %d 帧)' % capped if capped else ''} → {job.out.name} "
-              f"{len(cells)}格×{cell}px")
+              f"{len(cells)}格×{cell}px   基准={th:.0f}/{tg:.0f}（来自 {src}）")
+    return problems
 
 
 # ---------------------------------------------------------------- 对照图（QA）
@@ -509,15 +626,22 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--prefix", default=None, help="皮肤前缀（如 cat）；缺省从 --out 推断")
     ap.add_argument("--state", default=None, help="状态名（如 walk）；缺省从 --out 推断")
     ap.add_argument("--cell", type=int, default=CELL, help=f"序列条每格边长（默认 {CELL}）")
-    ap.add_argument("--target-height", type=float, default=DEFAULT_TARGET_H,
-                    help=f"目标中位数内容高（512 画布 px，默认 {DEFAULT_TARGET_H:.0f}）")
-    ap.add_argument("--target-gap", type=float, default=DEFAULT_TARGET_GAP,
-                    help=f"目标中位数离底（512 画布 px，默认 {DEFAULT_TARGET_GAP:.0f}）")
+    ap.add_argument("--target-height", type=float, default=None,
+                    help=f"目标中位数内容高（512 画布 px）。**缺省按 <prefix>_still_*.png 自动推导**"
+                         f"——不同角色填充率不同（实测 猫 399 / 菲比 446）；找不到静态图时退回 {DEFAULT_TARGET_H:.0f}")
+    ap.add_argument("--target-gap", type=float, default=None,
+                    help=f"目标中位数离底（512 画布 px）。缺省同上自动推导；兜底 {DEFAULT_TARGET_GAP:.0f}")
+    ap.add_argument("--no-auto-baseline", action="store_true",
+                    help="禁用「按静态图自动推导基准」，改用 --target-height/--target-gap（或常量兜底）")
+    ap.add_argument("--on-overflow", choices=OVERFLOW_POLICIES, default=DEFAULT_ON_OVERFLOW,
+                    help=f"内容缩放后超出格子时的策略（默认 {DEFAULT_ON_OVERFLOW}：大声报错并跳过该状态；"
+                         f"contain=按宽度兜底缩；clip=旧行为静默裁）")
     ap.add_argument("--gap-delta", type=float, default=None,
                     help="手工覆盖基线平移量 delta（px）；缺省按 --target-gap 反解")
-    ap.add_argument("--max-advance", type=int, default=DEFAULT_MAX_ADVANCE,
-                    help=f"逐帧 (内容高+离底) 上限，防止新条抬高公共画布（默认 {DEFAULT_MAX_ADVANCE}；"
-                         f"0 表示不限制）")
+    ap.add_argument("--max-advance", default="auto",
+                    help=f"逐帧 (内容高+离底) 上限，防止新条抬高公共画布。"
+                         f"**缺省 auto** = max(该角色静态图 h+gap) + 8（该公式精确复现猫的 463，"
+                         f"菲比为 492）；显式传数字覆盖；传 0 = 不限制")
     ap.add_argument("--contact-sheet", default=None, metavar="PATH",
                     help="输出「原始|抠图|边缘放大」对照图")
     ap.add_argument("--dump-dir", default=None, metavar="DIR",
@@ -559,6 +683,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print("\n=== 逐状态定标（尺寸/基线）===")
+    auto = not args.no_auto_baseline
+    th_fb = args.target_height if args.target_height is not None else DEFAULT_TARGET_H
+    tg_fb = args.target_gap if args.target_gap is not None else DEFAULT_TARGET_GAP
+
+    def _resolve(prefix: str) -> tuple[float, float, str]:
+        if auto:
+            bl = still_baseline(prefix, args.cell)
+            if bl is not None:
+                return bl
+        return (th_fb, tg_fb, "常量兜底")
+
     if args.dry_run:
         # 只报参数，不写条
         for job in jobs:
@@ -566,18 +701,36 @@ def main(argv: list[str] | None = None) -> int:
             ms = [c.raw.height - c.bbox[3] for c in job.cutouts]
             if not hs:
                 continue
-            s = args.target_height / median(hs)
-            d = args.target_gap - median(ms) * s
+            th, tg, src = _resolve(job.prefix)
+            s = th / median(hs)
+            d = tg - median(ms) * s
+            raw_ws = [c.image.width for c in job.cutouts]
+            raw_hs = [c.image.height for c in job.cutouts]
+            mw = max(round(w * s) for w in raw_ws)
+            flag = "  🔴 超出格子（会报错跳过）" if mw > args.cell else ""
             print(f"[{job.state}] scale={s:.3f} delta={d:+.1f} "
-                  f"medH={median(hs):.0f}→{median(hs)*s:.0f} medGap={median(ms)*s+d:.0f}")
+                  f"medH={median(hs):.0f}→{median(hs)*s:.0f} medGap={median(ms)*s+d:.0f} "
+                  f"最大宽={mw}/{args.cell} 基准={th:.0f}/{tg:.0f}（来自 {src}）{flag}")
         print("（--dry-run：不写序列条）")
         return 0
 
-    harmonize_and_strip(jobs, args.cell, args.target_height, args.target_gap,
-                        args.gap_delta, args.max_advance or None)
+    problems = harmonize_and_strip(jobs, args.cell, th_fb, tg_fb,
+                                   args.gap_delta, args.max_advance or None,
+                                   auto_baseline=auto, on_overflow=args.on_overflow)
 
     if args.contact_sheet:
         make_contact_sheet(jobs, Path(args.contact_sheet))
+
+    if problems:
+        print("\n⚠️ 问题清单：", file=sys.stderr)
+        for p in problems:
+            print("  - " + p, file=sys.stderr)
+        skipped = [p for p in problems if "已跳过" in p]
+        if skipped:
+            print(f"\n❌ 有 {len(skipped)} 个状态因内容超出 {args.cell} 格被**跳过未产出**。\n"
+                  f"   这些素材不能用（会被裁）—— 请重做，或显式加 --on-overflow contain（缩到装下，但会比基准矮）。",
+                  file=sys.stderr)
+            return 3
 
     print("\n✅ 完成")
     return 0

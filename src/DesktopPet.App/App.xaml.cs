@@ -95,6 +95,17 @@ public partial class App : Application
             _tray?.RefreshMenu();
         };
 
+        // v0.1.91 P1+P2+R1：把「镜像窗创建(≈365ms) + chat/tracker 初始化(≈112ms)」移出启动关键路径。
+        // 首帧（ContentRendered）上屏后补做；PetWindow.InitializeAfterFirstFrame 内部再排 Background 优先级，
+        // 确保这些重活排在渲染之后，绝不抢首帧。运行时切换（SetAppMode / 设置页开关）仍走原同步路径。
+        bool afterFirstFrameDone = false;
+        _petWindow.ContentRendered += (_, _) =>
+        {
+            if (afterFirstFrameDone) return;   // 多显示器/重渲染可能多次触发，只做一次
+            afterFirstFrameDone = true;
+            _petWindow.InitializeAfterFirstFrame();
+        };
+
         _petWindow.Show();
 
         // v0.1.82：开发用 `Neko.exe --settings[=栏目]` —— 启动后直接打开设置页（可指定栏目，
