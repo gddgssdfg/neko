@@ -808,11 +808,11 @@ public sealed class InputMirrorWindow : Window
         if (_wheelFlash is null) return;
         _wheelFlash.Background = new SolidColorBrush(KeyActiveC);
         _wheelTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
-        _wheelTimer.Tick += (_, _) =>
-        {
-            _wheelFlash!.Background = new SolidColorBrush(KeyBaseC);   // v0.1.86：还原到滚轮底色（不再是描边色）
-            _wheelTimer.Stop();
-        };
+        // v0.1.95（审计 P1-1 修复）：**订阅必须配平**——旧写法每次滚轮都 `Tick += 匿名 lambda` 且从不 `-=`，
+        // 滚 N 次后每次滚动会同时执行 N 个处理器（无界增长的内存/CPU 泄漏）。
+        // 改为命名方法 + 覆盖式订阅（与本函数下方 `_wheelPawTimer` 的既有写法一致）。
+        _wheelTimer.Tick -= OnWheelFlashTick;
+        _wheelTimer.Tick += OnWheelFlashTick;
         _wheelTimer.Stop();
         _wheelTimer.Start();
 
@@ -824,6 +824,17 @@ public sealed class InputMirrorWindow : Window
         _wheelPawTimer.Stop();
         _wheelPawTimer.Start();
     }
+
+    /// <summary>滚轮高亮还原（命名方法，供 <see cref="OnRawMouseWheel"/> 覆盖式订阅）。</summary>
+    private void OnWheelFlashTick(object? sender, EventArgs e)
+    {
+        _wheelFlash!.Background = new SolidColorBrush(KeyBaseC);   // v0.1.86：还原到滚轮底色（不再是描边色）
+        _wheelTimer!.Stop();
+    }
+
+    /// <summary>v0.1.95：模拟一次滚轮（UiProbe 订阅配平回归用，不经过钩子）。
+    /// 暴露为 public 是为了与既有 <see cref="FlashKey"/>/<see cref="FlashMouse"/> 探针钩子保持一致。</summary>
+    public void FlashWheel() => OnRawMouseWheel();
 
     private void OnWheelPawTimerTick(object? sender, EventArgs e)
     {

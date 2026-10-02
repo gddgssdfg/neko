@@ -4,6 +4,29 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.95] - 2026-10-03
+
+**架构健康审计（C 档）落地：修 2 个 P1 事件订阅泄漏 + 插件资源收口 + `app:ready` 契约修正。**
+本轮为「只增不改」型修复：不动任何 Core 公共签名、不改插件生态契约（18 个内置插件零改动）。
+
+### 修复
+- **P1-1（订阅泄漏 · 镜像窗滚轮）**：`InputMirrorWindow.OnRawMouseWheel` 每次滚轮都 `_wheelTimer.Tick += 匿名 lambda` 且从不 `-=` → 滚 N 次后单次滚动会执行 N 个处理器（无界增长的内存/CPU 泄漏）。改为**命名方法 + 覆盖式订阅**（`-=` 再 `+=`），与本文件 `_wheelPawTimer` 既有写法一致。
+- **P1-2（订阅泄漏 · 径向菜单）**：`RadialMenu.ShowAt` 无条件 `+=` 全局钩子（`RawMouseButtonEvent`/`RawKeyEvent`），而 `HideMenu` 只 `-=` 一次（且不可见时早返回、根本不退订）。在「右键→再右键」路径下订阅会随次数累积。改：`ShowAt` 改为幂等订阅（`-=` 再 `+=`）；`HideMenu` 的退订提到早返回**之前**。
+- **P2-1（插件调度器未收口）**：`PluginHost.BuildContext` 里 `new SchedulerImpl()` 无人持有、随插件禁用也**永不 Dispose** → 其 `System.Threading.Timer` 被运行时定时器队列永久 root（并 root 住回调 → 指向插件 ALC），表现为「禁用后回调仍在跑 + 插件 ALC 回收不了」。改：宿主用 `_schedulers` **持有每插件一份调度器**，在 `DisablePlugin` / `EnablePlugin` 回滚 / 宿主 `Dispose` 时释放；新增 `SchedulerImpl.IDisposable`（停掉本调度器**全部**定时器）。
+- **P2-2（`app:ready` 时机错误）**：`PetWindow.LoadPlugins` 原在**末尾同步** `Emit(AppReady)`，早于 Background 队列里的 `LoadDeferred` → 6 个延迟插件（weather/quote/wordcard/screenshot/fortune/hourly）**必然漏收**。改：把 `Emit` 挪进 `LoadDeferred()` **之后**的同一后台任务（核心 + 延迟插件都能收到；`AppReady` 仍**只发一次**）。
+- **P2-3（`OnUnload` 调用次数不一致）**：`DisablePlugin` 曾显式调一次 `Instance.OnUnload()`，随后 `Dispose` 内又调一次（而宿主退出路径只调一次）——同一「禁用」路径出现两种次数。改：新增 `LoadedPlugin.Unload()`（幂等闸），`Dispose` 收口为调它，保证 `OnUnload` **恰好一次**。
+
+### 测试（UiProbe 新增 4 条断言，覆盖 P1-1/P1-2/P2-1/P2-2）
+- **G2a/G2b（订阅配平）**：反射读 `DispatcherTimer.Tick` 与 `GlobalInput` 事件的私有委托字段，数 `GetInvocationList()`。镜像窗滚轮连按 **1000 次** → `Tick` 订阅数恒为 **1**；径向菜单重复 `ShowAt` 6 次 → 全局钩子订阅数恒为 **1**，`HideMenu` 后归 **0**（改前分别累积到 ~1001 / 6、残留 5）。
+- **G1a/G1b（调度器收口，核心段）**：`SchedulerImpl.Dispose()` 停掉**未单独 Dispose 的**定时器（回调冻结，幂等）；真实 `PluginHost.DisablePlugin` 后该插件调度器被移除、定时器清零，`EnablePlugin` 还原。
+- **G3（`app:ready` 时机）**：`app:ready` 恰好触发 **1** 次，且触发时已加载插件数 == 全部加载完成后的数量（含 6 个 deferred）——改前触发时 deferred 尚未加载，断言必红。
+- ⚠️ **已知缺口**：G1 **未**覆盖「禁用后插件 ALC 真被 GC 回收」的端到端形态（需 stub 插件 dll 夹具，与 F1/F2 设计提案同源限制），已在断言内显式留注释。
+
+### 说明
+- 本轮**不做** P3 清理、**未**把 `check_version`/`check_i18n` 纳入 `tools/ci.py`（属 D 档）。
+- F1（事件按 scope 自动收口）/ F2（插件窗口禁用时关闭）**本批不做**，仅出设计提案（Core 为纯契约层，不能引 WPF 类型）。
+- 详见 `_audit/architecture-health-audit-v0.1.94.md`（§七 最小补丁方案 + F1/F2 提案）与 `docs/dev-log.md`。
+
 ## [0.1.94] - 2026-10-03
 
 **闲时走路默认关闭（可一键恢复）—— 走路素材本身腿摆无视觉幅度，真位移后只会变成滑行。**

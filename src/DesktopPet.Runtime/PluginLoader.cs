@@ -54,9 +54,25 @@ public sealed class LoadedPlugin : IDisposable
     public PluginPermissions GrantedPermissions { get; init; }
     public bool IsCollectible => Context.IsCollectible;
 
+    private bool _unloaded;
+
+    /// <summary>
+    /// v0.1.95（审计 P2-3）：**幂等卸载**——保证 <see cref="IPetPlugin.OnUnload"/> 恰好被调用一次。
+    /// <para>背景：<c>PluginHost.DisablePlugin</c> 曾显式调一次 <c>Instance.OnUnload()</c>，随后 <see cref="Dispose"/>
+    /// 内又调一次（而 <c>PluginHost.Dispose</c> 路径只调一次）——同一「禁用」路径出现两种调用次数。
+    /// 契约要求「恰好一次」；非幂等的 <c>OnUnload</c>（重复写盘 / 计数 / FlushNow）会产生重复副作用。此闸门统一收口。</para>
+    /// <para>「只增」：<c>LoadedPlugin</c> 新增本方法，不改既有成员语义；<see cref="Dispose"/> 行为保持等价（仍会触发一次 OnUnload）。</para>
+    /// </summary>
+    public void Unload()
+    {
+        if (_unloaded) return;
+        _unloaded = true;
+        try { Instance.OnUnload(); } catch { /* 卸载回调失败不影响卸载 */ }
+    }
+
     public void Dispose()
     {
-        try { Instance.OnUnload(); } catch { /* 卸载回调失败不影响卸载 */ }
+        Unload();   // v0.1.95：收口为幂等入口（改前此处直接 try { Instance.OnUnload(); }）
         try { Instance.Dispose(); } catch { /* 插件 Dispose 失败不影响 ALC 卸载（最后防线，Runtime 无宿主 Log 可用）*/ }
         Context.Unload();
     }

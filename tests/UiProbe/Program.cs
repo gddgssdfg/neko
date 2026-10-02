@@ -54,9 +54,47 @@ internal static class Program
         win.Show();
         // 强制完成一次布局，确保 ActualWidth/Height 已计算
         win.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+        // ---- v0.1.95 G3：app:ready 时机断言的前置订阅（必须在 LoadPlugins 之前挂上）----
+        // 契约：app:ready 必须在 **LoadDeferred 之后** 广播（deferred 插件也能收到），且恰好一次。
+        // 改前 Emit 在 LoadPlugins 末尾【同步】执行，早于 Background 队列里的 LoadDeferred → deferred 插件漏收。
+        var appReadyBus = (DesktopPet.Core.IEventBus)(typeof(PetWindow)
+            .GetField("_eventBus", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new MissingFieldException("PetWindow._eventBus 不存在")).GetValue(win)!;
+        int appReadyCount = 0;
+        int pluginsAtAppReady = -1;
+        appReadyBus.On(DesktopPet.Core.PetEvents.AppReady, _ =>
+        {
+            Interlocked.Increment(ref appReadyCount);
+            pluginsAtAppReady = win.PluginHost.Plugins.Count;   // 触发瞬间的已加载插件数
+        });
+
         // v0.1.46：触发 LoadPlugins（同步 LoadCore + 异步 LoadDeferred）—— 直接调避免等 Loaded 异步
         // UiProbe bin/plugins/ 由 csproj None 复制保证存在
         win.LoadPlugins();
+
+        Check("v0.1.95 G3：app:ready 在 LoadDeferred 之后广播（deferred 插件不漏收）+ 恰好一次", () =>
+        {
+            // 泵空 Background 队列：LoadDeferred 与 app:ready 都在其中
+            var pump = new DispatcherFrame();
+            var pt = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(200) };
+            pt.Tick += (_, _) => { pt.Stop(); pump.Continue = false; };
+            pt.Start();
+            Dispatcher.PushFrame(pump);
+
+            if (Volatile.Read(ref appReadyCount) != 1)
+                throw new Exception($"app:ready 触发 {appReadyCount} 次（契约：恰好 1 次）");
+            var deferred = new[] { "com.lantern.weather", "com.lantern.quote", "com.lantern.wordcard",
+                                   "com.lantern.screenshot", "com.lantern.fortune", "com.lantern.hourly" };
+            int deferredPresent = win.PluginHost.Plugins.Count(p => deferred.Contains(p.Manifest.Id));
+            if (deferredPresent == 0)
+                throw new Exception("本环境无 deferred 插件（bin_ci/plugins 缺 6 个延迟插件），该断言无意义（环境异常）");
+            int finalCount = win.PluginHost.Plugins.Count;
+            if (pluginsAtAppReady != finalCount)
+                throw new Exception($"app:ready 触发时已加载 {pluginsAtAppReady} 个插件，全部加载完为 {finalCount} 个 " +
+                                    "—— app:ready 早于 deferred 加载（deferred 插件漏收）");
+            Console.WriteLine($"  app:ready 恰好 1 次；触发时插件数 {pluginsAtAppReady} == 最终 {finalCount}（含 {deferredPresent} 个 deferred）");
+        });
 
         var w = win.ActualWidth;
         var h = win.ActualHeight;
@@ -1259,6 +1297,63 @@ internal static class Program
             win.Top = startTop;
         });
 
+        // ---- v0.1.95 G1b（P2-1）：插件调度器随禁用收口（需 win 的 PluginHost 存活 → 必须放在 win.Dispose 之前）----
+        Check("v0.1.95 G1b(P2-1)：真实 PluginHost 禁用插件 → 释放其调度器并清空全部定时器", () =>
+        {
+            var schedField = typeof(PluginHost).GetField("_schedulers", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PluginHost._schedulers 不存在（补丁 E 可能回退）");
+            var handlesField = typeof(SchedulerImpl).GetField("_handles", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("SchedulerImpl._handles 不存在");
+
+            static int HandleCount(SchedulerImpl s, FieldInfo hf)
+                => ((System.Collections.ICollection)hf.GetValue(s)!).Count;
+
+            // 任取一个有调度器的已加载插件（宿主应为每个已加载插件都持有**一份**调度器）
+            var schedulers = (System.Collections.IDictionary)schedField.GetValue(win.PluginHost)!;
+            string? targetId = null;
+            SchedulerImpl? targetSched = null;
+            foreach (var p in win.PluginHost.Plugins)
+            {
+                if (schedulers[p.Manifest.Id] is SchedulerImpl s)
+                { targetId = p.Manifest.Id; targetSched = s; break; }
+            }
+            if (targetId is null || targetSched is null)
+                throw new Exception($"宿主未为任何已加载插件持有调度器（Plugins={win.PluginHost.Plugins.Count}，补丁 E 未生效）");
+
+            // 模拟「插件挂一个 IScheduler 定时器」：直接在该插件（宿主持有）的调度器上注册。
+            // 注：内置插件的定时器多为懒建/条件建（Countdown/Pomodoro 是用户触发；HourlyChime 需开关启用；
+            //     Clipboard 仅降级路径）→ 静置时无人挂表，故此处主动注册，精确复刻「插件挂了定时器后宿主收口」的形态。
+            int ticks = 0;
+            targetSched.Every(10, () => Interlocked.Increment(ref ticks));
+            int beforeHandles = HandleCount(targetSched, handlesField);
+            if (beforeHandles < 1) throw new Exception("在插件调度器上注册定时器后句柄数仍为 0");
+
+            Thread.Sleep(60);
+            int live = Volatile.Read(ref ticks);
+            if (live < 1) throw new Exception($"前置：注册的定时器未触发（{live} 次）");
+
+            if (!win.PluginHost.DisablePlugin(targetId))
+                throw new Exception($"DisablePlugin({targetId}) 失败");
+            var schedulersAfter = (System.Collections.IDictionary)schedField.GetValue(win.PluginHost)!;
+            if (schedulersAfter.Contains(targetId))
+                throw new Exception($"禁用后 PluginHost._schedulers 仍持有 {targetId}（插件调度器未收口 → 定时器永久 root 插件 ALC）");
+            int afterHandles = HandleCount(targetSched, handlesField);
+            if (afterHandles != 0)
+                throw new Exception($"禁用后 {targetId} 的调度器仍有 {afterHandles} 个活动定时器（Dispose 未生效）");
+            // 停表后先给在途回调留出完成时间（Timer.Dispose 不等待执行中的回调），再取基线断言不再增长
+            Thread.Sleep(80);
+            int frozen = Volatile.Read(ref ticks);
+            Thread.Sleep(150);
+            int afterWait = Volatile.Read(ref ticks);
+            if (afterWait != frozen)
+                throw new Exception($"禁用后定时器回调仍在触发（{frozen} → {afterWait}）：未真正停表");
+
+            // 还原：重新启用，恢复宿主状态给后续用例（重载会建一份新的调度器）
+            if (!win.PluginHost.EnablePlugin(targetId))
+                throw new Exception($"EnablePlugin({targetId}) 失败（还原失败）");
+            Console.WriteLine($"  插件 {targetId}：注册定时器后句柄 {beforeHandles} 个；禁用后 0 个、回调冻结；_schedulers 已移除；已还原启用");
+        });
+
         win.Dispose();
         win.Close();
 
@@ -1851,6 +1946,72 @@ internal static class Program
             if (sm.Current == PetState.Walk) throw new Exception("关闭开关后应立刻回 Idle，而非卡在 Walk");
         });
 
+        // ---- v0.1.95 G2：订阅配平守护（P1-1 / P1-2 —— 定时器/全局钩子订阅不得无界累积）----
+        Check("v0.1.95 G2a(P1-1)：镜像窗滚轮连按 1000 次 → DispatcherTimer.Tick 订阅恒为 1", () =>
+        {
+            var gi = new GlobalInput();
+            var mirror = new InputMirrorWindow(gi, new AppConfig(), () => { });
+            mirror.FlashWheel();   // 首次：懒建 _wheelTimer 并订阅（改前每次滚轮匿名 lambda +=）
+            var timerField = typeof(InputMirrorWindow).GetField("_wheelTimer", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("InputMirrorWindow._wheelTimer 不存在");
+            var timer = timerField.GetValue(mirror)
+                ?? throw new Exception("FlashWheel 后 _wheelTimer 仍为 null（_wheelFlash 可能未构建）");
+            int after1 = HandlerCount(timer, "Tick");
+            if (after1 != 1) throw new Exception($"首次滚轮后 Tick 订阅数 {after1}（应为 1）");
+            for (int i = 0; i < 1000; i++) mirror.FlashWheel();
+            int after1000 = HandlerCount(timer, "Tick");
+            if (after1000 != 1)
+                throw new Exception($"滚轮连按 1000 次后 Tick 订阅数 {after1000}（应恒为 1；改前匿名 lambda += 会累积到 ~1001）");
+            mirror.Close();
+            gi.Dispose();
+            Console.WriteLine("  滚轮连按 1000 次：Tick 订阅数保持 1（不累积）");
+        });
+
+        Check("v0.1.95 G2b(P1-2)：径向菜单重复 ShowAt → 全局钩子订阅恒为 1；HideMenu 后归零", () =>
+        {
+            var gi = new GlobalInput();
+            var rm = new RadialMenu(new UIApiImpl(_ => null), gi, new AppConfig());
+            rm.ShowAt(300, 300);
+            for (int i = 0; i < 5; i++) rm.ShowAt(300 + i * 5, 300);
+            int mb = HandlerCount(gi, "RawMouseButtonEvent");
+            int rk = HandlerCount(gi, "RawKeyEvent");
+            if (mb != 1 || rk != 1)
+                throw new Exception($"重复 ShowAt 后订阅数 mouse={mb} key={rk}（应各为 1；改前无条件 += 会到 6）");
+            rm.HideMenu();
+            int mb2 = HandlerCount(gi, "RawMouseButtonEvent");
+            int rk2 = HandlerCount(gi, "RawKeyEvent");
+            if (mb2 != 0 || rk2 != 0)
+                throw new Exception($"HideMenu 后仍残留订阅 mouse={mb2} key={rk2}（应归零；改前会残留 5 个）");
+            gi.Dispose();
+            Console.WriteLine("  重复 ShowAt 6 次：订阅数保持 1；HideMenu 后归零");
+        });
+
+        // ---- v0.1.95 G1（核心段）：插件调度器随禁用收口（P2-1）----
+        // ⚠️ 已知缺口（显式声明）：本段覆盖「宿主为每插件持有调度器 → 禁用时释放 → 全部定时器停掉」这一**核心链路**；
+        //    **未**覆盖「禁用后插件 ALC 真被 GC 回收」的端到端形态 —— 那需要把一个 stub 插件 dll 载入可回收 ALC
+        //    再走真实 PluginHost.DisablePlugin，而 UiProbe 无构建期 stub 插件夹具（与 F1/F2 设计提案同源限制）。
+        //    该端到端形态当前由 PluginSmoke 的「[ALC 未能回收] 0 个」在**假调度器**下近似覆盖（不含真实 SchedulerImpl 定时器）；
+        //    待补方案见 _audit/architecture-health-audit-v0.1.94.md 的 F1/F2 设计提案与本缺口说明。
+        Check("v0.1.95 G1a(P2-1)：SchedulerImpl.Dispose 停掉全部定时器（含未单独 Dispose 的句柄）", () =>
+        {
+            var sched = new SchedulerImpl();
+            int ticks = 0;
+            // 故意**不**持有 / 不 Dispose 返回的句柄 —— 复刻「插件只把定时器交给调度器，禁用时仅由宿主释放调度器」的形态
+            sched.Every(10, () => Interlocked.Increment(ref ticks));
+            Thread.Sleep(120);
+            int before = Volatile.Read(ref ticks);
+            if (before < 1) throw new Exception($"前置：定时器未触发（{before} 次）");
+            sched.Dispose();
+            Thread.Sleep(60);                  // 容忍至多 1 个在途回调：Timer.Dispose 不等待「正在执行」的回调
+            int frozen = Volatile.Read(ref ticks);
+            Thread.Sleep(120);
+            int afterWait = Volatile.Read(ref ticks);
+            if (afterWait != frozen)
+                throw new Exception($"SchedulerImpl.Dispose 后回调仍在触发（{frozen} → {afterWait}）：定时器未停");
+            sched.Dispose();   // 幂等：二次调用不得抛
+            Console.WriteLine($"  Dispose 前触发 {before} 次 → 停表（含在途）后冻结在 {frozen} 次（幂等）");
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Console.Out.Flush();
         // v0.1.82：用 Environment.Exit 强制退出。测试里创建过真实 WPF 窗口（PetWindow/RadialMenu），
@@ -1871,6 +2032,20 @@ internal static class Program
             _fail++;
             Console.WriteLine($"FAIL: {name} -> {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// v0.1.95 G2：读「字段式事件」（field-like event）的订阅者数量。
+    /// <para>编译器为 <c>event X</c> 生成同名<b>私有</b>委托字段；反射取之并数
+    /// <see cref="Delegate.GetInvocationList"/>。<see cref="DispatcherTimer.Tick"/>（EventHandler）与
+    /// <c>GlobalInput.RawMouseButtonEvent / RawKeyEvent</c>（Action）都是字段式事件，故适用。
+    /// 用于断言「订阅配平」——P1-1/P1-2 修复后，重复触发路径的订阅数必须恒为 1（或 0）。</para>
+    /// </summary>
+    private static int HandlerCount(object source, string eventName)
+    {
+        var field = source.GetType().GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic);
+        var del = field?.GetValue(source) as Delegate;
+        return del?.GetInvocationList().Length ?? 0;
     }
 
     /// <summary>取出对话区里所有气泡文本（气泡是 <c>Border { Child = TextBlock }</c>）。</summary>

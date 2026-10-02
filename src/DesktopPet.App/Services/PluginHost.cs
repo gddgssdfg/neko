@@ -23,6 +23,12 @@ public sealed class PluginHost : IDisposable
     private readonly List<LoadedPlugin> _plugins = new();
     private readonly List<(string dir, string error)> _errors = new();
 
+    // v0.1.95（审计 P2-1 核心段）：每插件一份调度器，宿主持有其引用，随插件禁用 / 宿主退出释放。
+    // 改前：BuildContext 里 `new SchedulerImpl()` 无人持有、永不 Dispose → 其 System.Threading.Timer
+    // 一直被运行时定时器队列 root（并 root 住回调委托 → 指向插件 ALC），造成"禁用后回调仍在跑 +
+    // 插件 ALC 回收不了"。此处收口为宿主所有权。
+    private readonly Dictionary<string, SchedulerImpl> _schedulers = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<LoadedPlugin> Plugins => _plugins;
     public IReadOnlyList<(string dir, string error)> Errors => _errors;
 
@@ -141,10 +147,13 @@ public sealed class PluginHost : IDisposable
     {
         var scopeId = plugin.Manifest.Id;
         var ui = new ScopedUiApi(_uiApi, scopeId);
+        // v0.1.95（审计 P2-1 核心段）：把每插件的 SchedulerImpl 存进 _schedulers，宿主据此在禁用/退出时释放。
+        var scheduler = new SchedulerImpl();
+        _schedulers[scopeId] = scheduler;
         var cap = new CapabilityApiImpl
         {
             Storage = new JsonPluginStorage(Paths.PluginDataDir(plugin.Manifest.Id)),
-            Scheduler = new SchedulerImpl(),
+            Scheduler = scheduler,
             // v0.1.83：传入插件 id → 插件经 Capability.System.Log 写的日志会带 [插件:<id>] 前缀
             System = new SystemImpl(plugin.Manifest.Id),
             Events = _capability.Events,
@@ -187,6 +196,8 @@ public sealed class PluginHost : IDisposable
             _errors.Add((dir, $"OnLoad 失败: {ex.Message}"));
             try { _uiApi.UnregisterAll(id); } catch { /* 回滚已注册 UI：单步失败不阻断后续清理（尽力而为）*/ }
             try { lp.Dispose(); } catch { /* 回滚卸载 ALC：失败不影响返回 false 的结果（尽力而为）*/ }
+            // v0.1.95（审计 P2-1 核心段）：回滚 BuildContext 已登记的调度器，避免"加载失败"时残留定时器 + ALC root。
+            if (_schedulers.Remove(lp.Manifest.Id, out var sch)) { try { sch.Dispose(); } catch { /* 尽力而为 */ } }
             return false;
         }
     }
@@ -196,9 +207,16 @@ public sealed class PluginHost : IDisposable
     {
         var p = _plugins.FirstOrDefault(x => string.Equals(x.Manifest.Id, id, StringComparison.OrdinalIgnoreCase));
         if (p is null) { _disabled.Add(id); return true; }   // 没加载也确认禁用（一致性）
-        try { p.Instance.OnUnload(); } catch { /* 卸载回调异常不得阻断后续撤销 UI 与 ALC 卸载（尽力而为）*/ }
+        // v0.1.95（审计 P2-3）：改走幂等 Unload（Dispose 内也会调，但已有幂等闸）→ OnUnload 恰好一次。
+        try { p.Unload(); } catch { /* 卸载回调异常不得阻断后续撤销 UI 与 ALC 卸载（尽力而为）*/ }
         try { _uiApi.UnregisterAll(id); } catch { /* 撤销 UI 失败不阻断 ALC 卸载 */ }
         try { p.Dispose(); } catch { /* 释放失败不阻断从已加载列表移除 */ }
+        // v0.1.95（审计 P2-1 核心段）：释放该插件的调度器 → 停掉全部 System.Threading.Timer，
+        // 解开定时器队列对插件 ALC 的 root（改前定时器仍在跑、且 ALC 回收不了）。
+        if (_schedulers.Remove(id, out var scheduler))
+        {
+            try { scheduler.Dispose(); } catch { /* 停表失败不阻断禁用 */ }
+        }
         _plugins.Remove(p);
         _disabled.Add(id);   // 标记禁用
         EnabledChanged?.Invoke(id, false);
@@ -212,8 +230,14 @@ public sealed class PluginHost : IDisposable
             // 先撤销该插件注册的全部 UI（径向菜单槽位 / 托盘项 / 设置页）
             try { _uiApi.UnregisterAll(p.Manifest.Id); } catch { /* 宿主退出清理：单个插件失败不阻断其余插件 */ }
             try { p.Dispose(); } catch { /* 同上，尽力而为 */ }
+            // v0.1.95（审计 P2-1 核心段）：宿主退出同样释放每插件调度器（停表 + 解开对插件 ALC 的 root）。
+            if (_schedulers.TryGetValue(p.Manifest.Id, out var scheduler))
+            {
+                try { scheduler.Dispose(); } catch { /* 同上，尽力而为 */ }
+            }
         }
         _plugins.Clear();
+        _schedulers.Clear();
     }
 
     /// <summary>带作用域的 UI API：Register* 自动归到本插件 scope，UnregisterAll 撤销本插件</summary>

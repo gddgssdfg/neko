@@ -193,6 +193,11 @@ public sealed class RadialMenu : Window
         ((ScaleTransform)_canvas.RenderTransform).BeginAnimation(ScaleTransform.ScaleYProperty, scale);
 
         // 全局点击 / Esc → 关闭判定
+        // v0.1.95（审计 P1-2 修复）：**幂等订阅**——旧写法无条件 `+=`。菜单打开时猫仍在中心挖空区可被右键
+        // （右键入口 OpenRadialMenu 无 IsVisible 守卫），"右键→再右键"会造成重复订阅，而 HideMenu 只 `-=` 一次
+        // → 残留永久订阅并随右键次数累积。先 `-=` 再 `+=` 保证恒为 1 个订阅。
+        _input.RawMouseButtonEvent -= OnExternalMouseClick;
+        _input.RawKeyEvent -= OnExternalKey;
         _input.RawMouseButtonEvent += OnExternalMouseClick;
         _input.RawKeyEvent += OnExternalKey;
     }
@@ -200,9 +205,11 @@ public sealed class RadialMenu : Window
     /// <summary>隐藏菜单（v0.1.30：200ms 淡出后真正 Hide）</summary>
     public void HideMenu()
     {
-        if (!IsVisible) return;
+        // v0.1.95（审计 P1-2）：退订提到早返回【之前】——不可见时也要把订阅清掉（配平），
+        // 否则「ShowAt 双订阅 → HideMenu 只减一次」会残留一个永久订阅。
         _input.RawMouseButtonEvent -= OnExternalMouseClick;
         _input.RawKeyEvent -= OnExternalKey;
+        if (!IsVisible) return;
 
         var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(160));
         fade.Completed += (_, _) => { if (Opacity < 0.5) Hide(); };

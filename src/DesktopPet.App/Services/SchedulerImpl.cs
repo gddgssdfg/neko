@@ -12,7 +12,7 @@ namespace DesktopPet.App.Services;
 /// 都必须 try/catch 包裹 —— 否则任一插件定时任务抛异常就会杀死 Neko 宿主
 /// （违反架构铁律「单插件崩溃不拖垮宿主」）。</para>
 /// </summary>
-public sealed class SchedulerImpl : IScheduler
+public sealed class SchedulerImpl : IScheduler, IDisposable
 {
     /// <summary>连续失败阈值：达到后自动停表，避免刷屏 + 反复异常。</summary>
     private const int MaxConsecutiveFailures = 5;
@@ -48,6 +48,28 @@ public sealed class SchedulerImpl : IScheduler
         lock (_handles) _handles.Add(handle);
         timer.Change(dueMs, periodMs);   // 此刻 handle 已就位：回调无论何时触发都拿得到非 null handle
         return handle;
+    }
+
+    /// <summary>
+    /// v0.1.95（审计 P2-1 核心段）：释放本调度器的**全部**定时器。
+    /// <para>宿主（<c>PluginHost</c>）为每插件持有 <b>一份</b> <see cref="SchedulerImpl"/>，在插件禁用 / 宿主退出时
+    /// 调用本方法。<c>System.Threading.Timer</c> 只要不 Dispose，就会被运行时定时器队列<b>永久 root</b>
+    /// （并 root 住其回调委托 → 指向插件 ALC），表现为「禁用后回调仍在跑 + 插件 ALC 回收不了」。
+    /// 逐个 Dispose 即解开该 root（配合 <c>LoadedPlugin.Dispose</c> 的 <c>Context.Unload()</c> 才能真回收）。</para>
+    /// <para>幂等：重复调用安全（第二次快照为空）。线程安全：与 <see cref="Add"/> 共用 <c>_handles</c> 锁。</para>
+    /// </summary>
+    public void Dispose()
+    {
+        List<TimerHandle> snapshot;
+        lock (_handles)
+        {
+            snapshot = new List<TimerHandle>(_handles);
+            _handles.Clear();
+        }
+        foreach (var h in snapshot)
+        {
+            try { h.Dispose(); } catch { /* 停表单表失败不阻断其余（最后防线）*/ }
+        }
     }
 
     /// <summary>

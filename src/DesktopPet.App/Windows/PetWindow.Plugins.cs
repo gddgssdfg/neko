@@ -88,12 +88,17 @@ public sealed partial class PetWindow : Window
             _pluginHost.LoadDeferred();
             DeferredPluginsLoaded?.Invoke();   // 通知 App/TrayManager 等刷新
             PruneRadialMenuConfig();           // v0.1.71：插件全加载完后清一次径向菜单配置残留 slotId
+            // v0.1.95（审计 P2-2 修复）：AppReady 必须在 **deferred 插件也已 OnLoad 之后** 才广播。
+            // 旧实现把这行放在本方法末尾【同步】执行，早于 LoadDeferred（后者排到 Background 异步）——
+            // 于是 6 个延迟插件（weather/quote/wordcard/screenshot/fortune/hourly）必然漏收，
+            // 与 ICapabilityApi.PetEvents.AppReady 记载的语义（"订阅可替代 OnLoad 做延迟初始化"）不符。
+            // 挪到此处：核心插件（已同步 OnLoad、订阅就位）与延迟插件都能收到；AppReady 仍【只发一次】。
+            _eventBus.Emit(DesktopPet.Core.PetEvents.AppReady, null);
         }), DispatcherPriority.Background);
 
         if (IsLoaded) QueueDeferredLoad();
         else Loaded += (_, _) => QueueDeferredLoad();
 
-        _eventBus.Emit(DesktopPet.Core.PetEvents.AppReady, null); // v0.1.0+：插件初始化完成，订阅 AppReady 可替代 OnLoad 做延迟初始化
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);
         _loopTimer.Start(); // v0.1.1 fix：之前忘了 Start()，主循环从未跑（动画、眼神追踪、边缘吸附全部失效 → 用户只看到冻住的死图猫）
     }
