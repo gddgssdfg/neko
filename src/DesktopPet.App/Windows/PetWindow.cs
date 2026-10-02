@@ -199,6 +199,8 @@ public sealed partial class PetWindow : Window
 
         // 状态机
         _stateMachine = new PetStateMachine(petApi);
+        // v0.1.94：闲时走动开关从配置接线（默认 false → 不自动走动；置 true 即恢复）
+        _stateMachine.WalkEnabled = _config.WalkEnabled;
 
         // 能力
         var cap = new CapabilityApiImpl

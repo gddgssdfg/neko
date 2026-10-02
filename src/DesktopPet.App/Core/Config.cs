@@ -41,6 +41,15 @@ public sealed class AppConfig
     /// <summary>摸鱼模式下猫是否吸附在屏幕边缘（v0.1.39：slack 模式猫挂边上不碍事，且鼠标走远也不自动脱离）</summary>
     public bool SlackEdgeAttach { get; set; } = true;
 
+    // ---- v0.1.94 闲时走动开关 ----
+    /// <summary>
+    /// 闲时走动。**默认关**（v0.1.94）：猫的走路素材腿摆无视觉幅度（正面啾比、腿被身体挡死），
+    /// 真位移后只会变成滑行 → 默认不再自动走动（见 CHANGELOG 0.1.94）。
+    /// 置 true 可恢复：`skin.json` 的 walk fps 与 `PetStateMachine.WalkSpeed`（C 档零打滑）均保留。
+    /// 老配置文件无此键 → 反序列化取默认 false，行为正确。
+    /// </summary>
+    public bool WalkEnabled { get; set; } = false;
+
     // ---- v0.1.40 气泡对话 ----
     /// <summary>气泡对话总开关（像素云朵 + 猫主动闲聊；插件 Say 通知是否显示气泡）</summary>
     public bool ChatEnabled { get; set; } = true;

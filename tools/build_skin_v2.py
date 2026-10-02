@@ -45,7 +45,9 @@ SEQ_STATES = ["walk", "pet", "drag", "fall", "climb", "work"]
 STATES = ["idle", "walk", "sit", "sleep", "pet", "drag", "fall", "climb", "work"]
 
 FPS = {"idle": 0, "sit": 0, "sleep": 0,          # 0 = 静态（引擎只画第 0 帧）
-       "walk": 10, "pet": 8, "drag": 8, "fall": 12, "climb": 8, "work": 8}
+       # walk=7（C 档）：8 帧 @7fps → T=8/7≈1.143s，与 WalkSpeed=72（步幅 82px → v=82/1.143≈72）零打滑。
+       # 改此值务必同步改 PetStateMachine.WalkSpeed（A档 fps=5.5/v=56；B档 fps=10/v=102）。
+       "walk": 7, "pet": 8, "drag": 8, "fall": 12, "climb": 8, "work": 8}
 
 PAD = 4
 ALPHA_THR = 8

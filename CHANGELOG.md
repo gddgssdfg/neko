@@ -4,6 +4,29 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.94] - 2026-10-03
+
+**闲时走路默认关闭（可一键恢复）—— 走路素材本身腿摆无视觉幅度，真位移后只会变成滑行。**
+
+### 变更
+- 新增 `AppConfig.WalkEnabled`，**默认 `false`** → 猫**不再自动走动**。
+- `skin.json` 的 `walk.fps`（C 档 = 7）与 `PetStateMachine.WalkSpeed`（= 72）**全部保留**，随时可恢复。
+- 关闭是"软关"：跑动中的走动会被**立即收尾回 Idle**；倒计时**不递减**（重新打开是重新计一个完整间隔，不会"一开就立刻走"）。
+- **代码一行不删**（`BeginWalk`/`EndWalk`/`ReverseWalk`/`WalkVelocityX` 全部保留），只是默认不再触发。
+
+### 原因（素材的物理极限，不可修）
+实测三套猫皮肤（`pixel` / `cat_pixel` / `cat_hd`）的走路素材都是**正面啾比、腿被身体挡死**：
+- `cat_walk` / `pixel_walk` 的**脚掌相对身体位移仅 0.8~1.1 源 px**、腿区逐帧变化 **8~14%**
+  （对比 `phoebe` 的 **37~41%**）——腿摆**没有可感知的视觉幅度**；
+- 因此一旦施加真位移，观感就是**滑行**。**调 fps / 速度都无法救回素材本身。**
+
+### 保留（C 档，恢复即生效）
+4 套 AI 皮肤（`cat_hd`/`cat_pixel`/`phoebe_hd`/`phoebe_pixel`）`walk.fps = 7` + `WalkSpeed = 72`，
+零打滑比 **1.003**（见 0.1.93 与本次）。`phoebe` 的走路素材本可用，也一并保留。
+
+### 如何恢复
+把 `data/config.json` 的 `"WalkEnabled": false` 改成 `true` 重启即可（无需改代码、无需重装）。
+
 ## [0.1.93] - 2026-10-02
 
 **素材管线：抽帧从「均匀铺满整段」改为「按步态周期抽帧」—— 走路腿速快 6.3 倍的根因。**

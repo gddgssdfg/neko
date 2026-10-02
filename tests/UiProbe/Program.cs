@@ -6,10 +6,12 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using DesktopPet.App.Behavior;
 using DesktopPet.App.Core;
 using DesktopPet.App.Renderer;
 using DesktopPet.App.Services;
 using DesktopPet.App.Windows;
+using DesktopPet.Core;
 
 namespace DesktopPet.Tests.UiProbe;
 
@@ -1808,6 +1810,47 @@ internal static class Program
             }
         });
 
+        // ---- v0.1.94：闲时走动默认关闭（可一键恢复；不删代码）----
+        Check("v0.1.94：默认 WalkEnabled=false → 长时间 Tick 永不进入 Walk（状态机仍存活：Idle→Sit→Sleep）", () =>
+        {
+            var api = new StubPetApi();
+            var sm = new PetStateMachine(api);
+            if (sm.WalkEnabled) throw new Exception("WalkEnabled 默认应为 false");
+            bool sawWalk = false;
+            for (int i = 0; i < 400; i++)          // 400s ≫ 任何走动间隔(40~60s)
+            {
+                sm.Tick(TimeSpan.FromSeconds(1));
+                if (sm.Current == PetState.Walk) sawWalk = true;
+            }
+            if (sawWalk || api.Played.Contains(PetState.Walk))
+                throw new Exception("默认关闭时不应进入 Walk");
+            if (sm.Current != PetState.Sleep)
+                throw new Exception($"状态机应仍存活并走到 Sleep（30s→Sit / 300s→Sleep），实际 {sm.Current}");
+        });
+
+        Check("v0.1.94：WalkEnabled=true → 能正常起走并位移（证明是关闭而非功能坏死）", () =>
+        {
+            var api = new StubPetApi();
+            var sm = new PetStateMachine(api) { WalkEnabled = true };
+            for (int i = 0; i < 70 && sm.Current != PetState.Walk; i++)   // 70s > 最大间隔 60s
+                sm.Tick(TimeSpan.FromSeconds(1));
+            if (!api.Played.Contains(PetState.Walk))
+                throw new Exception("打开后应能进入 Walk 并播放 walk 动画");
+            if (sm.WalkVelocityX == 0)
+                throw new Exception("Walk 态下 WalkVelocityX 应非 0（真位移，" + $"实际 {sm.WalkVelocityX}）");
+        });
+
+        Check("v0.1.94：运行中关闭开关 → 立刻把正在进行的走动收尾回 Idle", () =>
+        {
+            var api = new StubPetApi();
+            var sm = new PetStateMachine(api) { WalkEnabled = true };
+            for (int i = 0; i < 70 && sm.Current != PetState.Walk; i++) sm.Tick(TimeSpan.FromSeconds(1));
+            if (sm.Current != PetState.Walk) throw new Exception("前置：应先进入 Walk");
+            sm.WalkEnabled = false;
+            sm.Tick(TimeSpan.FromSeconds(0.05));
+            if (sm.Current == PetState.Walk) throw new Exception("关闭开关后应立刻回 Idle，而非卡在 Walk");
+        });
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Console.Out.Flush();
         // v0.1.82：用 Environment.Exit 强制退出。测试里创建过真实 WPF 窗口（PetWindow/RadialMenu），
@@ -1889,4 +1932,22 @@ public sealed class ProbeStorage : DesktopPet.Core.IPluginStorage
     public void Set<T>(string key, T value) => _map[key] = value;
     public void Remove(string key) => _map.Remove(key);
     public bool Contains(string key) => _map.ContainsKey(key);
+}
+
+/// <summary>v0.1.94：探针用的最小 <see cref="DesktopPet.Core.IPetApi"/> —— 只记录被播放的状态。</summary>
+public sealed class StubPetApi : DesktopPet.Core.IPetApi
+{
+    public readonly List<DesktopPet.Core.PetState> Played = new();
+
+    public Task PlayAnimationAsync(DesktopPet.Core.PetState state, DesktopPet.Core.AnimationOptions? opts = null)
+    {
+        Played.Add(state);
+        return Task.CompletedTask;
+    }
+
+    public void SetMood(DesktopPet.Core.PetMood mood) { }
+    public void Say(string text, int durationMs = 3000) { }
+    public DesktopPet.Core.Point2 GetPosition() => DesktopPet.Core.Point2.Zero;
+    public Task MoveToAsync(DesktopPet.Core.Point2 target, int durationMs = 500) => Task.CompletedTask;
+    public DesktopPet.Core.Rect2 GetWorkArea() => new(0, 0, 1920, 1080);
 }

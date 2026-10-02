@@ -27,15 +27,24 @@ public sealed class PetStateMachine
     //       ②走动频率降到平均 40~60 秒一次（用倒计时，不用每 tick 概率）。
 
     /// <summary>
-    /// 走路速度（px/s）。
-    /// <para>推导（与 walk 动画腿速匹配，减少"滑步"）：walk 素材 = 8 帧 @10fps → 0.8 s/循环；
-    /// 设「1 个动画循环 = 2 步」，步长取 ≈20px（≈0.16 体长，猫窗 ~128px）→ 速度 = 2×20 / 0.8 = <b>50 px/s</b>
-    /// ≈ 0.39 体长/秒（慢悠悠地走，落在 40~70 px/s 的建议量级中值）。
-    /// 要更快/更慢只改这一个常量；设 0 = 只播腿不移动（会退回"原地踏步"，不推荐）。</para>
+    /// 走路速度（px/s）——与 walk 动画「腿速」匹配，做到<b>零打滑</b>。
+    /// <para>零打滑条件：<c>移速 v = 步幅 / 循环时长</c>，其中循环时长 <c>T = 帧数 / fps = 8 / fps</c>。
+    /// 步幅：猫 DIP 宽 ≈82px，1 个动画循环 = 2 步，步幅 ≈ 0.5 体长 × 2 = <b>≈82px</b>。</para>
+    /// <para>本次落地 <b>C 档</b>（walk 动画 8 帧 @7fps → T = 8/7 ≈ 1.143s）：
+    /// v = 82 / 1.143 ≈ <b>72 px/s</b>（腿速相对真实 1.28×，帧率尚可、猫不算躁，最平衡）。
+    /// 三档对照（改 fps 时务必同步改此常量，否则打滑）：</para>
+    /// <list type="bullet">
+    /// <item>A（完全真实）：fps=5.5 → T=1.455s → v≈56 px/s（腿速 1.00×，但帧率低易显顿）</item>
+    /// <item>C（当前）：fps=7.0 → T=1.143s → v≈72 px/s（腿速 1.28×）</item>
+    /// <item>B（走得快）：fps=10 → T=0.800s → v≈102 px/s（腿速 1.82×，对桌宠偏躁）</item>
+    /// </list>
+    /// <para>要更快/更慢只改这一个常量；设 0 = 只播腿不移动（会退回"原地踏步"，不推荐）。</para>
+    /// <para>注：v0.1.94 起走路<b>默认关闭</b>（<c>AppConfig.WalkEnabled=false</c>），此常量在不启用时不生效；
+    /// 置 <c>WalkEnabled=true</c> 即恢复（仍是零打滑配置）。</para>
     /// </summary>
-    public const double WalkSpeed = 50.0;
+    public const double WalkSpeed = 72.0;
 
-    // 单次走动时长（每次随机 → 距离随机）：50px/s × [1.6,3.0]s = [80,150]px
+    // 单次走动时长（每次随机 → 距离随机）：72px/s × [1.6,3.0]s ≈ [115,216]px
     private static readonly TimeSpan WalkMinDuration = TimeSpan.FromSeconds(1.6);
     private static readonly TimeSpan WalkMaxDuration = TimeSpan.FromSeconds(3.0);
     // 两次走动之间的间隔（平均 40~60s 一次）
@@ -48,6 +57,15 @@ public sealed class PetStateMachine
 
     /// <summary>当前行走的水平速度（px/s，含方向符号）；非 Walk 状态恒为 0。宿主按此 ×dt 平移窗口。</summary>
     public double WalkVelocityX => Current == PetState.Walk ? _walkDirection * WalkSpeed : 0.0;
+
+    /// <summary>
+    /// 闲时走动开关（可热改）。
+    /// <para>v0.1.94：<b>默认 false</b> —— 猫的走路素材腿摆无视觉幅度，真位移后只会变成滑行，
+    /// 故默认不再自动走动（见 CHANGELOG 0.1.94）。宿主在构造后按配置接线（<c>_stateMachine.WalkEnabled = _config.WalkEnabled</c>）。</para>
+    /// <para>置 true 恢复走动；关闭时会立刻把正在进行的走动收尾回 Idle，且不递减倒计时
+    /// （重新打开时重新计一个完整间隔，不会"一开就立刻走"）。</para>
+    /// </summary>
+    public bool WalkEnabled { get; set; } = false;
 
     public PetStateMachine(IPetApi api)
     {
@@ -71,11 +89,17 @@ public sealed class PetStateMachine
         // 倒计时与 tick 率无关：只在「Idle 或 Sit」（即猫闲着的两种站姿）时递减，
         // 排到点就开始走，平均间隔 = (WalkGapMin+WalkGapMax)/2 = 50s → 目标 40~60s。
         // （参考：若坚持用概率，100ms/tick × 10 tick/s，要 50s 平均需 p ≈ 1/(50×10) = 0.002。）
-        if (Current is PetState.Idle or PetState.Sit)
+        // v0.1.94：门控于 WalkEnabled —— 关掉时**不递减**倒计时（重新打开时是重新计一个
+        // 完整间隔，不会"一开就立刻走"）。
+        if (WalkEnabled && Current is (PetState.Idle or PetState.Sit))
         {
             _nextWalkIn -= delta;
             if (_nextWalkIn <= TimeSpan.Zero) BeginWalk();
         }
+
+        // v0.1.94：运行中把开关关掉 → 立刻把正在进行的走动收尾回 Idle。
+        // 否则猫会卡在 Walk 态直到本次时长（1.6~3.0s）走完才回 Idle。
+        if (!WalkEnabled && Current == PetState.Walk) Transition(PetState.Idle);
 
         // v0.1.1：Walk → Idle 回路（走一小段就回待机，不再原地走到 SitAfter）
         if (Current == PetState.Walk)
