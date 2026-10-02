@@ -27,6 +27,9 @@ public sealed partial class PetWindow : Window
 
         _stateMachine.Tick(delta);
 
+        // ---- v0.1.91：走路真位移（Walk 状态按状态机方向/速度匀速平移窗口；替代"原地踏步"）----
+        UpdateWalk(delta);
+
         // ---- v0.1.59(⑨)：心情驱动动画（好感度等级 → 帧率倍率，60s 缓存免每 tick 读盘）----
         UpdateMoodFromAffection();
 
@@ -55,6 +58,66 @@ public sealed partial class PetWindow : Window
         _fallTimer is not null ||
         _renderer.HasTransientVisual ||
         _stateMachine.Current is PetState.Walk or PetState.Pet or PetState.Drag or PetState.Fall;
+
+    /// <summary>
+    /// v0.1.91：走路位移——Walk 状态时按状态机给出的方向/速度<b>匀速</b>平移窗口。
+    /// <para>⚠️ 刻意**不用** <c>AnimateMoveTo</c>：那是「280ms 缓动 + BackEase overshoot」的短距离跳跃
+    /// （用于吸附/镜像），语义是"到达某点"；走路要的是"持续匀速前进"，用缓动会一顿一顿。
+    /// 这里直接改 <c>Left</c>（与拖拽同款线性跟手），位移 = 速度(px/s) × 真实 dt。</para>
+    /// <para>撞到工作区边缘：贴边停住（绝不越界）并回 Idle。留 <c>SnapThreshold+4</c> 边距，
+    /// 避免停稳后立刻被边缘吸附抢走（吸附阈值是 <c>≤ SnapThreshold</c>）。</para>
+    /// <para>例外：若撞墙时**本次几乎没走动**（&lt; 半个身位，说明是"贴着墙起走 + 随机朝墙"）→ 掉头一次
+    /// （见 <see cref="PetStateMachine.ReverseWalk"/>），避免"抽一帧 + 白等 40~60s + 间隔漂到 100s+"。
+    /// 走过半个身位才碰到墙的，仍按普通撞边回 Idle（同一次走动最多掉头一次，防窄空间来回抖）。</para>
+    /// </summary>
+    private void UpdateWalk(TimeSpan delta)
+    {
+        var vx = _stateMachine.WalkVelocityX;   // px/s，含方向；非 Walk 时为 0
+        if (vx == 0)
+        {
+            _walkTravel = 0;                    // 离开 Walk → 本次走动统计归零
+            _walkReversed = false;
+            return;
+        }
+
+        var work = GetWorkArea();
+        var margin = SnapThreshold + 4;         // 12px：停稳后不触发吸附
+        var minLeft = work.X + margin;
+        var maxLeft = work.X + work.Width - Width - margin;
+
+        if (maxLeft < minLeft)                  // 工作区比猫还窄（极端）→ 居中，且结束走动
+        {
+            Left = work.X + (work.Width - Width) / 2;
+            _stateMachine.EndWalk();
+            return;
+        }
+
+        var nextLeft = Left + vx * delta.TotalSeconds;
+        if (nextLeft <= minLeft || nextLeft >= maxLeft)
+        {
+            // 几乎没走就撞墙（< 半个身位）→ 掉头一次，不浪费这次走动、也不"抽一帧"。
+            if (!_walkReversed && _walkTravel < Width * 0.5)
+            {
+                _stateMachine.ReverseWalk();
+                _walkReversed = true;
+                var flipped = Left + _stateMachine.WalkVelocityX * delta.TotalSeconds;
+                if (flipped > minLeft && flipped < maxLeft)   // 反侧有空间 → 走反方向
+                {
+                    _walkTravel += Math.Abs(flipped - Left);
+                    Left = flipped;
+                    return;
+                }
+                // 反侧也没空间（两侧都贴死）→ 落到下面的"贴边停住 + 回 Idle"
+            }
+
+            Left = Math.Max(minLeft, Math.Min(nextLeft, maxLeft));   // 贴边停住，绝不越界
+            _stateMachine.EndWalk();                                 // 撞边 → 回 Idle
+            return;
+        }
+
+        _walkTravel += Math.Abs(nextLeft - Left);
+        Left = nextLeft;
+    }
 
     /// <summary>v0.1.57：根据 IsBusyActiveWindow 调整主循环频率。仅在区间实际变化时改写 Interval（避免反复重启定时器）。</summary>
     private void UpdateLoopFrequency()

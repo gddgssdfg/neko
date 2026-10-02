@@ -42,7 +42,9 @@ public sealed partial class PetWindow : Window
         // 动画期间 Left/Top 是插值中间值，拿它算"距边缘多近"会在半路误触发/误脱离。
         // v0.1.59(⑦)：落体/抛物线飞行中（_fallTimer != null）也必须跳过——否则吸附逻辑会抢方向盘，
         // 在飞行半路把猫吸到边缘，破坏抛物线轨迹。
-        if (_dragging || _moveAnimating || _fallTimer is not null)
+        // v0.1.91：走路中（Walk）同样跳过——走路是主动位移，撞边由 UpdateWalk 处理成"停住+回 Idle"，
+        // 不能让吸附判定的 Climb 抢走状态（否则一步三摇地往墙上爬）。停稳回 Idle 后吸附才重新生效。
+        if (_dragging || _moveAnimating || _fallTimer is not null || _stateMachine.Current is PetState.Walk)
         {
             if (_dragging && _edgeAttached) DetachEdge();
             return;

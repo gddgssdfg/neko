@@ -89,6 +89,14 @@ public sealed partial class PetWindow : Window
     private bool _moveAnimating;      // 位移动画进行中：期间吸附/落体逻辑不改写 Left/Top，避免打架
     private const double MirrorGap = 2.0;   // v0.1.43：猫 ↔ 映射窗间隙 6→2（猫几乎趴在键盘上，融合感更强）
 
+    // ---- v0.1.91 走路位移（PetWindow.Loop.cs 的 UpdateWalk）----
+    // _walkTravel：本次走动已实际位移(px)；_walkReversed：本次走动是否已掉过头。
+    // 用途：猫贴在墙边时，随机方向有 50% 概率朝墙 → 若直接结束，会"抽一帧 + 白等 40~60s"。
+    // 规则：撞墙时若「本次几乎没走」（< 半个身位）→ 掉头一次（猫撞墙会转身）；否则正常回 Idle。
+    // 归零时机：非 Walk（WalkVelocityX==0）的那次 UpdateWalk。
+    private double _walkTravel;
+    private bool _walkReversed;
+
     private readonly GlobalInput _globalInput;
     private RadialMenu? _radialMenu;
 
