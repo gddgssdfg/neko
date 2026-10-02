@@ -6,7 +6,12 @@
 **没有任何 mp4 / ffmpeg 进口**。所以豆包新生成的一批 mp4 素材一个都接不进去。
 本工具补上这一环：
 
-    mp4  --ffmpeg 均匀抽帧-->  原始帧  --自适应抠绿幕-->  RGBA  --归一化-->  序列条 png
+    mp4  --ffmpeg 全量抽帧-->  原始帧  --周期感知取帧(见下)-->  挑中的帧  --自适应抠绿幕-->  RGBA  --归一化-->  序列条 png
+
+其中「周期感知取帧」是 **v0.1.93 起**的关键改动：走路这类**周期性**动作绝不能再「把整段
+均匀降采样成 8 帧」（那会把 5.04s 的整段动作压进 0.8s = 6.3× 速，"像在放动画"）。正确做法
+是先估出**一个步态周期 P**，只在 ``[st, st+P)`` 内均匀取 8 帧 —— 循环无缝、速度自然。
+详见 :func:`sample_indices`。无清晰周期的动作（pet/drag/fall）自动回退旧行为，且必须打印原因。
 
 设计要点
 --------
@@ -170,14 +175,142 @@ def extract_all_frames(video: Path, workdir: Path) -> list[Path]:
     return files
 
 
-def sample_indices(total: int, n: int) -> list[int]:
-    """把 ``total`` 帧均匀降采样成 ``n`` 帧的帧号列表。
+# ---------------------------------------------------------------- 周期感知抽帧
+# 为什么（血案）：走路是**周期性**动作。旧做法「把整段视频均匀降采样成 8 帧」会把
+# 5.04s（121 帧@24fps）的整段动作压进 8 帧 @10fps = 0.8s → **6.3 倍速**，观感"像在放动画"。
+# 正确做法是先在**一个步态周期内**均匀取 8 帧：循环无缝、速度自然。
+# 实测 cat_walk：周期 35 帧=1.46s，压缩倍速 6.30× → 1.82×，帧间运动量 CV 0.480 → 0.041。
+CYCLE_THUMB = 64            # 分析用缩略灰度边长（够快够稳；只影响分析，不影响输出）
+CYCLE_LAG_MIN = 4           # 自相关搜索最小 lag（帧）
+CYCLE_LAG_MAX = 60          # 最大 lag（帧）
+CYCLE_CORR_THRESH = 0.25    # 相关度阈值：最高峰低于此 → 视为"无清晰周期" → 回退
 
-    对循环动画用「不含端点」的等分（``i*total/n``）通常更顺：末帧 ≈ 首帧，避免循环处重帧。
+
+def _frame_signatures(paths: list[Path], size: int = CYCLE_THUMB) -> np.ndarray:
+    """把每帧读成 ``size×size`` 灰度缩略（float64），用于运动量 / 周期分析。"""
+    sigs = []
+    for p in paths:
+        g = Image.open(p).convert("L").resize((size, size), Image.BILINEAR)
+        sigs.append(np.asarray(g, dtype=np.float64))
+    return np.stack(sigs) if sigs else np.zeros((0, size, size))
+
+
+def _frame_motion(sigs: np.ndarray) -> np.ndarray:
+    """逐帧瞬时运动量 ``d[i] = mean|G[i+1] - G[i]|``（长度 = total-1）。"""
+    if len(sigs) < 2:
+        return np.zeros(0)
+    return np.abs(np.diff(sigs, axis=0)).mean(axis=(1, 2))
+
+
+def _estimate_period(d: np.ndarray) -> tuple[int | None, float]:
+    """对去均值后的运动量序列做自相关，返回 ``(周期 P, 相关度 r)``；无清晰周期时 ``P=None``。
+
+    只取 ``[CYCLE_LAG_MIN, CYCLE_LAG_MAX]`` 内的**最高峰**；峰值相关度 < ``CYCLE_CORR_THRESH``
+    视为"无清晰周期"（如 pet/fall 这类平滑、非周期的动作）。
     """
+    if len(d) < CYCLE_LAG_MIN + 3:
+        return None, 0.0
+    x = d - d.mean()
+    best_lag, best_r = None, -1.0
+    hi = min(CYCLE_LAG_MAX, len(x) - 2)
+    for lag in range(CYCLE_LAG_MIN, hi + 1):
+        a, b = x[:-lag], x[lag:]
+        r = float(np.dot(a, b) / np.sqrt(np.dot(a, a) * np.dot(b, b) + 1e-12))
+        if r > best_r:
+            best_r, best_lag = r, lag
+    if best_lag is None or best_r < CYCLE_CORR_THRESH:
+        return None, max(best_r, 0.0)
+    return best_lag, best_r
+
+
+def _selection_metrics(sigs: np.ndarray, idxs: list[int]) -> tuple[float, float]:
+    """选帧质量：``(CV, 接缝比)``。
+
+    * ``CV`` = 相邻选帧运动量(标准差/均值)：越小越"帧间均匀"（`0` = 完美匀速）。
+    * ``接缝比`` = 末帧→首帧运动量 / 最大相邻帧差：``≤1`` 表示循环处不跳（无损循环）。
+    """
+    adj = [float(np.abs(sigs[idxs[k + 1]] - sigs[idxs[k]]).mean()) for k in range(len(idxs) - 1)]
+    seam = float(np.abs(sigs[idxs[0]] - sigs[idxs[-1]]).mean())
+    mean_adj = float(np.mean(adj)) if adj else 0.0
+    cv = (float(np.std(adj)) / mean_adj) if mean_adj > 0 else 0.0
+    mx = max(adj) if adj else 0.0
+    seam_ratio = (seam / mx) if mx > 0 else 0.0
+    return cv, seam_ratio
+
+
+def _best_cycle_window(sigs: np.ndarray, n: int, period: int):
+    """在 ``[st, st+period)`` 内均匀取 ``n`` 帧；遍历起点 ``st`` 取 ``score`` 最小者。
+
+    ``score = CV(相邻帧差) + 2 × max(0, 接缝比 − 1)`` —— 既求帧间均匀，又罚"循环处跳变"。
+    返回 ``(score, st, idxs, cv, seam_ratio)``；取不到 n 个唯一点时返回 ``None``。
+    """
+    total = len(sigs)
+    best = None
+    for st in range(0, total - period + 1):
+        idxs = sorted({min(max(0, int(round(st + k * period / n))), total - 1) for k in range(n)})
+        if len(idxs) < n:
+            continue
+        cv, seam_ratio = _selection_metrics(sigs, idxs)
+        score = cv + 2.0 * max(0.0, seam_ratio - 1.0)
+        if best is None or score < best[0]:
+            best = (score, st, idxs, cv, seam_ratio)
+    return best
+
+
+def sample_indices(all_frames: list[Path], n: int) -> list[int]:
+    """**周期感知抽帧**：优先在「一个动作周期」内均匀取 ``n`` 帧；无清晰周期则回退整段均匀。
+
+    算法：
+      1. 各帧 → 64×64 灰度缩略，算逐帧瞬时运动量 ``d[i] = mean|G[i+1] − G[i]|``。
+      2. ``d`` 去均值后做自相关，取 ``lag∈[4,60]`` 的最高峰为周期 ``P``
+         （相关度 < ``CYCLE_CORR_THRESH`` → 无清晰周期）。
+      3. 有 ``P``：在 ``[st, st+P)`` 内均匀取 n 帧；遍历起点 st 取 ``score`` 最小者。
+      4. ``P`` 缺失、或 ``P < n``（周期内取不满）→ **回退旧的整段均匀抽帧**，并打印原因（绝不静默）。
+
+    返回选中帧号（长度 ≤ n）。
+    """
+    total = len(all_frames)
     if n >= total:
+        print(f"    帧数 {total} ≤ 目标 {n} → 全取")
         return list(range(total))
-    return [int(round(i * total / n)) for i in range(n)]
+
+    sigs = _frame_signatures(all_frames)
+    d = _frame_motion(sigs)
+    uniform = [int(round(i * total / n)) for i in range(n)]
+    u_cv, u_sr = _selection_metrics(sigs, uniform)
+    u_score = u_cv + 2.0 * max(0.0, u_sr - 1.0)
+    u_cmp = (total / 24.0) / (n / 10.0)                 # 整段压进 n 帧@10fps 的倍速
+
+    period, corr = _estimate_period(d)
+    if period is None or period < n:
+        why = (f"未检出清晰周期（最高相关度 {corr:.3f} < {CYCLE_CORR_THRESH}）"
+               if period is None else f"检出 lag={period} 帧但 < 目标帧数 {n}（疑似相邻帧平滑的伪峰），取不满")
+        print(f"    {why} → 回退均匀抽帧 {uniform}"
+              f"  | CV={u_cv:.3f} 接缝比={u_sr:.2f} 倍速={u_cmp:.2f}x")
+        return uniform
+
+    best = _best_cycle_window(sigs, n, period)
+    if best is None:
+        print(f"    周期 {period} 帧内取不到 {n} 个唯一点 → 回退均匀抽帧 {uniform}")
+        return uniform
+
+    _, st, idxs, cv, seam_ratio = best
+    cmp_ = (period / 24.0) / (n / 10.0)                 # 一个周期压进 n 帧@10fps 的倍速
+    score = cv + 2.0 * max(0.0, seam_ratio - 1.0)
+
+    # 防劣化：周期存在不代表"周期内抽帧更优"。像 pet（蹭头节奏不匀）/ drag（摆动不匀）
+    # 这类动作，周期内均匀取帧反而比整段均匀更差（帧间忽快忽慢 + 循环接缝变大）。
+    # 与其"为了用周期而用周期"，不如不劣化地回退 —— 与第 4 步"绝不静默出错"同源。
+    if score >= u_score:
+        print(f"    检出 P={period} 帧(r={corr:.3f})，但周期内抽帧并不更优"
+              f"（新 score={score:.3f} ≥ 均匀 score={u_score:.3f}，周期内动作本就不均匀）"
+              f" → 回退均匀抽帧 {uniform}  | CV={u_cv:.3f} 接缝比={u_sr:.2f} 倍速={u_cmp:.2f}x")
+        return uniform
+
+    print(f"    周期感知：P={period} 帧(r={corr:.3f}) 起点 st={st} → {idxs}")
+    print(f"      新(周期内): CV={cv:.3f} 接缝比={seam_ratio:.2f} 倍速={cmp_:.2f}x"
+          f"   |   旧(均匀): CV={u_cv:.3f} 接缝比={u_sr:.2f} 倍速={u_cmp:.2f}x")
+    return idxs
 
 
 # ---------------------------------------------------------------- 背景色自适应
@@ -324,8 +457,9 @@ def process_job(job: Job, workdir: Path, dump_dir: Path | None) -> None:
     """抽取 --- 采样 --- 键控 --- 裁内容框，结果写进 ``job.cutouts``（尚未归一化）。"""
     all_frames = extract_all_frames(job.video, workdir)
     total = len(all_frames)
-    idxs = sample_indices(total, job.frames)
-    print(f"[{job.state}] {job.video.name}: 共 {total} 帧 → 均匀取 {len(idxs)} 帧 {idxs}")
+    print(f"[{job.state}] {job.video.name}: 共 {total} 帧 @24fps = {total / 24.0:.2f}s")
+    idxs = sample_indices(all_frames, job.frames)
+    print(f"    抽取 {len(idxs)} 帧 {idxs}")
 
     cutouts: list[Cutout] = []
     first_bg: tuple[int, int, int] | None = None
