@@ -10,7 +10,8 @@
 
 ### 新增
 - **第 9 套皮肤 `bead`（拼豆橘猫）**：32×32 拼豆网格 → `bakeScale=2` → 64px 帧；`recommendedScale=4.0`、`layout=sheet`、9 态各 8 帧 + 4 张眼层（`eyes_idle` / `eyes_idle_closed` / `eyes_sit` / `eyes_sit_closed`）+ `neko_shadow.png` + `thumb.png`(96×96)。**运行时素材仅 8.8 KiB（9,050 B）** —— 是 `hd` 的 **1/201**、`phoebe_hd` 的 **1/393**。
-- **`tools/bead/` 构建期烘焙器（纯标准库）**：`neko.beads/1` JSON 模型 → 9 态 sheet + 眼层 + 影子 + 缩略图 + `skin.json`。用 `struct` + `zlib` **手写 PNG**，**零第三方依赖**；全整数、无随机、无重采样（同一模型两次烘焙逐字节一致）。含 `bead_model`（模型读写/校验）、`bead_bake`（烘焙）、`bead_verify`（资产断言 A1–A6）、`bead_convert`（静态图→拼豆网格，CIELAB ΔE 最近邻）、`gen_palette`（调色板再生成）。
+- **`tools/bead/` 构建期烘焙器（核心纯标准库）**：`neko.beads/1` JSON 模型 → 9 态 sheet + 眼层 + 影子 + 缩略图 + `skin.json`。用 `struct` + `zlib` **手写 PNG**，**烘焙 / 校验主链零第三方依赖**；全整数、无随机、无重采样（同一模型两次烘焙逐字节一致）。含 `bead_model`（模型读写/校验）、`bead_bake`（烘焙）、`bead_verify`（资产断言 A1–A6）、`bead_convert`（静态图→拼豆网格，CIELAB ΔE 最近邻）、`gen_palette`（调色板再生成）。
+  - ⚠️ **Pillow caveat（唯一第三方依赖，且为可选）**：`bead_convert.py`（**仅**"静态图 → 拼豆网格"这一个入口）解码输入图时**优先用 Pillow**（可读任意 PNG/其它位图格式）；`try: from PIL import Image` 失败（无 Pillow）时**回退**到 `bead_bake.read_png_rgba`（纯 stdlib，**仅支持 PNG 且仅 filter=0**）。即：**烘焙（`bead_bake`）/ 校验（`bead_verify`）/ 调色板（`gen_palette`）均不依赖第三方**；只有"把外部图片转成拼豆网格"是**可选**入口、**可能**用到 Pillow —— 非硬依赖，无 Pillow 仍可跑（但输入格式受限）。
 - **调色板 `neko-perler16`：16 色真实 Perler 色号**（15 色 + 1 透明槽）。来源 `makebead/craft-color-codes`（→ `maxcleme/beadcolors`），**license MIT、status=community** —— Perler 官方不发布 RGB，色值为社区对实物拼豆的采样（详见 `tools/bead/palette.json` 的 `statusNote`）。
 
 ### 变更
