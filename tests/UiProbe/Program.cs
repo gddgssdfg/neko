@@ -1784,10 +1784,14 @@ internal static class Program
             // 拼豆 bead 满足该契约（frames=8；idle/sit/sleep fps=0；walk7/pet8/drag8/fall12/climb8/work8；
             // frameWidth=frameHeight=64；thumb 96×96），且是**新管线皮肤**（含 {layer}_closed 闭眼层）→ 纳入。
             // 注意：断言用的是 info.FrameWidth/Height（64），**不会**按 HD 的 256 去算，故不会误判失败。
-            // ⚠️ 本项只校验**结构与元数据**（帧数/fps 表/帧尺寸/thumb），**不校验帧与帧是否真的不同** ——
-            // 一张 8 帧完全相同的 sheet 也会 PASS。因此它罩得住"帧数/尺寸/静态态约定"的回归，
-            // 但**罩不住"静止帧冒充动画"**（独立验证 V3 实测：bead 的 walk 8 帧为同一张图却标 fps=7，
-            // 本断言仍 PASS）。待 T04 补齐动画后，再考虑加"帧去重"断言。
+            // v0.1.97（T04）：本项**已补「帧去重」断言** —— 见下方 `if (st.Fps <= 0) continue;` 段：
+            // 凡 fps>0 的状态，其 N 帧像素的 SHA-256 唯一值必须 > 1。此前只校验结构与元数据，一张
+            // N 帧全同的 sheet 也能 PASS（独立验证 V3 实测：bead.walk 8 帧同图却标 fps=7 = 静止帧冒充动画）。
+            // T04 已补齐 bead 动画，故该断言现已生效。
+            // ⚠️ 覆盖范围 = **仅本 `animated` 数组（新管线 8 帧皮肤：cat_pixel/cat_hd/phoebe_pixel/phoebe_hd/bead）**。
+            //    旧管线 4 帧皮肤（pixel/soft/hd/pixelai）**不在本断言作用域内** —— 已知其中 **pixel.sleep 与
+            //    soft.sleep 为 fps=1 却 4 帧完全相同**，同属"静止帧冒充动画"，本断言**盖不到**。
+            //    经决策：暂不全局化（避免改动既有皮肤）→ 记为本断言的**已知盲区**（详见 CHANGELOG v0.1.97）。
             var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd", "bead" };
             var skins = SkinRegistry.Scan(Paths.Assets);
             var staticStates = new[] { "idle", "sit", "sleep" };
@@ -1823,6 +1827,21 @@ internal static class Program
                             throw new Exception($"{id}.{st.Name} 帧尺寸应为 {info.FrameWidth}x{info.FrameHeight}，" +
                                                 $"实际 {fr.Bitmap.PixelWidth}x{fr.Bitmap.PixelHeight}");
                     }
+                }
+
+                // v0.1.97（T04）：帧去重（动画真实性）—— **凡 fps>0 的状态，其 N 帧像素的 SHA-256 唯一值必须 > 1**。
+                // 动机：上面只查结构/元数据，一张 N 帧全同的 sheet 也能 PASS（= 静止帧冒充动画）。
+                // 作用域 = 本 animated 列表（新管线 8 帧皮肤）；**旧管线皮肤不在作用域内**（pixel.sleep / soft.sleep
+                // 仍为 fps>0 全同帧，是**已知盲区**，见上方注释与 CHANGELOG v0.1.97）。
+                foreach (var st in atlas.States.Values)
+                {
+                    if (st.Fps <= 0) continue;
+                    var uniq = new HashSet<string>();
+                    foreach (var fr in st.Frames)
+                        uniq.Add(FramePixelHash(fr.Bitmap));
+                    if (uniq.Count <= 1)
+                        throw new Exception($"{id}.{st.Name} 标 fps={st.Fps:g}（应动画）但 {st.Frames.Length} 帧像素全同" +
+                                            $" —— 静止帧冒充动画（唯一帧={uniq.Count}）");
                 }
 
                 // 设置页缩略图：thumb.png 必须存在且为 96×96 RGBA（缺失时列表显示"无预览"）
@@ -2056,6 +2075,19 @@ internal static class Program
         var field = source.GetType().GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic);
         var del = field?.GetValue(source) as Delegate;
         return del?.GetInvocationList().Length ?? 0;
+    }
+
+    /// <summary>
+    /// v0.1.97（T04）：把一帧位图转成 **Bgra32 原始像素的 SHA-256**，用于「帧去重」断言。
+    /// <para>统一转 Bgra32 再哈希，避免不同 PixelFormat / stride 造成假阳性（同一画面的两帧必然同哈希）。</para>
+    /// </summary>
+    private static string FramePixelHash(System.Windows.Media.Imaging.BitmapSource bmp)
+    {
+        var cv = new System.Windows.Media.Imaging.FormatConvertedBitmap(bmp, PixelFormats.Bgra32, null, 0);
+        int stride = cv.PixelWidth * 4;
+        var buf = new byte[stride * cv.PixelHeight];
+        cv.CopyPixels(buf, stride, 0);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(buf));
     }
 
     /// <summary>取出对话区里所有气泡文本（气泡是 <c>Border { Child = TextBlock }</c>）。</summary>

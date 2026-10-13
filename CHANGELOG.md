@@ -4,6 +4,49 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.97] - 2026-10-13
+
+**补齐第 9 套「拼豆」皮肤（`bead`）的真实逐帧动画（T04）+ 新增 UiProbe「帧去重」断言。运行时 `src/` 零改动。**
+
+### 新增
+- **T04 · `bead` 全状态真实逐帧动画**：把 `tools/generate_sprites.py` 的 `st_walk` 步态弧线翻译成**整数拼豆格位移**，写进 `neko-assets/bead/model/cat.beads.json`（新增/扩展部件形状变体：`tail{base,up,down}`、`legB/legF{base,reach,paw}`、`torso{base,squash,stretch}`、`earL/earR{base,back}`、`face{base,squint,closed}`），重新烘焙 → 9 态 sheet 逐帧差异真实化。
+  - **`walk` 1→8 帧**：8 帧/周期，前后腿反相，落地帧双腿并拢；**头部/脸/耳不进 offsets**（见"呼吸"取舍），身体有起伏/前倾。
+  - **`pet` / `drag` / `fall` 各 2→4 帧**：`pet`（眯眼 + 躯干压缩）、`drag`（四肢自然下垂 + 尾巴上翘）、`fall`（四肢张开 + 耳朵后压）——每态 ≥2 种形状变体 + 逐帧位移。
+  - **`climb` 2→8 帧**（交替抓握）、**`work` 2→6 帧**（前爪交替点击）。
+  - **`idle` / `sit` / `sleep` 保持静止**（`fps=0`）：静态态不引入逐帧变化（见"呼吸"取舍）。
+
+### 变更
+- **UiProbe 新增「帧去重」断言**（`v0.1.82：动画皮肤契约` 项内）：**凡 `fps>0` 的状态，其 N 帧像素的 SHA-256 唯一值必须 > 1**，否则抛错（"静止帧冒充动画"）。动机：原断言只查结构与元数据，一张 N 帧全同的 sheet 也能 PASS。已用**故障注入**验证该断言会正确判红（把 `walk` 掏成 8 帧全同 → 报错），随后还原。
+- **`WalkSpeed` 零滑移复核**：真机实测走路时窗口矩形左移 **≈171px ≈ 72px/s**，与 `PetStateMachine.WalkSpeed = 72.0` 一致（步态周期 8 帧 @ 7fps ≈ 1.143s，对应 ≈82px/周期）。
+
+### 说明
+- **本轮运行时零改动**：`src/` 一行未动（唯一例外是版本号 `<Version>`）；改动全在**构建期素材**（`cat.beads.json` + 6 张重烘焙 `neko_*.png`）与**测试**（`tests/UiProbe/Program.cs`）。
+- **"呼吸"实现取舍（方案 a）**：`idle` 保持 `fps=0`（静态帧，不引入逐帧重绘）——理由是**契约层面** `FrameAnimator.Tick` 在 `fps<=0` 时直接返回、只画第 0 帧，若要让 idle 有可见呼吸就**必须把 idle 从静态态改成逐帧态**，代价是**恒定重绘**，与项目"极致轻量"目标冲突。故本轮**不做可见呼吸**，取舍理由见 `docs/dev-log.md` §十七。
+- **不生成 MSI**（项目约定：MSI 不随版本自动生成）。
+
+### ⚠️ 已知盲区（如实标注，勿当成"已覆盖全部皮肤"）
+- **「帧去重」断言只覆盖新管线皮肤**：作用域 = UiProbe 的 `animated` 列表（`cat_pixel` / `cat_hd` / `phoebe_pixel` / `phoebe_hd` / `bead`，即 8 帧 / 静态态 `fps=0` / per-state 闭眼层的新管线）。
+- **旧管线 4 帧皮肤不在作用域内**：`pixel` / `soft` / `hd` / `pixelai` 不参与该断言。其中 **`pixel.sleep` 与 `soft.sleep` 均为 `fps=1` 却 4 帧完全相同** —— 即同样是"静止帧冒充动画"，但**本断言查不出**。
+- **决策：不做全局化**。若把断言推广到全部皮肤，会直接判红 `pixel.sleep` / `soft.sleep`；而修复它们等于**改动既有皮肤素材**，超出本任务范围（"不改这 8 套既有皮肤"）。故本轮**刻意把作用域限定在新管线**，并将旧管线问题记为本断言的**已知盲区**（同时写进 `tests/UiProbe/Program.cs` 的断言注释，避免后人误以为断言已覆盖全部 9 套皮肤）。
+- **`bead` 仍非默认皮肤**（默认仍是 `pixel`）。`idle`/`sit`/`sleep` 切到 `bead` 后是静止的——`fps=0` 是**合法**的静态声明，不是素材损坏。
+
+### 测试
+- `neko-assets/bead/` 全资产校验（`bead_verify.py`）：**A1–A6 全绿**（A1 确定性 / A2 调色板合规 / A3 硬边 alpha / A4 眼层对齐 / A5 基线稳定 / A6 帧数）。
+- **确定性**：同一模型烘焙两次，**16 个产物逐字节 SHA-256 一致**。
+- **调色板合规**：0 个越界色；**眼层对齐**：各眼层态瞳孔 ⊆ 眼白包围盒（idle `(26,22,37,25)`⊆`(24,20,39,27)`、sit 同理）。
+- **帧数**：9 张 `neko_<state>.png` 仍为 **512×64**（`cols32 × scale2 × N8` = 512 宽，`rows32 × scale2` = 64 高）。
+- **★ 唯一帧数对照表（前 → 后）**：
+  | 状态 | v0.1.96 唯一帧 | v0.1.97 唯一帧 |
+  |---|---|---|
+  | walk | 1 | **8** |
+  | climb | 2 | **8** |
+  | work | 2 | **6** |
+  | pet / drag / fall | 2 | **4** |
+  | idle / sit / sleep | 1（`fps=0` 静态）| 1（`fps=0` 静态，符合预期）|
+- **★ 眼层合成对照图**：`_eval/bead_frames_eyelayer.png`（9 态 × 8 帧，**合成眼层**——此前的 `cmp_display_*.png` 只画身体、眼睛是白洞）；`_eval/t04/live_states_cmp.png`（真机 idle/sit/walk）。
+- **真机**：`dotnet build` + 启动，切到 `bead`，**抓窗口像素**确认动画帧确实变化——`idle` 眨眼（约 12 个唯一帧，来自眼层）、`idle→sit`（t≈28s，帧差 ~13–14%）、**`walk`（t≈55–61s）窗口矩形左移 ≈171px ≈72px/s**。⚠️ 过程中修掉两个抓取坑（GDI 抓不了分层窗口 → 用 `tools/capture_pet.py` 的 PrintWindow；抓到了对话气泡窗而非猫窗 → 改为偏好最小的近方形可见窗口）。
+- **`python tools/ci.py`**：6 道闸门全绿（含 UiProbe 新断言）。
+
 ## [0.1.96] - 2026-10-13
 
 **新增第 9 套皮肤 `bead`（拼豆橘猫）+ 构建期烘焙器 `tools/bead/`。默认皮肤仍是 `pixel`。**

@@ -1,41 +1,121 @@
 {
   "format": "neko.beads/1",
-  "canvas": { "cols": 32, "rows": 32 },
+  "canvas": {
+    "cols": 32,
+    "rows": 32
+  },
   "bakeScale": 2,
   "frames": 8,
   "palette": "neko-perler16",
-  "_comment": "拼豆橘猫 —— 8 部件 + 9 状态。坐标系：x 向右、y 向下；anchor = 形状左上角落点（珠粒格坐标）。'.' = 空珠位（透明）。面部瞳孔珠 (char 'e'→key 'e' / 'h'→key 'hi') 在 idle/sit 两态由烘焙器抽到独立眼球层；其余 7 态烘进身体帧。walk 本轮为静态占位（动画见 T04）。",
+  "_comment": "拼豆橘猫 —— 8 部件 + 9 状态。T04：walk 补齐 8 帧步态；pet/drag/fall/climb/work 换真实逐帧。眼部瞳孔珠 'e'/'h' 在 idle/sit 由烘焙器抽到独立眼球层，其余 7 态烘进身体帧。所有状态第 0 帧 = 中性（保 A5 基线一致）。",
   "parts": [
     {
       "id": "tail",
-      "anchor": [22, 16],
+      "anchor": [
+        22,
+        16
+      ],
       "z": 0,
       "shapes": {
-        "base": ["..oo", ".ofo", "of..", "of..", "oo.."]
+        "base": [
+          "..oo",
+          ".ofo",
+          "of..",
+          "of..",
+          "oo.."
+        ],
+        "up": [
+          "..o.",
+          ".ofo",
+          ".of.",
+          "of..",
+          "o..."
+        ],
+        "down": [
+          "oo..",
+          "of..",
+          "of..",
+          ".ofo",
+          "..oo"
+        ]
       },
-      "map": { "o": "k", "f": "f" }
+      "map": {
+        "o": "k",
+        "f": "f"
+      }
     },
     {
       "id": "legB",
-      "anchor": [12, 22],
+      "anchor": [
+        12,
+        22
+      ],
       "z": 1,
       "shapes": {
-        "base": ["oooo", "offo", "owwo", "oooo"]
+        "base": [
+          "oooo",
+          "offo",
+          "owwo",
+          "oooo"
+        ],
+        "reach": [
+          "oooo",
+          "offo",
+          "offo",
+          "owwo",
+          "oooo"
+        ],
+        "paw": [
+          ".oo.",
+          "offo",
+          "...."
+        ]
       },
-      "map": { "o": "k", "f": "f", "w": "w" }
+      "map": {
+        "o": "k",
+        "f": "f",
+        "w": "w"
+      }
     },
     {
       "id": "legF",
-      "anchor": [16, 22],
+      "anchor": [
+        16,
+        22
+      ],
       "z": 2,
       "shapes": {
-        "base": ["oooo", "offo", "owwo", "oooo"]
+        "base": [
+          "oooo",
+          "offo",
+          "owwo",
+          "oooo"
+        ],
+        "reach": [
+          "oooo",
+          "offo",
+          "offo",
+          "owwo",
+          "oooo"
+        ],
+        "paw": [
+          ".oo.",
+          "offo",
+          "...."
+        ]
       },
-      "map": { "o": "k", "f": "f", "w": "w" }
+      "map": {
+        "o": "k",
+        "f": "f",
+        "w": "w"
+      }
     },
     {
       "id": "torso",
-      "anchor": [10, 14],
+      "anchor": [
+        10,
+        14
+      ],
       "z": 3,
       "shapes": {
         "base": [
@@ -69,29 +149,68 @@
           "..oooooooo.."
         ]
       },
-      "map": { "o": "k", "f": "f", "w": "w" }
+      "map": {
+        "o": "k",
+        "f": "f",
+        "w": "w"
+      }
     },
     {
       "id": "earL",
-      "anchor": [10, 4],
+      "anchor": [
+        10,
+        4
+      ],
       "z": 4,
       "shapes": {
-        "base": [".oo.", "oppo", "offo"]
+        "base": [
+          ".oo.",
+          "oppo",
+          "offo"
+        ],
+        "back": [
+          ".oo.",
+          "oooo",
+          ".oo."
+        ]
       },
-      "map": { "o": "k", "p": "pl", "f": "f" }
+      "map": {
+        "o": "k",
+        "p": "pl",
+        "f": "f"
+      }
     },
     {
       "id": "earR",
-      "anchor": [18, 4],
+      "anchor": [
+        18,
+        4
+      ],
       "z": 4,
       "shapes": {
-        "base": [".oo.", "oppo", "offo"]
+        "base": [
+          ".oo.",
+          "oppo",
+          "offo"
+        ],
+        "back": [
+          ".oo.",
+          "oooo",
+          ".oo."
+        ]
       },
-      "map": { "o": "k", "p": "pl", "f": "f" }
+      "map": {
+        "o": "k",
+        "p": "pl",
+        "f": "f"
+      }
     },
     {
       "id": "head",
-      "anchor": [10, 7],
+      "anchor": [
+        10,
+        7
+      ],
       "z": 5,
       "shapes": {
         "base": [
@@ -105,11 +224,19 @@
           "..oooooooo.."
         ]
       },
-      "map": { "o": "k", "f": "f", "w": "w", "n": "ns" }
+      "map": {
+        "o": "k",
+        "f": "f",
+        "w": "w",
+        "n": "ns"
+      }
     },
     {
       "id": "face",
-      "anchor": [10, 7],
+      "anchor": [
+        10,
+        7
+      ],
       "z": 6,
       "shapes": {
         "base": [
@@ -121,21 +248,179 @@
           "...eh..he...",
           "..b......b..",
           "............"
+        ],
+        "squint": [
+          "............",
+          "............",
+          "............",
+          "............",
+          "............",
+          "...kk..kk...",
+          "..b......b..",
+          "............"
+        ],
+        "closed": [
+          "............",
+          "............",
+          "............",
+          "............",
+          "............",
+          "...kk..kk...",
+          "..b......b..",
+          "............"
         ]
       },
-      "map": { "e": "e", "h": "hi", "b": "bg", "k": "k" }
+      "map": {
+        "e": "e",
+        "h": "hi",
+        "b": "bg",
+        "k": "k"
+      }
     }
   ],
   "poses": {
     "idle": {
       "fps": 0,
       "eyeLayer": "eyes_idle",
-      "frames": [{ "offsets": {} }]
+      "frames": [
+        {
+          "offsets": {}
+        }
+      ]
     },
     "walk": {
       "fps": 7,
       "eyeLayer": null,
-      "frames": [{ "offsets": {} }]
+      "frames": [
+        {
+          "offsets": {
+            "legB": [
+              0,
+              0
+            ],
+            "legF": [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -1,
+              -1
+            ],
+            "legF": [
+              1,
+              0
+            ],
+            "torso": [
+              0,
+              -1
+            ],
+            "tail": [
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -2,
+              -2
+            ],
+            "legF": [
+              2,
+              0
+            ],
+            "torso": [
+              0,
+              -1
+            ],
+            "tail": [
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -1,
+              -2
+            ],
+            "legF": [
+              1,
+              0
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              -1
+            ],
+            "legF": [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              1,
+              0
+            ],
+            "legF": [
+              -1,
+              -1
+            ],
+            "torso": [
+              0,
+              -1
+            ],
+            "tail": [
+              0,
+              -1
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              2,
+              0
+            ],
+            "legF": [
+              -2,
+              -2
+            ],
+            "torso": [
+              0,
+              -1
+            ],
+            "tail": [
+              0,
+              -1
+            ]
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              1,
+              0
+            ],
+            "legF": [
+              -1,
+              -2
+            ]
+          }
+        }
+      ]
     },
     "sit": {
       "fps": 0,
@@ -143,11 +428,26 @@
       "frames": [
         {
           "offsets": {
-            "head": [0, 1],
-            "earL": [0, 1],
-            "earR": [0, 1],
-            "face": [0, 1],
-            "tail": [0, 2]
+            "head": [
+              0,
+              1
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ],
+            "face": [
+              0,
+              1
+            ],
+            "tail": [
+              0,
+              2
+            ]
           }
         }
       ]
@@ -158,14 +458,31 @@
       "frames": [
         {
           "offsets": {
-            "head": [0, 1],
-            "earL": [0, 1],
-            "earR": [0, 1],
-            "face": [0, 1]
+            "head": [
+              0,
+              1
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ],
+            "face": [
+              0,
+              1
+            ]
           },
           "overrides": {
-            "head": { "w": "f" },
-            "face": { "e": "k", "h": "." }
+            "head": {
+              "w": "f"
+            },
+            "face": {
+              "e": "k",
+              "h": "."
+            }
           }
         }
       ]
@@ -174,18 +491,162 @@
       "fps": 8,
       "eyeLayer": null,
       "frames": [
-        { "offsets": {} },
-        { "shapes": { "torso": "squash" }, "offsets": { "torso": [0, 1] } }
+        {
+          "offsets": {}
+        },
+        {
+          "offsets": {
+            "torso": [
+              0,
+              1
+            ],
+            "head": [
+              0,
+              1
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ],
+            "face": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "torso": "squash",
+            "face": "squint"
+          }
+        },
+        {
+          "offsets": {
+            "torso": [
+              0,
+              1
+            ],
+            "head": [
+              0,
+              2
+            ],
+            "earL": [
+              0,
+              2
+            ],
+            "earR": [
+              0,
+              2
+            ],
+            "face": [
+              0,
+              2
+            ]
+          },
+          "shapes": {
+            "torso": "squash",
+            "face": "squint"
+          }
+        },
+        {
+          "offsets": {
+            "head": [
+              0,
+              1
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ],
+            "face": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "face": "squint"
+          }
+        }
       ]
     },
     "drag": {
       "fps": 8,
       "eyeLayer": null,
       "frames": [
-        { "offsets": {} },
         {
-          "shapes": { "torso": "stretch" },
-          "offsets": { "torso": [0, -1], "legB": [0, 1], "legF": [0, 1], "tail": [0, -1] }
+          "offsets": {}
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              1
+            ],
+            "legF": [
+              0,
+              1
+            ],
+            "tail": [
+              0,
+              -2
+            ]
+          },
+          "shapes": {
+            "torso": "stretch",
+            "legB": "reach",
+            "legF": "reach",
+            "tail": "up"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -1,
+              1
+            ],
+            "legF": [
+              1,
+              1
+            ],
+            "tail": [
+              0,
+              -2
+            ]
+          },
+          "shapes": {
+            "torso": "stretch",
+            "legB": "reach",
+            "legF": "reach",
+            "tail": "up"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              1,
+              1
+            ],
+            "legF": [
+              -1,
+              1
+            ],
+            "tail": [
+              0,
+              -3
+            ]
+          },
+          "shapes": {
+            "torso": "stretch",
+            "legB": "reach",
+            "legF": "reach",
+            "tail": "up"
+          }
         }
       ]
     },
@@ -193,15 +654,86 @@
       "fps": 12,
       "eyeLayer": null,
       "frames": [
-        { "offsets": {} },
         {
-          "shapes": { "torso": "squash" },
+          "offsets": {}
+        },
+        {
           "offsets": {
-            "torso": [0, 1],
-            "head": [0, 1],
-            "earL": [0, 1],
-            "earR": [0, 1],
-            "face": [0, 1]
+            "legB": [
+              -2,
+              0
+            ],
+            "legF": [
+              2,
+              0
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "earL": "back",
+            "earR": "back",
+            "torso": "stretch"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -3,
+              0
+            ],
+            "legF": [
+              3,
+              0
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ],
+            "head": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "earL": "back",
+            "earR": "back",
+            "torso": "squash"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -1,
+              0
+            ],
+            "legF": [
+              1,
+              0
+            ],
+            "earL": [
+              0,
+              1
+            ],
+            "earR": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "earL": "back",
+            "earR": "back",
+            "torso": "stretch"
           }
         }
       ]
@@ -210,16 +742,195 @@
       "fps": 8,
       "eyeLayer": null,
       "frames": [
-        { "offsets": {} },
-        { "offsets": { "legB": [0, -1], "legF": [0, -1], "tail": [0, -2] } }
+        {
+          "offsets": {}
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              -1
+            ],
+            "torso": [
+              0,
+              -1
+            ]
+          },
+          "shapes": {
+            "legB": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              -2
+            ],
+            "torso": [
+              0,
+              -1
+            ]
+          },
+          "shapes": {
+            "legB": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              -1,
+              -1
+            ]
+          },
+          "shapes": {
+            "legB": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              0,
+              -1
+            ],
+            "torso": [
+              0,
+              -1
+            ]
+          },
+          "shapes": {
+            "legF": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              0,
+              -2
+            ],
+            "torso": [
+              0,
+              -1
+            ]
+          },
+          "shapes": {
+            "legF": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              1,
+              -1
+            ]
+          },
+          "shapes": {
+            "legF": "reach"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              -1
+            ],
+            "legF": [
+              0,
+              -1
+            ],
+            "tail": [
+              0,
+              -1
+            ]
+          },
+          "shapes": {
+            "legB": "reach",
+            "legF": "reach"
+          }
+        }
       ]
     },
     "work": {
       "fps": 8,
       "eyeLayer": null,
       "frames": [
-        { "offsets": {} },
-        { "offsets": { "head": [0, -1], "earL": [0, -1], "earR": [0, -1], "face": [0, -1] } }
+        {
+          "offsets": {}
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              0
+            ]
+          },
+          "shapes": {
+            "legB": "paw"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "legB": "paw"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              0,
+              0
+            ]
+          },
+          "shapes": {
+            "legB": "paw",
+            "legF": "paw"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              0,
+              0
+            ]
+          },
+          "shapes": {
+            "legF": "paw"
+          }
+        },
+        {
+          "offsets": {
+            "legF": [
+              0,
+              1
+            ]
+          },
+          "shapes": {
+            "legF": "paw"
+          }
+        },
+        {
+          "offsets": {
+            "legB": [
+              0,
+              0
+            ]
+          },
+          "shapes": {
+            "legB": "paw",
+            "legF": "paw"
+          }
+        },
+        {
+          "offsets": {},
+          "shapes": {
+            "legB": "paw",
+            "legF": "paw"
+          }
+        }
       ]
     }
   }
