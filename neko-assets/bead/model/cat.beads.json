@@ -1,0 +1,226 @@
+{
+  "format": "neko.beads/1",
+  "canvas": { "cols": 32, "rows": 32 },
+  "bakeScale": 2,
+  "frames": 8,
+  "palette": "neko-perler16",
+  "_comment": "拼豆橘猫 —— 8 部件 + 9 状态。坐标系：x 向右、y 向下；anchor = 形状左上角落点（珠粒格坐标）。'.' = 空珠位（透明）。面部瞳孔珠 (char 'e'→key 'e' / 'h'→key 'hi') 在 idle/sit 两态由烘焙器抽到独立眼球层；其余 7 态烘进身体帧。walk 本轮为静态占位（动画见 T04）。",
+  "parts": [
+    {
+      "id": "tail",
+      "anchor": [22, 16],
+      "z": 0,
+      "shapes": {
+        "base": ["..oo", ".ofo", "of..", "of..", "oo.."]
+      },
+      "map": { "o": "k", "f": "f" }
+    },
+    {
+      "id": "legB",
+      "anchor": [12, 22],
+      "z": 1,
+      "shapes": {
+        "base": ["oooo", "offo", "owwo", "oooo"]
+      },
+      "map": { "o": "k", "f": "f", "w": "w" }
+    },
+    {
+      "id": "legF",
+      "anchor": [16, 22],
+      "z": 2,
+      "shapes": {
+        "base": ["oooo", "offo", "owwo", "oooo"]
+      },
+      "map": { "o": "k", "f": "f", "w": "w" }
+    },
+    {
+      "id": "torso",
+      "anchor": [10, 14],
+      "z": 3,
+      "shapes": {
+        "base": [
+          "..oooooooo..",
+          ".offffffffo.",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offffwwffffo",
+          ".offffffffo.",
+          "..oooooooo.."
+        ],
+        "squash": [
+          "..oooooooo..",
+          ".offffffffo.",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offffwwffffo",
+          ".offffffffo.",
+          "..oooooooo.."
+        ],
+        "stretch": [
+          "..oooooooo..",
+          ".offffffffo.",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offfwwwwfffo",
+          "offffwwffffo",
+          ".offffffffo.",
+          "..oooooooo.."
+        ]
+      },
+      "map": { "o": "k", "f": "f", "w": "w" }
+    },
+    {
+      "id": "earL",
+      "anchor": [10, 4],
+      "z": 4,
+      "shapes": {
+        "base": [".oo.", "oppo", "offo"]
+      },
+      "map": { "o": "k", "p": "pl", "f": "f" }
+    },
+    {
+      "id": "earR",
+      "anchor": [18, 4],
+      "z": 4,
+      "shapes": {
+        "base": [".oo.", "oppo", "offo"]
+      },
+      "map": { "o": "k", "p": "pl", "f": "f" }
+    },
+    {
+      "id": "head",
+      "anchor": [10, 7],
+      "z": 5,
+      "shapes": {
+        "base": [
+          "..oooooooo..",
+          ".offffffffo.",
+          "offffffffffo",
+          "offffffffffo",
+          "offwwffwwffo",
+          "offwwffwwffo",
+          "offffnnffffo",
+          "..oooooooo.."
+        ]
+      },
+      "map": { "o": "k", "f": "f", "w": "w", "n": "ns" }
+    },
+    {
+      "id": "face",
+      "anchor": [10, 7],
+      "z": 6,
+      "shapes": {
+        "base": [
+          "............",
+          "............",
+          "............",
+          "............",
+          "...ee..ee...",
+          "...eh..he...",
+          "..b......b..",
+          "............"
+        ]
+      },
+      "map": { "e": "e", "h": "hi", "b": "bg", "k": "k" }
+    }
+  ],
+  "poses": {
+    "idle": {
+      "fps": 0,
+      "eyeLayer": "eyes_idle",
+      "frames": [{ "offsets": {} }]
+    },
+    "walk": {
+      "fps": 7,
+      "eyeLayer": null,
+      "frames": [{ "offsets": {} }]
+    },
+    "sit": {
+      "fps": 0,
+      "eyeLayer": "eyes_sit",
+      "frames": [
+        {
+          "offsets": {
+            "head": [0, 1],
+            "earL": [0, 1],
+            "earR": [0, 1],
+            "face": [0, 1],
+            "tail": [0, 2]
+          }
+        }
+      ]
+    },
+    "sleep": {
+      "fps": 0,
+      "eyeLayer": null,
+      "frames": [
+        {
+          "offsets": {
+            "head": [0, 1],
+            "earL": [0, 1],
+            "earR": [0, 1],
+            "face": [0, 1]
+          },
+          "overrides": {
+            "head": { "w": "f" },
+            "face": { "e": "k", "h": "." }
+          }
+        }
+      ]
+    },
+    "pet": {
+      "fps": 8,
+      "eyeLayer": null,
+      "frames": [
+        { "offsets": {} },
+        { "shapes": { "torso": "squash" }, "offsets": { "torso": [0, 1] } }
+      ]
+    },
+    "drag": {
+      "fps": 8,
+      "eyeLayer": null,
+      "frames": [
+        { "offsets": {} },
+        {
+          "shapes": { "torso": "stretch" },
+          "offsets": { "torso": [0, -1], "legB": [0, 1], "legF": [0, 1], "tail": [0, -1] }
+        }
+      ]
+    },
+    "fall": {
+      "fps": 12,
+      "eyeLayer": null,
+      "frames": [
+        { "offsets": {} },
+        {
+          "shapes": { "torso": "squash" },
+          "offsets": {
+            "torso": [0, 1],
+            "head": [0, 1],
+            "earL": [0, 1],
+            "earR": [0, 1],
+            "face": [0, 1]
+          }
+        }
+      ]
+    },
+    "climb": {
+      "fps": 8,
+      "eyeLayer": null,
+      "frames": [
+        { "offsets": {} },
+        { "offsets": { "legB": [0, -1], "legF": [0, -1], "tail": [0, -2] } }
+      ]
+    },
+    "work": {
+      "fps": 8,
+      "eyeLayer": null,
+      "frames": [
+        { "offsets": {} },
+        { "offsets": { "head": [0, -1], "earL": [0, -1], "earR": [0, -1], "face": [0, -1] } }
+      ]
+    }
+  }
+}

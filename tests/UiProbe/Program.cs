@@ -1778,7 +1778,17 @@ internal static class Program
         // ---- v0.1.82 第 31 项：新动画皮肤契约 + 设置页缩略图 ----
         Check("v0.1.82：动画皮肤契约（8 帧 / 静态态 fps=0）+ 设置页缩略图齐备", () =>
         {
-            var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd" };
+            // 这个数组 = 「走新管线（8 帧/静态态 fps=0/per-state 闭眼层/thumb.png）」的皮肤集合，
+            // 逐项断言：frames==8、idle|sit|sleep 必须 fps=0、其余 fps>0、9 状态各 8 帧、
+            // 每帧尺寸 == info.FrameWidth×FrameHeight（**按皮肤自声明**，非硬编码 256）、thumb.png 96×96。
+            // 拼豆 bead 满足该契约（frames=8；idle/sit/sleep fps=0；walk7/pet8/drag8/fall12/climb8/work8；
+            // frameWidth=frameHeight=64；thumb 96×96），且是**新管线皮肤**（含 {layer}_closed 闭眼层）→ 纳入。
+            // 注意：断言用的是 info.FrameWidth/Height（64），**不会**按 HD 的 256 去算，故不会误判失败。
+            // ⚠️ 本项只校验**结构与元数据**（帧数/fps 表/帧尺寸/thumb），**不校验帧与帧是否真的不同** ——
+            // 一张 8 帧完全相同的 sheet 也会 PASS。因此它罩得住"帧数/尺寸/静态态约定"的回归，
+            // 但**罩不住"静止帧冒充动画"**（独立验证 V3 实测：bead 的 walk 8 帧为同一张图却标 fps=7，
+            // 本断言仍 PASS）。待 T04 补齐动画后，再考虑加"帧去重"断言。
+            var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd", "bead" };
             var skins = SkinRegistry.Scan(Paths.Assets);
             var staticStates = new[] { "idle", "sit", "sleep" };
 

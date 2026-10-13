@@ -1,0 +1,28 @@
+{
+  "name": "neko-perler16",
+  "description": "拼豆皮肤内置调色板 —— 仅 16 色（含 1 个透明槽），专为「橘猫」精选，追求像素风「少而干净」。",
+  "source": "https://github.com/makebead/craft-color-codes (data/json/perler-midi.json)",
+  "license": "MIT (maxcleme/beadcolors, Copyright (c) 2020 maxcleme)",
+  "status": "community",
+  "statusNote": "Perler 官方不发布 RGB；下表色值为社区 contributors 对实物拼豆采样所得（craft-color-codes 的 community 数据集）。色号 code 为 Perler 零售商品号（sku）对应编号。",
+  "unit": "bead",
+  "brand": "Perler",
+  "colors": [
+    { "key": "n",  "code": null, "hex": null,      "name": "透明（空珠位）", "role": "空珠位：不放置珠粒" },
+    { "key": "k",  "code": "P18", "hex": "#323234", "name": "Black",        "role": "描边 / 瞳孔外框 / 闭眼睑线" },
+    { "key": "sh", "code": "P12", "hex": "#674C44", "name": "Brown",        "role": "深描边 / 阴影" },
+    { "key": "f",  "code": "P04", "hex": "#EB7B31", "name": "Orange",       "role": "主体毛色（橘）" },
+    { "key": "fl", "code": "C19", "hex": "#F5A168", "name": "Apricot",      "role": "亮橘 / 高光毛" },
+    { "key": "fd", "code": "P20", "hex": "#995043", "name": "Rust",         "role": "暗橘 / 虎斑 / 阴影毛" },
+    { "key": "w",  "code": "P01", "hex": "#EAEFEE", "name": "White",        "role": "眼白 / 口鼻 / 爪" },
+    { "key": "ws", "code": "C14", "hex": "#DEDACE", "name": "Toasted Marshmallow", "role": "次级白 / 肚皮" },
+    { "key": "cr", "code": "P02", "hex": "#E1E2BB", "name": "Creme",        "role": "奶油（内耳底 / 肚皮）" },
+    { "key": "e",  "code": "C62", "hex": "#392928", "name": "Cocoa",        "role": "瞳孔" },
+    { "key": "hi", "code": "P01", "hex": "#EAEFEE", "name": "White(glint)","role": "瞳孔高光点（= 白珠）" },
+    { "key": "ns", "code": "P63", "hex": "#F99297", "name": "Blush",        "role": "鼻子" },
+    { "key": "pl", "code": "C09", "hex": "#F2AFB7", "name": "Flamingo",     "role": "肉垫 / 内耳粉" },
+    { "key": "bg", "code": "P79", "hex": "#E1BCCE", "name": "Light Pink",   "role": "腮红" },
+    { "key": "tk", "code": "P83", "hex": "#D45496", "name": "Pink",         "role": "舌头" },
+    { "key": "gy", "code": "P17", "hex": "#909497", "name": "Grey",         "role": "中性灰（备用）" }
+  ]
+}

@@ -4,6 +4,35 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.96] - 2026-10-13
+
+**新增第 9 套皮肤 `bead`（拼豆橘猫）+ 构建期烘焙器 `tools/bead/`。默认皮肤仍是 `pixel`。**
+
+### 新增
+- **第 9 套皮肤 `bead`（拼豆橘猫）**：32×32 拼豆网格 → `bakeScale=2` → 64px 帧；`recommendedScale=4.0`、`layout=sheet`、9 态各 8 帧 + 4 张眼层（`eyes_idle` / `eyes_idle_closed` / `eyes_sit` / `eyes_sit_closed`）+ `neko_shadow.png` + `thumb.png`(96×96)。**运行时素材仅 8.8 KiB（9,050 B）** —— 是 `hd` 的 **1/201**、`phoebe_hd` 的 **1/393**。
+- **`tools/bead/` 构建期烘焙器（纯标准库）**：`neko.beads/1` JSON 模型 → 9 态 sheet + 眼层 + 影子 + 缩略图 + `skin.json`。用 `struct` + `zlib` **手写 PNG**，**零第三方依赖**；全整数、无随机、无重采样（同一模型两次烘焙逐字节一致）。含 `bead_model`（模型读写/校验）、`bead_bake`（烘焙）、`bead_verify`（资产断言 A1–A6）、`bead_convert`（静态图→拼豆网格，CIELAB ΔE 最近邻）、`gen_palette`（调色板再生成）。
+- **调色板 `neko-perler16`：16 色真实 Perler 色号**（15 色 + 1 透明槽）。来源 `makebead/craft-color-codes`（→ `maxcleme/beadcolors`），**license MIT、status=community** —— Perler 官方不发布 RGB，色值为社区对实物拼豆的采样（详见 `tools/bead/palette.json` 的 `statusNote`）。
+
+### 变更
+- **白名单刻意收窄**：`DesktopPet.App.csproj` / `UiProbe.csproj` 只复制 `bead/*.png` + `bead/skin.json`，**排除 `bead/model/*.beads.json`** —— 运行时**零依赖**该模型（`SkinRegistry` 只扫 `skin.json`；`SpriteAtlas` 只读 `neko_<state>.png` / `neko_<eye>.png` / `neko_shadow.png`），它是烘焙器的**输入**（构建期产物）。
+- **`UiProbe` 的 `animated` 皮肤集合纳入 `bead`**：该集合 = 「走新管线（8 帧 / 静态态 fps=0 / per-state 闭眼层 / `thumb.png`）」的皮肤。断言按皮肤**自声明**的 `FrameWidth/Height` 计算（bead=64，非 HD 的 256），故不会误判为失败。**同时修正了该断言过度声称的注释**（原文声称"覆盖骨骼/烘焙回归"，实际查不出）。
+- **默认皮肤不变**：`SkinRegistry.DefaultSkinId` 仍为 `pixel`；全新启动生成的 `data/config.json` 中 `"Skin"` = `"pixel"`。
+
+### ⚠️ 已知边界（如实标注，勿当成"已完成"）
+- 本轮只完成 **idle / sit / sleep** 与**走路骨架**的拼豆化。**`pet` / `drag` / `fall` / `climb` / `work` 为 2 帧 A-B 交替的占位**（实测：每态唯一帧数 = 2）。
+- **`walk` 在素材层为单帧**（实测唯一帧数 = 1）却声明 `fps=7` —— 即"静止帧冒充动画"；动画待 **T04** 补齐。
+- `bead` **不是默认皮肤**（默认仍是 `pixel`）。切到 `bead` 后 **idle/sit/sleep 是静止的** —— `fps=0` 是**合法**的静态声明，不是素材损坏。
+
+### 测试
+- `tests/UiProbe`：`animated` 集合 +`bead`；皮肤契约断言（帧数 / fps 表 / 帧尺寸 / `thumb` 96×96）**PASS**。
+- 真机（已发布 single-file 产物）：设置页皮肤列表**9 套含 `bead`**；切到 `bead` 后猫正常渲染（带**负对照**：把状态图掏成全透明则判 FAIL）；稳态 WorkingSet **190.6 MB**（`pixel` 对照 189.7 MB），均低于 200 MB 红线；默认皮肤仍为 `pixel`。
+- ⚠️ **测试盲区**：皮肤契约断言只查**结构与元数据**，**不比较帧间差异** —— 一张 8 帧完全相同的 sheet 也会 PASS（bead 的 idle/walk/sit/sleep 正是如此）。待 T04 补齐动画后再考虑加"帧去重"断言。
+
+### 说明
+- 本轮**运行时零改动**：`SpriteAtlas` / `PetRenderer` / `Core` **一行未动** —— 烘焙后的产物就是标准 `neko_<state>.png` + `skin.json`，由既有数据驱动皮肤管线直接消费。
+- **不生成 MSI**（项目约定：MSI 不随版本自动生成）。
+- 过程记录、决策依据与踩坑见 `docs/dev-log.md` §十六。
+
 ## [0.1.95] - 2026-10-03
 
 **架构健康审计（C 档）落地：修 2 个 P1 事件订阅泄漏 + 插件资源收口 + `app:ready` 契约修正。**

@@ -1,0 +1,63 @@
+{
+  "id": "bead",
+  "displayName": "拼豆橘猫",
+  "layout": "sheet",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "frames": 8,
+  "hasShadow": true,
+  "eyeLayers": [
+    "eyes_idle",
+    "eyes_idle_closed",
+    "eyes_sit",
+    "eyes_sit_closed"
+  ],
+  "recommendedScale": 4.0,
+  "states": [
+    {
+      "name": "idle",
+      "fps": 0,
+      "eyeLayer": "eyes_idle"
+    },
+    {
+      "name": "walk",
+      "fps": 7,
+      "eyeLayer": null
+    },
+    {
+      "name": "sit",
+      "fps": 0,
+      "eyeLayer": "eyes_sit"
+    },
+    {
+      "name": "sleep",
+      "fps": 0,
+      "eyeLayer": null
+    },
+    {
+      "name": "pet",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "drag",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "fall",
+      "fps": 12,
+      "eyeLayer": null
+    },
+    {
+      "name": "climb",
+      "fps": 8,
+      "eyeLayer": null
+    },
+    {
+      "name": "work",
+      "fps": 8,
+      "eyeLayer": null
+    }
+  ]
+}

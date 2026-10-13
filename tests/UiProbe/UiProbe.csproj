@@ -37,6 +37,10 @@
     <None Include="..\..\neko-assets\cat_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_hd" />
     <None Include="..\..\neko-assets\phoebe_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_pixel" />
     <None Include="..\..\neko-assets\phoebe_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_hd" />
+    <!-- 拼豆皮肤（第 9 套）：与 App 侧 DesktopPet.App.csproj 同步——只复制运行时素材
+         （*.png + skin.json），排除构建期源模型 bead/model/*.beads.json。 -->
+    <None Include="..\..\neko-assets\bead\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
+    <None Include="..\..\neko-assets\bead\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Remove="..\..\neko-assets\**\*preview*" />

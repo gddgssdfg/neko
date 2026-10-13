@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.1.95</Version>
+    <Version>0.1.96</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -115,6 +115,14 @@
     <None Include="..\..\neko-assets\cat_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_hd" />
     <None Include="..\..\neko-assets\phoebe_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_pixel" />
     <None Include="..\..\neko-assets\phoebe_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_hd" />
+    <!-- 拼豆皮肤（第 9 套，仅"可被选到"；默认皮肤仍是 pixel，见 SkinRegistry.DefaultSkinId）。
+         刻意用 *.png + skin.json 而非 **\*，把 bead/model/*.beads.json 排除在包外：
+           · 运行时零依赖该模型 —— SkinRegistry 只扫 <skin>/skin.json；SpriteAtlas 只读
+             neko_<state>.png / neko_<eye>.png / neko_shadow.png（均为 *.png）。
+           · model/*.beads.json 是烘焙器（tools/bead）的**源模型/输入**，属构建期产物，不该进运行时包。
+         与其它 8 套皮肤的目录结构不同（只有 bead 有 model/ 子目录），故此处白名单收窄而非照抄 **\*。 -->
+    <None Include="..\..\neko-assets\bead\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
+    <None Include="..\..\neko-assets\bead\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
