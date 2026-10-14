@@ -11,7 +11,7 @@
     { "name": "idle",  "fps": 4,  "eyeLayer": "eyes_open" },
     { "name": "walk",  "fps": 8,  "eyeLayer": "eyes_open" },
     { "name": "sit",   "fps": 4,  "eyeLayer": "eyes_open" },
-    { "name": "sleep", "fps": 1,  "eyeLayer": null },
+    { "name": "sleep", "fps": 0,  "eyeLayer": null },
     { "name": "pet",   "fps": 10, "eyeLayer": "eyes_pet" },
     { "name": "drag",  "fps": 6,  "eyeLayer": "eyes_scared" },
     { "name": "fall",  "fps": 12, "eyeLayer": "eyes_scared" },

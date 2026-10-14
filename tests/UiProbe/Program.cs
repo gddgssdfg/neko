@@ -836,10 +836,14 @@ internal static class Program
             var soft = skins.FirstOrDefault(s => s.Id == "soft") ?? throw new Exception("未扫到 soft 皮肤");
 
             // 2) skin.json 与旧 C# 硬编码逐项一致（防提取时抄错）
+            //    ⚠️ v0.2.1：`sleep` 的值由 1 改为 0（**两侧同时改**：skin.json 与 SkinRegistry 内置回退）。
+            //    这是**故意变更**而非改测试迁就实现 —— sleep 的 4 帧本来就完全相同，标 fps=1 属于
+            //    "静止帧冒充动画"（本项目明令禁止的形态）；改成 0 = 诚实声明静态态，视觉零变化。
+            //    旁证：本次改动正是**被本断言抓出来的**（`pixel.sleep.fps 应 1，实际 0`）→ 断言有效。
             var expectedPixel = new (string name, double fps, string? eye)[]
             {
                 ("idle", 4, "eyes_open"), ("walk", 8, "eyes_open"), ("sit", 4, "eyes_open"),
-                ("sleep", 1, null), ("pet", 10, "eyes_pet"), ("drag", 6, "eyes_scared"),
+                ("sleep", 0, null), ("pet", 10, "eyes_pet"), ("drag", 6, "eyes_scared"),
                 ("fall", 12, "eyes_scared"), ("climb", 4, "eyes_open"), ("work", 2, "eyes_open"),
             };
             if (pixel.States.Count != expectedPixel.Length)
@@ -856,7 +860,7 @@ internal static class Program
 
             var expectedSoft = new (string name, double fps)[]
             {
-                ("idle", 4), ("walk", 8), ("sit", 4), ("sleep", 1), ("pet", 10),
+                ("idle", 4), ("walk", 8), ("sit", 4), ("sleep", 0), ("pet", 10),
                 ("drag", 6), ("fall", 12), ("climb", 4), ("work", 2),
             };
             if (soft.States.Count != expectedSoft.Length)
@@ -1834,10 +1838,10 @@ internal static class Program
             // 凡 fps>0 的状态，其 N 帧像素的 SHA-256 唯一值必须 > 1。此前只校验结构与元数据，一张
             // N 帧全同的 sheet 也能 PASS（独立验证 V3 实测：bead.walk 8 帧同图却标 fps=7 = 静止帧冒充动画）。
             // T04 已补齐 bead 动画，故该断言现已生效。
-            // ⚠️ 覆盖范围 = **仅本 `animated` 数组（新管线 8 帧皮肤：cat_pixel/cat_hd/phoebe_pixel/phoebe_hd/bead）**。
-            //    旧管线 4 帧皮肤（pixel/soft/hd/pixelai）**不在本断言作用域内** —— 已知其中 **pixel.sleep 与
-            //    soft.sleep 为 fps=1 却 4 帧完全相同**，同属"静止帧冒充动画"，本断言**盖不到**。
-            //    经决策：暂不全局化（避免改动既有皮肤）→ 记为本断言的**已知盲区**（详见 CHANGELOG v0.1.97）。
+            // v0.2.1：**该盲区已关闭** —— 「帧去重」不变量已抽成**独立的全皮肤断言**（见下方
+            //   `v0.2.1：全部皮肤…` 项，覆盖 sheet 与 files 两种 layout）。本项仍只管新管线的 8 帧契约。
+            //   缺口本身（pixel.sleep / soft.sleep 标 fps=1 却 4 帧全同）已按"诚实声明"修掉：两个状态
+            //   改为 fps=0（静态态），**视觉零变化**（4 帧本来全同），顺带省掉睡眠时的每秒无谓重绘。
             var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd", "bead" };
             var skins = SkinRegistry.Scan(Paths.Assets);
             var staticStates = new[] { "idle", "sit", "sleep" };
@@ -1921,6 +1925,35 @@ internal static class Program
                 w31.Dispose();
                 w31.Close();
             }
+        });
+
+        // ---- v0.2.1：帧去重不变量**全局化**（关掉 v0.1.97 记录的已知盲区）----
+        // 只断**一条**不变量：任何皮肤、任何 fps>0 的状态，其帧像素的唯一值必须 > 1（= 真动画）。
+        // 刻意与上面「新管线 8 帧契约」分开：那条管**结构**（frames=8 / 静态态 fps=0 / 帧尺寸 / thumb），
+        // 这条只管**动画真不真**，所以能安全覆盖旧管线（pixel/soft/hd/pixelai）—— 它们的静态约定与新管线
+        // 不同（例如 pixel.idle 是 fps=4，不是 0），不该被 8 帧契约约束，但"标了 fps 就得真动"对谁都成立。
+        Check("v0.2.1：全部皮肤「静止帧冒充动画」不变量（fps>0 ⇒ 唯一帧 > 1）", () =>
+        {
+            var allSkins = SkinRegistry.Scan(Paths.Assets);
+            if (allSkins.Count == 0) throw new Exception("未扫到任何皮肤");
+            var checkedStates = 0;
+            var offenders = new List<string>();
+            foreach (var info in allSkins)
+            {
+                var atlas = SpriteAtlas.LoadSkin(Paths.Assets, info.Id);
+                foreach (var st in atlas.States.Values)
+                {
+                    if (st.Fps <= 0) continue;                  // 静态态：按契约允许帧全同
+                    checkedStates++;
+                    var uniq = new HashSet<string>();
+                    foreach (var fr in st.Frames) uniq.Add(FramePixelHash(fr.Bitmap));
+                    if (uniq.Count <= 1)
+                        offenders.Add($"{info.Id}.{st.Name}(fps={st.Fps:g}, {st.Frames.Length} 帧全同)");
+                }
+            }
+            Console.WriteLine($"  覆盖 {allSkins.Count} 套皮肤 / {checkedStates} 个 fps>0 状态");
+            if (offenders.Count > 0)
+                throw new Exception("静止帧冒充动画：" + string.Join("；", offenders));
         });
 
         // ---- v0.1.82 第 32 项：插件定时器回调（线程池）里调 Pet.Say 必须真的弹出气泡 ----

@@ -192,7 +192,7 @@ public static class SkinRegistry
             new SkinState { Name = "idle",  Fps = 4,  EyeLayer = "eyes_open" },
             new SkinState { Name = "walk",  Fps = 7,  EyeLayer = "eyes_open" },  // C 档：与 WalkSpeed=72 零打滑
             new SkinState { Name = "sit",   Fps = 4,  EyeLayer = "eyes_open" },
-            new SkinState { Name = "sleep", Fps = 1,  EyeLayer = null },
+            new SkinState { Name = "sleep", Fps = 0,  EyeLayer = null },
             new SkinState { Name = "pet",   Fps = 10, EyeLayer = "eyes_pet" },
             new SkinState { Name = "drag",  Fps = 6,  EyeLayer = "eyes_scared" },
             new SkinState { Name = "fall",  Fps = 12, EyeLayer = "eyes_scared" },
