@@ -148,7 +148,8 @@ dotnet run --project tests/PluginSmoke/PluginSmoke.csproj -c Debug
   <PublishSelfContained>true</PublishSelfContained>
   <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>  <!-- 内存优先，见下 -->
-  <PublishReadyToRun>true</PublishReadyToRun>
+  <PublishReadyToRun>false</PublishReadyToRun>                          <!-- v0.2.3 实测取舍，见下 -->
+  <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>   <!-- v0.2.3；⚠️ 必须留 zh-Hans -->
   <DebugType>embedded</DebugType>
   <!-- 不启用 trimming（WPF 暂不友好） -->
 </PropertyGroup>
@@ -160,6 +161,33 @@ dotnet run --project tests/PluginSmoke/PluginSmoke.csproj -c Debug
 |---|---|---|---|
 | `true` | ~80 MB | ~276 MB（启动解压运行时映射常驻） | ❌ 破内存红线 |
 | `false` | ~174 MB | ~177 MB | ✅ **桌宠常驻，内存优先** |
+
+### 4.1 体积/内存/启动的实测取舍（v0.2.3 复核，**A/B 同机实测**）
+
+**量尺**（此前这条红线**没有工具**，只能靠感觉）：
+```bash
+python tools/measure_startup.py --exe publish/v<version>/Neko.exe --runs 6
+# 口径 = 进程创建 → 宠物窗口出现（隔离数据根、--dev 跳过首启引导、先预热 1 轮）
+# 内存用同一台机上 25s 稳态的 WorkingSet（本次用 psapi.GetProcessMemoryInfo 采）
+```
+
+| 变体 | exe | 常驻 WS | 冷启动中位 |
+|---|---|---|---|
+| R2R 开 + 全语言（v0.2.2 及以前） | 163.6 MiB | 185.2 MiB | 0.658s |
+| **R2R 关 + `en;zh-Hans`（现）** | **132.1 MiB** | **172.7 MiB** | **0.730s** |
+| 参考：只关 R2R | 147.0 MiB | 174.9 MiB | 0.698s |
+
+- **R2R 关掉**：−16.6 MiB 体积 **且** −10 MiB 常驻（R2R 的 native 映像在磁盘和内存里都更大），
+  代价 +0.04s 启动。本项目启动大头是**文件 I/O 与 WPF 初始化**，不是 JIT —— 冷缓存首启两者 1.398s vs 1.380s。
+- **收窄卫星资源语言**：未收窄时有 **221 个 `*.resources.dll` 共 15.59 MiB**（ru/ja/de/ko/fr/pl/it/es/pt-BR/cs/tr/zh-Hant…），
+  再省 15 MiB。⚠️ **必须保留 `zh-Hans`**：WPF 框架自己的对话框文案（MessageBox 的「确定/取消」）
+  来自 `PresentationFramework.resources.dll` 的 zh-Hans 卫星。验证方法：非单文件发布后看
+  `<out>/zh-Hans/PresentationFramework.resources.dll` 是否存在。
+  ⚠️ **不要在命令行传这个属性**：`-p:SatelliteResourceLanguages=en%3Bzh-Hans` 实测 `%3B` 未被解码，
+  结果**连 `zh-Hans` 一起丢**（本轮踩过，体积看着更小而框架弹窗变英文）→ 只写进 csproj。
+- **`DebugType=none`：实测 0 收益**（在已构建的树上增量构建，embedded pdb 被复用）——
+  该测量**不确定**；且去掉符号会削弱本项目"日志要能定位"的底线 → **维持 `embedded`**。
+- **`InvariantGlobalization=true`：实测 0 收益** —— Windows 上 .NET 用**系统 ICU**，本来就没有 `icudt.dat` 可省。
 
 **发布命令：**
 

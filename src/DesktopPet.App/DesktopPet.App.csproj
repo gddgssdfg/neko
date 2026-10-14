@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -31,7 +31,27 @@
     <PublishSelfContained>true</PublishSelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
-    <PublishReadyToRun>true</PublishReadyToRun>
+
+    <!-- v0.2.3：体积预算复核（A2）后的实测取舍 —— 关掉 ReadyToRun。
+         三个变体实测（Release / 自包含单文件，各项同一台机）：
+             R2R 开（旧）  exe 163.6 MiB · 常驻 WS 184.9 MiB · 冷启动中位 0.658s
+             R2R 关（现）  exe 147.0 MiB · 常驻 WS 174.9 MiB · 冷启动中位 0.698s
+         ⇒ 换掉 **16.6 MiB 体积 + 10.0 MiB 常驻内存**，代价 **+0.040s** 启动，而红线是 <2.0s（余量 >1.3s）。
+         R2R 的收益本来就是"省 JIT"，但本项目启动耗时大头在**文件 I/O 与 WPF 初始化**，实测冷缓存首启
+         两者 1.398s vs 1.380s（几乎无差）——所以这笔换算是划算的。另：R2R 的 native 映像在磁盘与内存里都更大。
+         量尺：`python tools/measure_startup.py`（本次新增；此前这条红线**没有工具**，只能靠感觉）。 -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+
+    <!-- v0.2.3：收窄卫星资源语言 —— 只保留 en 与 zh-Hans。
+         实测未收窄时 **221 个 *.resources.dll 共 15.59 MiB**（ru/ja/de/ko/fr/pl/it/es/pt-BR/cs/tr/zh-Hant…），
+         对一个只有中英双语的桌宠是纯浪费：单文件产物 exe 147.0 → **131.0 MiB**，目录 165 → **149 MiB**。
+         ⚠️ **必须保留 zh-Hans**：WPF 框架自己的对话框文案（MessageBox 的「确定/取消」）来自
+         PresentationFramework 的 zh-Hans 卫星资源 —— 裁掉它就变英文。
+         ⚠️ 命令行传多值要写成 `-p:SatelliteResourceLanguages=en%3Bzh-Hans`，但实测 `%3B` 可能不被解码、
+         结果**连 zh-Hans 一起丢**（本轮踩过）→ 只在这里（XML）写，别在命令行传。
+         代价：非中英系统的用户会看到**英文的框架弹窗**（应用自身 UI 文案不受影响，它是代码里双语的）。 -->
+    <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
+
     <DebugType>embedded</DebugType>
 
     <!-- 性能：工作站负载，关并发回收 -->

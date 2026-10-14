@@ -7,6 +7,44 @@
 🔴 **版本号上限规则（2026-10-14）**：patch **不超过 99** —— 到 `v0.1.99` 后下一个版本**直接跳 `v0.2.0`**
 （不出现 `v0.1.100`）。`tools/check_version.py` 会拒绝 patch > 99 并给出应改成的版本号。
 
+## [0.2.3] - 2026-10-14
+
+**体积预算复核（A2）：关掉 ReadyToRun + 收窄卫星资源语言 —— exe 163.6 → 132.1 MiB（−19%），常驻内存 185.2 → 172.7 MiB，冷启动 0.658 → 0.730s（红线 <2.0s）。并给这条红线补上一直缺的量尺。**
+
+### 变更
+- **`<PublishReadyToRun>true</PublishReadyToRun>` → `false`**：A/B 同机实测换来
+  **−16.6 MiB 体积 + −10.0 MiB 常驻内存**，代价 **+0.040s** 启动。
+  R2R 的 native 映像在磁盘与内存里都更大，而本项目启动大头是**文件 I/O 与 WPF 初始化**
+  （冷缓存首启 1.398s vs 1.380s，几乎无差）。
+- **新增 `<SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>`**：未收窄时
+  **221 个 `*.resources.dll` 共 15.59 MiB**（ru / ja / de / ko / fr / pl / it / es / pt-BR / cs / tr / zh-Hant…），
+  对一个只有中英双语的桌宠是纯浪费。
+  ⚠️ **必须保留 `zh-Hans`** —— WPF 框架对话框的「确定 / 取消」来自 `PresentationFramework.resources.dll`
+  的 zh-Hans 卫星；已用非单文件发布**正面验证**该文件仍在（183 KB）。
+
+### 新增
+- **`tools/measure_startup.py` —— 冷启动量尺**（此前「冷启动 <2.0s」这条红线**没有工具**，只能靠感觉说"挺快的"）。
+  口径 = **进程创建 → 宠物窗口出现**；自动隔离数据根、`--dev` 跳过首启引导、先预热 1 轮、每轮杀进程、
+  报最小/中位/最大。
+- `docs/release-sop.md` §4.1：体积/内存/启动的实测取舍表 + 量尺命令 + 三条"实测无效"的结论。
+
+### 说明
+- **零运行时代码改动**：只改发布属性 + 新增工具 + 文档。
+- **实测无效/不确定的三条（如实记录，免得后人重复试）**：
+  `DebugType=none` → **0 收益**，且该测量受**增量构建**干扰（embedded pdb 被复用）⇒ **不确定**；
+  去掉符号会削弱本项目"日志要能定位"的底线 → **维持 `embedded`**。
+  `InvariantGlobalization=true` → **0 收益**（Windows 上 .NET 用**系统 ICU**，本来就没有 `icudt.dat` 可省）。
+  `PublishTrimmed` → **WPF 不支持**，没试。
+- **两个踩坑**：
+  ① `-p:SatelliteResourceLanguages=en%3Bzh-Hans` 在命令行上 `%3B` **未被解码** ⇒ 所有卫星资源
+  **连 `zh-Hans` 一起被裁掉**（体积更好看，但框架弹窗变英文）→ 该属性**只写 csproj，别走命令行**；
+  ② csproj 的 XML 注释里**不能出现 `--`**（写 `--exe` 直接让 `dotnet publish` 报 `MSB4025`）。
+
+### 测试
+- A/B 同机实测（`publish/_a2/{baseline, nor2r, final}`）：冷启动各 6 轮取中位；内存取 25s 稳态 WorkingSet。
+- `final` 产物功能冒烟：**18 个插件全部加载**、信任清单载入、**无异常、无 `errors.log`**。
+- `python tools/ci.py` 六道闸门全绿。
+
 ## [0.2.2] - 2026-10-14
 
 **修「自动更新从来查不到新版本」：数据源改为两级（Releases 优先 → **tag 列表回落**），并实测确认根因是**发布仓库对未登录者不可见**。**
