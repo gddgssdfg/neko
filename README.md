@@ -46,7 +46,13 @@ git status --short
 git diff --stat
 
 # 提交（格式：<版本号>: <主题>，与 csproj 版本同步）
-git commit -m "v0.1.82: xxx"
+# 🔴 一律走 heredoc（-F -），不要用 -m "双引号"：多行不好写，且引号会被 shell 吃掉
+git commit -F - <<'MSG'
+v0.2.0: 一句话主题
+
+- 改动点 1
+- 改动点 2
+MSG
 
 # 回滚单个文件到上次提交
 git checkout -- <文件路径>

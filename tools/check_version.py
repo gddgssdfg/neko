@@ -10,8 +10,11 @@ Neko 的版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Vers
   1. `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`
   2. `CHANGELOG.md` 中**首个**版本标题 `## [x.y.z]`
   3. 当前 HEAD 上的 git tag（若有；没有则跳过，不算失败）
+  4. **版本上限规则**（项目约定）：patch **不得超过 99** ——
+     到 `v0.1.99` 后下一次**直接跳 `v0.2.0`**，不出现 `v0.1.100`。
+     违反时同样以退出码 1 结束，并给出应改成的版本号。
 
-三者（实际是前两者 + 可选 tag）不一致时打印差异并以退出码 1 结束。
+三者（实际是前两者 + 可选 tag + 上限规则）不一致时打印差异并以退出码 1 结束。
 
 用法
 ----
@@ -53,6 +56,30 @@ _CHANGELOG_VERSION_RE = re.compile(r"^##\s*\[([^\]]+)\]", re.MULTILINE)
 
 # 宽松的语义化版本校验：major.minor.patch（允许预发布后缀）
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$")
+
+# 🔴 版本上限规则（灯灯 2026-10-14 定）：patch 不允许到 100。
+#   为什么设上限：三位 patch（如 100）在**字符串排序**（"100" < "99"）、肉眼比较、以及部分
+#   第三方版本工具里都容易出错；而且把「到一个整数关口就做一次 minor 跳跃」固化成规则，
+#   比"想起来才跳"可靠得多。⇒ v0.1.99 之后下一个版本直接是 v0.2.0。
+_MAX_PATCH = 99
+
+
+def version_rule_error(version: str) -> str | None:
+    """检查「patch <= 99」这条项目规则。
+
+    违规返回**错误文本**；合法或格式问题（交给 `_SEMVER_RE` 报，避免重复报错）返回 None。
+    """
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", normalize(version))
+    if not match:
+        return None
+    major, minor, patch = (int(g) for g in match.groups())
+    if patch > _MAX_PATCH:
+        return (
+            f"版本号 '{version}' 的 patch 超过上限 {_MAX_PATCH}："
+            f"项目规则是 patch 到 {_MAX_PATCH} 为止，下一个版本应改为 "
+            f"v{major}.{minor + 1}.0（例：v0.1.100 ⇒ v0.2.0）"
+        )
+    return None
 
 
 def _read_text(path: Path) -> str:
@@ -135,6 +162,12 @@ def main() -> int:
         if not _SEMVER_RE.match(normalize(value)):
             errors.append(f"{label} 的版本号 '{value}' 不是合法的 x.y.z 语义化版本")
 
+    # ---- 2b. 版本上限规则（patch <= 99；v0.1.100 应写成 v0.2.0）----
+    for label, value in (("csproj", csproj_version), ("CHANGELOG", changelog_version)):
+        rule_error = version_rule_error(value)
+        if rule_error:
+            errors.append(f"{label}：{rule_error}")
+
     # ---- 3. 两处一致性 ----
     if normalize(csproj_version) != normalize(changelog_version):
         errors.append(
@@ -163,7 +196,7 @@ def main() -> int:
             print(f"  {i}. {message}")
         return 1
 
-    print("\n[通过] csproj / CHANGELOG / git tag 版本一致。")
+    print("\n[通过] csproj / CHANGELOG / git tag 版本一致，且符合 patch <= 99 上限规则。")
     return 0
 
 

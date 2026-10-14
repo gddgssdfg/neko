@@ -4,6 +4,33 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+🔴 **版本号上限规则（2026-10-14）**：patch **不超过 99** —— 到 `v0.1.99` 后下一个版本**直接跳 `v0.2.0`**
+（不出现 `v0.1.100`）。`tools/check_version.py` 会拒绝 patch > 99 并给出应改成的版本号。
+
+## [0.1.99] - 2026-10-14
+
+**版本号上限规则落地：patch 到 99 为止 —— 本版是 `0.1.x` 系列最后一个版本，下一个版本从 `v0.2.0` 起。规则由 `tools/check_version.py` 强制，不再只是提醒。**
+
+### 新增
+- `tools/check_version.py` 新增 `version_rule_error()` 与上限检查（`_MAX_PATCH = 99`）：
+  **patch > 99 直接判不一致、退出码 1**，报错文本直接给出应改成的版本号（`v0.1.100 ⇒ v0.2.0`）；
+  csproj 与 CHANGELOG 两处都会检查。
+
+### 变更
+- `CHANGELOG.md` 头部与 `docs/release-sop.md` §1（版本号一致性）写入该规则；
+  `docs/dev-log.md` §十九 记录理由。
+
+### 说明
+- **为什么设上限**：三位 patch（如 `100`）在**字符串排序**（`"100" < "99"`）、肉眼比较、
+  以及部分第三方版本工具里都容易出错；把「到一个整数关口就做一次 minor 跳跃」**固化成规则**，
+  比"想起来才跳"可靠得多。
+- **本版无运行时代码改动**：只有版本号 + 工具 + 文档（`src/**` 的 C# 代码一行未动）。
+
+### 测试
+- **闸门双向验证（拿真值跑，不是推测）**：`patch=100` → **退出码 1 + 明确提示**；
+  `patch=99`（`0.1.99`）/ `patch=0`（`0.2.0`）→ 通过。
+- `python tools/check_version.py` 通过；`python tools/ci.py` 六道闸门全绿。
+
 ## [0.1.98] - 2026-10-14
 
 **数据根与程序根分离：用户数据默认迁到 `%AppData%\Neko`（v0.1.97 及以前在 exe 同级 `data/`），旧数据首次运行自动复制过来。至此「删 `bin/` 之前必须先备份 `data/`」这条红线从"靠人记住"变成"结构上不可能违反"。**
