@@ -275,7 +275,47 @@ git ls-remote --tags origin | grep -v '\^{}'        # 本版 tag 必须出现在
 
 ---
 
+### 8.1 🔴 更新检查 ⇒ 仓库必须**公开**（v0.2.2 实测）
+
+**「检查更新」只支持公开仓库。** 私有/受保护仓库的 Gitee API 一律返回
+`404 {"message":"Not Found Project"}`，而客户端**不可能内置 token**（也不该）。
+
+**别再靠日志发现这件事**（v0.2.2 之前的真实情况：功能**从上线起一直 404**，
+只在 `数据根/logs` 里留一行 `[WARN] [更新] 查询失败：HTTP 404`，UI 却显示"请稍后重试"）。**发布后请主动验一次：**
+
+```bash
+# 未登录可用性（应 200；403/404 ⇒ 仓库不可见，更新检查必然失效）
+curl -s -o /dev/null -w "%{http_code}\n" https://gitee.com/api/v5/repos/gddgssdfg/neko/tags
+# 对照：一个已知公开仓库（应 200。若它也非 200，是网络/代理问题而非仓库问题）
+curl -s -o /dev/null -w "%{http_code}\n" https://gitee.com/api/v5/repos/oschina/git-osc
+```
+
+**数据源是两级的**（`src/DesktopPet.App/Services/UpdateService.cs`）：
+1. `GET /repos/{owner}/{repo}/releases/latest` —— 有 **Release 对象**时信息最全（更新说明 + 下载链接）；
+2. 回落 `GET /repos/{owner}/{repo}/tags?per_page=100` —— 取**最大语义化版本**。
+
+⇒ **只打 tag 也能被检查到**（与 §7 的流程一致，不需要额外建 Release）；
+若想让用户看到**更新说明**与**下载链接**，则额外在 Gitee 上为该 tag 建一个 Release。**两者都可，不是必须。**
+
+### 8.2 仓库公开前的检查清单（公开不可逆，先量"会公开什么"）
+
+```bash
+git ls-files | grep -iE "\.env|secret|credential|token|\.pem$|\.pfx$|\.key$"   # 应为空
+git log --all --diff-filter=A --name-only --pretty=format: | sort -u \
+  | grep -iE "\.env|secret|credential|token|\.pem$|\.pfx$|\.key$"               # 全历史：应为空
+git grep -l -i "C:\\\\Users\\\\Lantern\|G:\\\\lantetn-li" -- .                  # 个人绝对路径：应为空
+git ls-files .workbuddy | wc -l                                                 # 内部笔记：应为 0
+git check-ignore -v _eval/optimization-backlog.md                               # 应被忽略
+```
+
+**2026-10-14 实测结论（v0.2.2 时点）**：以上各项**全部通过** —— `.workbuddy/` 未被跟踪、
+`_eval/` 被 `/_*` 忽略、全历史无密钥类文件、被跟踪文件 0 处个人绝对路径、
+`.gitignore` 已排除 `data/` `.env` `*.key`；仓库 410 个跟踪文件 / `.git` 17MB。
+
+---
+
 ## 9. 发布 checklist（可勾选）
+
 
 ```
 发布版本：v________        发布日期：____________

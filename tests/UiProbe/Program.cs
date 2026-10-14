@@ -1956,6 +1956,56 @@ internal static class Program
                 throw new Exception("静止帧冒充动画：" + string.Join("；", offenders));
         });
 
+        // ---- v0.2.2：更新检查的两级数据源 —— tag 列表解析（本项目只打 tag，没有 Release 对象）----
+        Check("v0.2.2：tag 列表解析取最大语义化版本（不依赖返回顺序 / 跳过非版本 tag）", () =>
+        {
+            // 1) 关键判别：**字符串序会把 "0.1.9" 排到 "0.1.10" 之后**，必须按数字段比。
+            //    这里同时混入一个非版本号 tag，验证它被跳过而不是把整份解析搞崩。
+            const string mixed = """
+            [
+              { "name": "v0.1.9",  "commit": { "sha": "aaa", "date": "2026-01-01T00:00:00+08:00" } },
+              { "name": "not-a-version", "commit": { "sha": "ddd" } },
+              { "name": "v0.1.10", "commit": { "sha": "bbb" } },
+              { "name": "v0.2.0",  "commit": { "sha": "ccc" } }
+            ]
+            """;
+            var info = UpdateService.ParseLatestTags(mixed) ?? throw new Exception("应解析出一个版本");
+            if (info.Version != "0.2.0") throw new Exception($"最大版本应为 0.2.0，实际 {info.Version}");
+            if (info.TagName != "v0.2.0") throw new Exception($"TagName 应为 v0.2.0，实际 {info.TagName}");
+            if (!info.ReleaseUrl.Contains("/tags")) throw new Exception($"tag 来源的 ReleaseUrl 应指向 tags 页，实际 {info.ReleaseUrl}");
+
+            // 2) 只有 0.1.9 / 0.1.10 时：必须选出 0.1.10（字符串序会错选 v0.1.9）
+            const string two = """[ { "name": "v0.1.9" }, { "name": "v0.1.10" } ]""";
+            if (UpdateService.ParseLatestTags(two)?.Version != "0.1.10")
+                throw new Exception("0.1.9 vs 0.1.10 应按数字段比（0.1.10 更新）");
+
+            // 3) 顺序颠倒也应选出最大值（不依赖接口返回顺序）
+            const string reversed = """[ { "name": "v9.9.9" }, { "name": "v0.2.0" } ]""";
+            if (UpdateService.ParseLatestTags(reversed)?.Version != "9.9.9")
+                throw new Exception("顺序颠倒时应选出最大者");
+
+            // 4) 预发布视为比同号正式版旧
+            const string pre = """[ { "name": "v0.2.0-beta" }, { "name": "v0.2.0" } ]""";
+            if (UpdateService.ParseLatestTags(pre)?.Version != "0.2.0")
+                throw new Exception("正式版应排在预发布之前");
+
+            // 5) 保守路径：空数组 / 非数组 / 损坏 JSON / 空 / 无合法版本 tag / 全是脏项 → null（绝不抛）
+            if (UpdateService.ParseLatestTags("[]") is not null) throw new Exception("空数组应 null");
+            if (UpdateService.ParseLatestTags("{\"a\":1}") is not null) throw new Exception("非数组应 null");
+            if (UpdateService.ParseLatestTags("{ oops") is not null) throw new Exception("损坏 JSON 应 null");
+            if (UpdateService.ParseLatestTags("") is not null) throw new Exception("空串应 null");
+            if (UpdateService.ParseLatestTags(null) is not null) throw new Exception("null 应 null");
+            if (UpdateService.ParseLatestTags("""[ { "name": "nightly" } ]""") is not null)
+                throw new Exception("无合法版本 tag 应 null");
+            if (UpdateService.ParseLatestTags("""[ null, 42, "x" ]""") is not null)
+                throw new Exception("全是非对象项应 null");
+
+            // 6) 两级数据源的地址常量必须指向同一仓库（防改了 Owner/Repo 只改一处）
+            if (!UpdateService.LatestReleaseApi.Contains("/gddgssdfg/neko/")) throw new Exception("releases 接口地址异常");
+            if (!UpdateService.TagsApi.Contains("/gddgssdfg/neko/tags")) throw new Exception("tags 接口地址异常");
+            if (UpdateService.RepoUrl != "https://gitee.com/gddgssdfg/neko") throw new Exception("仓库主页地址异常");
+        });
+
         // ---- v0.1.82 第 32 项：插件定时器回调（线程池）里调 Pet.Say 必须真的弹出气泡 ----
         // 背景：SchedulerImpl 用 System.Threading.Timer，回调跑在**线程池**；而 PetApiImpl 原先
         // 直接把调用转给渲染器 → 触到有线程亲和性的气泡窗口 → 抛异常 → 被 SchedulerImpl 吞掉。

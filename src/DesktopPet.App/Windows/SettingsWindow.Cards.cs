@@ -268,8 +268,15 @@ public sealed partial class SettingsWindow : Window
                 var latest = await UpdateService.FetchLatestAsync(CancellationToken.None);
                 if (latest is null)
                 {
-                    MessageBox.Show(T("检查失败，请稍后重试（网络不可用，或仓库暂未发布 Release）。", "Check failed. Please try again later."),
-                        "Neko", MessageBoxButton.OK, MessageBoxImage.Information);
+                    // v0.2.2：失败提示要说实话并**可操作**。真实原因有两类，且此前都显示成"请稍后重试"：
+                    //   ① 网络不可达（暂时性，重试有意义）；
+                    //   ② 发布仓库对未登录者不可见（配置性，**重试一万次也没用**）。
+                    // 再给一个「打开仓库页」的出口，免得用户对着一个永远不会成功的按钮反复点。
+                    var r2 = MessageBox.Show(
+                        T("检查失败：网络不可用，或发布仓库当前不可见（更新检查只支持公开仓库）。\n\n是否打开仓库页手动查看？",
+                          "Check failed: no network, or the release repository isn't publicly visible (the updater only supports public repositories).\n\nOpen the repository page?"),
+                        "Neko", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                    if (r2 == MessageBoxResult.Yes) OpenUrl(UpdateService.RepoUrl);
                 }
                 else if (UpdateService.IsNewer(UpdateService.CurrentVersion, latest.Version))
                 {
