@@ -1154,6 +1154,40 @@ internal static class Program
             settings.Close();
         });
 
+        // ---- v0.2.0：设置页「关于」的数据目录卡片（v0.1.98 把数据搬到 %AppData% 后，用户在界面上找不到自己的数据）----
+        Check("v0.2.0：设置页「关于」显示数据目录卡片（真实路径 + 打开按钮）", () =>
+        {
+            var settings = new SettingsWindow(win);
+            settings.Show();
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var showSection = typeof(SettingsWindow).GetMethod("ShowSection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("SettingsWindow.ShowSection 不存在");
+            showSection.Invoke(settings, new object[] { "about" });
+            settings.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            static IEnumerable<DependencyObject> Walk(DependencyObject root)
+            {
+                for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+                {
+                    var c = VisualTreeHelper.GetChild(root, i);
+                    yield return c;
+                    foreach (var d in Walk(c)) yield return d;
+                }
+            }
+
+            var texts = new List<string>();
+            foreach (var o in Walk(settings))
+                if (o is TextBlock tb && !string.IsNullOrEmpty(tb.Text)) texts.Add(tb.Text);
+            var all = string.Join("\n", texts);
+
+            // ① 卡片显示的必须是**当前真实数据根**（从 Paths.Data 动态取），不是写死的示例路径
+            if (!all.Contains(Paths.Data))
+                throw new Exception($"数据目录卡片未显示当前数据根（期望含 {Paths.Data}）");
+            // ② 标题与按钮齐备（按钮 = BuildButtonCard 的「打开目录」）
+            if (!all.Contains("数据目录")) throw new Exception("缺少『数据目录』标题");
+            if (!all.Contains("打开目录")) throw new Exception("缺少『打开目录』按钮");
+        });
+
         // ---- v0.1.59 第 26 项：P4 渲染时钟统一 + ⑩鼠标张望 + ⑨心情驱动（行为等价内部重构 + 新交互）----
         Check("v0.1.59(P4/⑩/⑨)：渲染时钟统一 _clockMs + 鼠标张望增益 + 好感度驱动心情", () =>
         {
@@ -2053,12 +2087,75 @@ internal static class Program
             Console.WriteLine($"  Dispose 前触发 {before} 次 → 停表（含在途）后冻结在 {frozen} 次（幂等）");
         });
 
+        // v0.2.0：可选——把「关于」页离屏渲染成 PNG，供人工审阅视觉改动（设 UIPROBE_SHOT=<目录> 时生效）。
+        // 为什么走离屏渲染而不是屏幕截图：不依赖窗口可见 / 不依赖合成输入，跑在 CI 里也复现得出。
+        SaveSettingsAboutShotIfRequested(win);
+
         Console.WriteLine(_fail == 0 ? "\n=== 全部通过 ===" : $"\n=== {_fail} 项失败 ===");
         Console.Out.Flush();
         // v0.1.82：用 Environment.Exit 强制退出。测试里创建过真实 WPF 窗口（PetWindow/RadialMenu），
         // 它们的 Dispatcher 与全局钩子会留下前台线程，正常 return 不保证进程结束
         // （表现为"打印完结果却不退出"，QA 复验时观察到过 19 分钟不退出）。
         Environment.Exit(_fail == 0 ? 0 : 1);
+    }
+
+    /// <summary>
+    /// v0.2.0：把设置窗「关于」页渲染成 PNG（仅当 <c>UIPROBE_SHOT</c> 环境变量给了目录）。
+    /// 用于把**视觉改动**交给灯灯人工审（本项目规矩：别自评"好看"）。
+    /// 失败只打印、不影响闸门结论——它是辅助产物，不是断言。
+    /// </summary>
+    private static void SaveSettingsAboutShotIfRequested(PetWindow win)
+    {
+        var dir = Environment.GetEnvironmentVariable("UIPROBE_SHOT");
+        if (string.IsNullOrWhiteSpace(dir)) return;
+        try
+        {
+            var shotWin = new SettingsWindow(win);
+            shotWin.Show();
+            shotWin.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var showSection = typeof(SettingsWindow)
+                .GetMethod("ShowSection", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)!;
+            showSection.Invoke(shotWin, new object[] { "about" });
+
+            // 等布局稳定：DispatcherFrame 驱动消息循环（本项目铁律：绝不用 Thread.Sleep 阻塞 STA）
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            var timer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(500),
+            };
+            timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+            timer.Start();
+            Dispatcher.PushFrame(frame);
+            shotWin.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+
+            var root = (FrameworkElement)shotWin.Content;
+            int w = (int)Math.Ceiling(root.ActualWidth);
+            int h = (int)Math.Ceiling(root.ActualHeight);
+            if (w <= 0 || h <= 0) throw new Exception($"布局尺寸异常 {w}x{h}");
+
+            // 先铺窗口底色再画内容：窗口 Content 自身不带底色，直接 Render 会得到透明背景
+            var bg = new SolidColorBrush((Color)typeof(SettingsWindow)
+                .GetField("BgRoot", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(shotWin)!);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(bg, null, new Rect(0, 0, w, h));
+                dc.DrawRectangle(new VisualBrush(root), null, new Rect(0, 0, w, h));
+            }
+            var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+            rtb.Render(dv);
+
+            Directory.CreateDirectory(dir);
+            var path = System.IO.Path.Combine(dir, "settings-about.png");
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+            using (var fs = System.IO.File.Create(path)) enc.Save(fs);
+            Console.WriteLine($"[shot] {path}  {w}x{h}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[shot] 失败（不影响闸门）：{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private static void Check(string name, Action action)

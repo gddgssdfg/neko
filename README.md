@@ -145,7 +145,7 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 - Neko 主程序**不联网**。仅当你**主动**使用天气（`api.open-meteo.com`）、命理 AI 咨询（`api.deepseek.com`，需自填 API Key）、搜索（由浏览器打开百度）时才会访问网络。
 - 用户数据（配置 / 好感度 / 插件私有数据 / 日志）默认保存在 **`%AppData%\Neko`**（v0.1.98 起；
   之前是 exe 同级的 `data/`）。想要绿色便携形态，就在程序根放一个 `portable.flag` 文件，数据即改回程序根 `data/`。
-  **删除该目录即清除全部用户数据。**
+  **删除该目录即清除全部用户数据。** 找不到时打开 **设置 → 关于 → 数据目录**，点「打开目录」直达。
 - 无账号、无遥测、无统计、无广告。
 
 详见 [PRIVACY.md](PRIVACY.md)（隐私说明）与 [SECURITY.md](SECURITY.md)（安全说明与漏洞上报）。

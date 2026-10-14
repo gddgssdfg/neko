@@ -527,6 +527,16 @@ public sealed partial class SettingsWindow : Window
             Text = $"版本：v{_config.GetType().Assembly.GetName().Version?.ToString(3) ?? "?"}\n\n一只轻量像素橘猫，支持插件生态和键鼠可视化。\n\n作者：灯灯（Lantern）\n技术：C# + WPF + .NET 8",
             FontSize = 13, Foreground = new SolidColorBrush(TextMain), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0), LineHeight = 22,
         });
+        sp.Children.Add(MakeSectionHeader(T("数据与存档", "Data & Storage")));
+        // v0.2.0：数据根在 v0.1.98 从「exe 同级 data/」搬到了 %AppData%\Neko —— 用户从此在界面上
+        // 找不到自己的数据（配置/好感度/插件数据/日志）。这张卡片把「在哪」和「怎么打开」直接给出来，
+        // 并注明来源（默认 / 便携 / 环境变量），省掉"我的好感度去哪了"这类提问。
+        sp.Children.Add(BuildButtonCard(
+            T("数据目录", "Data folder"),
+            $"{T("配置、好感度、插件数据与日志都在这里（v0.1.98 起不再放在程序目录）", "Config, affection, plugin data and logs live here (no longer next to the exe since v0.1.98)")}\n{Paths.Data}（{DataRootKindText()}）",
+            T("打开目录", "Open folder"),
+            OpenDataDirectory));
+
         sp.Children.Add(MakeSectionHeader("更新"));
         sp.Children.Add(BuildUpdateCard());
         sp.Children.Add(BuildToggleCard(
@@ -543,4 +553,31 @@ public sealed partial class SettingsWindow : Window
         });
         return WrapPage(sp, "关于");
     }
+
+    /// <summary>
+    /// v0.2.0：在资源管理器中打开用户数据目录（= <see cref="Paths.Data"/>，v0.1.98 起默认在 <c>%AppData%\Neko</c>）。
+    /// 打开失败只提示、不抛（设置页不该因为打不开一个文件夹而崩）。
+    /// </summary>
+    private void OpenDataDirectory()
+    {
+        try
+        {
+            Paths.EnsureCreated();   // 目录可能还没被建出来（例如刚装还没跑过主流程），先兜底建
+            Process.Start(new ProcessStartInfo { FileName = Paths.Data, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"打开数据目录失败：{ex.Message}\n\n{Paths.Data}", "Neko",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>数据根来源的人话说明——让用户明白"为什么在这里"（见 <see cref="Paths.DataKind"/>）。</summary>
+    private static string DataRootKindText() => Paths.DataKind switch
+    {
+        DataRootKind.EnvOverride => "由环境变量 NEKO_DATA_DIR 指定",
+        DataRootKind.Portable => @"便携模式：程序根 data\",
+        DataRootKind.ExeDirFallback => @"兜底：程序根 data\",
+        _ => "默认位置（%AppData%）",
+    };
 }
