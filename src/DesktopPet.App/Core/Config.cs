@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace DesktopPet.App.Core;
 
-/// <summary>应用配置（data/config.json）</summary>
+/// <summary>应用配置（数据根下的 config.json；见 <see cref="Paths.Data"/>）</summary>
 public sealed class AppConfig
 {
     public bool StartWithWindows { get; set; } = false;
@@ -73,7 +73,7 @@ public sealed class AppConfig
     public string Language { get; set; } = "zh";
 
     // ---- v0.1.61 日志 ----
-    /// <summary>日志级别（"off"/"debug"/"info"/"warn"=默认/"error"）；warn 及以上默认输出到 data/logs</summary>
+    /// <summary>日志级别（"off"/"debug"/"info"/"warn"=默认/"error"）；warn 及以上默认输出到 数据根/logs</summary>
     public string LogLevel { get; set; } = "warn";
 
     // ---- v0.1.71 径向菜单配置（顺序覆盖 + 显隐 + 全局可见数量上限）----

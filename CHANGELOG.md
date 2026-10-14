@@ -4,6 +4,58 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 版本号定义在 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`，改版本时必须同步本文件。
 
+## [0.1.98] - 2026-10-14
+
+**数据根与程序根分离：用户数据默认迁到 `%AppData%\Neko`（v0.1.97 及以前在 exe 同级 `data/`），旧数据首次运行自动复制过来。至此「删 `bin/` 之前必须先备份 `data/`」这条红线从"靠人记住"变成"结构上不可能违反"。**
+
+### 新增
+- **数据根解析（`Paths.Data`）**，优先级从高到低：
+  1. 环境变量 **`NEKO_DATA_DIR`**（测试隔离 / 高级用户覆盖，绝对或相对路径皆可）
+  2. **便携模式**：程序根存在 **`portable.flag`** → 用程序根 `data/`（绿色版显式选择）
+  3. **默认：`%AppData%\Neko`**
+  程序根仍放只读随包内容（`plugins/`、`neko-assets/`、`builtins.lock.json`），**语义与位置均未改动**。
+- **一次性迁移 `Paths.MigrateLegacyData()`**：只在「用默认数据根 + 旧目录存在 + 未迁移过」时执行；
+  - **复制而非移动** —— 源目录原封不动，并在其中留下 `MOVED-TO-APPDATA.txt` 说明它已不是活动数据；
+  - 目标已存在的文件**不覆盖**（迁移可重复执行）；`logs/` 属可弃诊断信息**不迁移**；
+  - **任何异常都不外抛**（迁移失败不能挡启动），失败也会写日志说明；
+  - 数据根内留 `.migrated-from-exe-dir` 标记防重复迁移；结果落 `[WARN] 数据目录迁移：…` 与
+    `[INFO] 数据根：…（来源 X）`，**「数据到底在哪」事后可查**。
+
+### 变更
+- **测试数据目录隔离**：`tests/UiProbe` 在 `Main` **任何 `Paths.*` 访问之前**把 `NEKO_DATA_DIR` 指到唯一临时目录
+  （此前它会把皮肤"还原"写进 exe 同级的真实 `config.json`）；调用方（`tools/ci.py`）已指定时沿用调用方的。
+  `tools/ci.py` 另为三个测试进程注入同名变量，产物收在 `bin_ci_logs/_testdata/<测试名>/`。
+- **异常提示与注释说实话**：`App.xaml.cs` 的未处理异常弹窗原先写死 `data\logs`，现显示**真实日志目录**；
+  `Config.cs` / `Log.cs` / `ActivityTracker.cs` / `AffectionReader.cs` / `ChatScheduler.cs` / `PluginHost.cs` /
+  `SettingsWindow.cs` 以及 **Core 契约**（`IPetPlugin.cs` / `Enums.cs`）里所有 `data/…` 注释统一改为「数据根/…」，
+  并在 `IPluginContext.DataRoot` 上写明解析顺序与「插件不要自己拼路径」。
+- **文档同步**：`README.md`（用户数据位置 + `portable.flag`）、`docs/architecture.md`、
+  `docs/plugin-development-guide.md`（新增文首「📁 两个目录别混」并全文改用 `<程序根>` / `<数据根>` 两个占位词）。
+
+### 说明
+- **红线的去向**：「删 `bin/` 前必须备份 `data/`」的根因是**用户数据长在构建产物里**。分离后删构建产物
+  **不再触碰用户数据**；红线由「必须记住」改判为**结构性消除**。
+- **为什么不用 `%LocalAppData%`**：MSI 的安装目录就是 `LocalAppDataFolder\Neko`（per-user 安装），
+  数据放那里会和"程序安装目录"重合，卸载时混在一起 —— 故用独立的 `%AppData%\Neko`。
+- **代价与边界（如实记录）**：旧目录**不会被自动删除**（刻意：不制造数据丢失窗口），需要用户自行清理；
+  `%AppData%` 是 **Roaming**，域环境下配置文件会随漫游同步（桌宠场景可接受）。
+- **不生成 MSI**（项目约定：MSI 不随版本自动生成）。
+
+### 测试
+- **真机端到端，4 条分支各自独立验证**：
+  1. **首次运行 + 自造旧数据** → `%AppData%\Neko` 收到 `config.json` / `host/activity.json` /
+     `plugins/com.lantern.affection/score.json`（标记 `files-copied: 3`），好感度值**原样保留**；
+     旧目录未被删且多出 `MOVED-TO-APPDATA.txt`；`logs/` 未复制。
+  2. **二次运行** → 迁移行计数仍为 **1**（不重复迁移），配置与好感度未被重置。
+  3. **放置 `portable.flag`** → 日志记 `来源 Portable`，数据写回程序根 `data/`，`%AppData%` **未被写入**。
+  4. **`NEKO_DATA_DIR=<temp>`** → 数据只落在指定目录（`%AppData%` 日志无新增行）。
+- **隔离有效性的前后对比证据**：两次完整 CI 跑完后，真实数据根 `%AppData%\Neko` 的 `config.json`
+  修改时间**仍停在恢复时刻**（未被 UiProbe 写入），而 UiProbe 的临时数据根里出现了它自己的
+  `config.json` / `logs/` / `plugins/`。
+- `python tools/ci.py`：六道闸门全绿（build 0 警告 0 错误 / LoaderTest / PluginSmoke 18-18 且 ALC 未回收 0 /
+  UiProbe / git status）。
+- `python tools/check_version.py`：csproj / CHANGELOG / git tag 一致。
+
 ## [0.1.97] - 2026-10-13
 
 **补齐第 9 套「拼豆」皮肤（`bead`）的真实逐帧动画（T04）+ 新增 UiProbe「帧去重」断言。运行时 `src/` 零改动。**

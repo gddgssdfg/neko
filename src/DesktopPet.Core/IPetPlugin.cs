@@ -6,8 +6,14 @@ public interface IPluginContext
     /// <summary>宿主程序版本</summary>
     Version HostVersion { get; }
     /// <summary>宿主数据根目录</summary>
+    /// <remarks>
+    /// v0.1.98 起这是**独立于程序目录**的可写位置：默认 <c>%AppData%\Neko</c>；
+    /// 程序根存在 <c>portable.flag</c> 时为程序根的 <c>data\</c>（便携模式）；
+    /// 环境变量 <c>NEKO_DATA_DIR</c> 可覆盖（测试隔离用）。
+    /// 插件**不要**自己拼路径——始终用 <see cref="PluginDataDir"/>。
+    /// </remarks>
     string DataRoot { get; }
-    /// <summary>插件数据目录（data/plugins/&lt;id&gt;/）</summary>
+    /// <summary>插件数据目录（数据根下的 <c>plugins/&lt;id&gt;/</c>；见 <see cref="DataRoot"/> 的说明）</summary>
     string PluginDataDir { get; }
 
     IPetApi Pet { get; }

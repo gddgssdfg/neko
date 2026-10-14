@@ -97,6 +97,13 @@ BUILD_TIMEOUT = 900
 RUN_TIMEOUTS = {"LoaderTest": 300, "PluginSmoke": 900, "UiProbe": 900}
 SENTINEL_GRACE = 20.0              # 读到哨兵后仍不退出，最多再等这么久就收尾
 
+# 测试数据根隔离（v0.1.98）
+#   Neko 的可写数据根默认在 %AppData%\Neko。测试若不隔离，就会读写**开发机/用户的真实数据**
+#   （UiProbe 末尾会把皮肤"还原"写回 config.json，属于会改真实配置的写操作）。
+#   故给每个测试进程注入 NEKO_DATA_DIR，钉在仓库内的 bin_ci_logs/_testdata/<测试名>/ 下。
+#   ⚠️ UiProbe 自身也在 Main 开头设了同名变量（更早生效）；此处是 CI 侧兜底，两侧都在。
+TEST_DATA_ENV_VAR = "NEKO_DATA_DIR"
+
 # MSBuild 汇总行随 dotnet 语言本地化：同时兼容英文与简体中文
 #   英文：    0 Warning(s)   /   0 Error(s)
 #   简体中文：0 个警告       /   0 个错误
@@ -180,6 +187,7 @@ def run_captured(
     grace: float = SENTINEL_GRACE,
     cwd: Path | None = None,
     echo: bool = False,
+    env: dict[str, str] | None = None,
 ) -> RunResult:
     """运行命令并把 stdout/stderr 合并写入日志文件，带超时与哨兵兜底。
 
@@ -187,10 +195,13 @@ def run_captured(
       避免子进程打印完后挂住不退出时 readline 永久阻塞。
     - `sentinel` 一旦在输出中出现，最多再等 `grace` 秒；仍不退出则主动终止，
       并以「哨兵已出现」为准交由判据决定成败（UiProbe 正是这种形态）。
+    - `env` 为**增量**环境变量（与 os.environ 合并后传给子进程），用于测试数据根隔离。
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     start = time.monotonic()
-    proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None, **_popen_kwargs())
+    child_env = {**os.environ, **env} if env else None
+    proc = subprocess.Popen(cmd, cwd=str(cwd) if cwd else None,
+                            env=child_env, **_popen_kwargs())
 
     out_queue: "queue.Queue[bytes | None]" = queue.Queue()
 
@@ -345,6 +356,13 @@ def _find_test_exe(label: str, exe_name: str) -> Path | None:
     return matches[0]
 
 
+def _test_data_env(label: str) -> dict[str, str]:
+    """测试进程的增量环境变量：把数据根钉在仓库内临时目录，不碰真实 %AppData%\\Neko。"""
+    root = LOG_DIR / "_testdata" / label
+    root.mkdir(parents=True, exist_ok=True)
+    return {TEST_DATA_ENV_VAR: str(root)}
+
+
 def step_run_loadertest() -> StepResult:
     """步骤 3a：LoaderTest —— 末行 `=== 全部通过 ===` 且退出码 0。"""
     name = "run LoaderTest"
@@ -352,7 +370,8 @@ def step_run_loadertest() -> StepResult:
     exe = _find_test_exe("LoaderTest", "LoaderTest.exe")
     if exe is None:
         return StepResult(name, False, 0.0, "未找到构建产物 LoaderTest.exe（bin_ci/）", log)
-    r = run_captured([str(exe)], log, timeout=RUN_TIMEOUTS["LoaderTest"], echo=True)
+    r = run_captured([str(exe)], log, timeout=RUN_TIMEOUTS["LoaderTest"], echo=True,
+                     env=_test_data_env("LoaderTest"))
 
     last = _last_nonempty(r.lines)
     if r.timed_out:
@@ -374,7 +393,8 @@ def step_run_pluginsmoke() -> StepResult:
     # 显式传入仓库根，免依赖 BaseDirectory 上溯
     r = run_captured([str(exe), str(REPO_ROOT)], log,
                      timeout=RUN_TIMEOUTS["PluginSmoke"],
-                     sentinel="结论：PASS", echo=True)
+                     sentinel="结论：PASS", echo=True,
+                     env=_test_data_env("PluginSmoke"))
 
     if r.timed_out:
         return StepResult(name, False, r.duration, "运行超时", log)
@@ -407,7 +427,8 @@ def step_run_uiprobe() -> StepResult:
     if exe is None:
         return StepResult(name, False, 0.0, "未找到构建产物 UiProbe.exe（bin_ci/）", log)
     r = run_captured([str(exe)], log, timeout=RUN_TIMEOUTS["UiProbe"],
-                     sentinel="=== 全部通过 ===", echo=True)
+                     sentinel="=== 全部通过 ===", echo=True,
+                     env=_test_data_env("UiProbe"))
 
     ok, detail = judge_uiprobe(r)
     return StepResult(name, ok, r.duration, detail, log)

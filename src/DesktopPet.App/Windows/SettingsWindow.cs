@@ -19,7 +19,7 @@ namespace DesktopPet.App.Windows;
 ///   输入：键鼠映射（双模态）、径向菜单热键、老板键、附加热键
 ///   插件：原 BuildPluginTab 保留
 ///   关于：版本 + 介绍
-/// 改动立即生效并持久化到 data/config.json。
+/// 改动立即生效并持久化到 数据根/config.json。
 /// </summary>
 /// <remarks>
 /// v0.1.84（审计 P2-11「超长文件」）：本类已按内聚的功能区域拆成多个 <c>partial</c> 文件。

@@ -16,21 +16,30 @@ public partial class App : Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-        // 1. 初始化目录
+        // 1. 初始化目录（v0.1.98：程序根与**数据根**分离，数据根默认在 %AppData%\Neko）
+        //    先做一次性迁移：把旧版「程序根/data」里的用户数据（config + 插件数据，含好感度）
+        //    复制到新数据根。必须排在 EnsureCreated / ConfigManager.Load 之前——否则会先建出空目录、
+        //    再读到空配置，迁移等于白做（旧配置被"默认值"覆盖写回，且不留痕）。
+        var dataMigration = Paths.MigrateLegacyData();
         Paths.EnsureCreated();
 
         // 加载配置（先读配置拿到 LogLevel，日志才能按配置过滤）
         var config = ConfigManager.Load(Paths.ConfigFile);
 
-        // v0.1.61：初始化文件日志（级别来自配置；默认 warn 及以上落盘 data/logs）
+        // v0.1.61：初始化文件日志（级别来自配置；默认 warn 及以上落盘 <数据根>/logs）
         Log.Initialize(config.LogLevel);
+
+        // v0.1.98：「数据到底在哪」必须事后可查——迁移结果用 Warn（默认落盘），位置用 Info
+        if (dataMigration is not null)
+            Log.Warn("数据目录迁移：" + dataMigration);
+        Log.Info($"数据根：{Paths.Data}（来源 {Paths.DataKind}）");
 
         // 全局异常兜底：写入日志并提示一次，避免未处理异常导致整体崩溃
         DispatcherUnhandledException += (_, args) =>
         {
             Log.Error("未处理的 UI 线程异常", args.Exception);
             MessageBox.Show(
-                $"Neko 遇到未处理异常，已记录到 data\\logs：\n{args.Exception.Message}",
+                $"Neko 遇到未处理异常，已记录到日志：\n{Paths.Logs}\n\n{args.Exception.Message}",
                 "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true; // 保住宿主进程不退出
         };

@@ -302,7 +302,9 @@ git ls-remote --tags origin | grep -v '\^{}'        # 本版 tag 必须出现在
     [ ] 核对 .wxs：data/ 条目 = 0（未打包开发数据）
 
 [ ] 7. 清场与提交
-    [ ] bin/ 已清、根目录临时 _*.png 已清/忽略
+    [ ] bin/ 已清（v0.1.98 起 bin 里**不再有用户数据** —— 数据根默认在 %AppData%\Neko，
+        所以清 bin 不再需要先备份 data/；但若用户处于便携模式 `portable.flag`，数据仍在程序根 data/）
+    [ ] 根目录临时 _*.png 已清/忽略
     [ ] git status --short 干净（无意外 M）
     [ ] git diff --stat 中素材二进制变动均已确认
     [ ] 提交（格式：<版本号>: <主题>）

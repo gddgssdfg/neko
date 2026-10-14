@@ -66,7 +66,7 @@ public enum PluginPermissions : ulong
     /// <summary>启动进程（高风险，需二次确认）</summary>
     Process    = 1L << 10,
     // ---- v0.1.80：权限细分（把"合法但被粗 token 误伤"的能力拆出来）----
-    /// <summary>仅写入本插件自己的数据目录 data/plugins/&lt;id&gt;/（低危；不等于任意文件读写）</summary>
+    /// <summary>仅写入本插件自己的数据目录（数据根下 <c>plugins/&lt;id&gt;/</c>，见 <see cref="IPluginContext.DataRoot"/>；低危）</summary>
     FileOwnDir = 1L << 11,
     /// <summary>发送系统媒体键（上一曲 / 播放暂停 / 下一曲）（低危；不等于启动任意进程）</summary>
     MediaKey   = 1L << 12,

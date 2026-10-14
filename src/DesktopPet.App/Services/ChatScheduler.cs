@@ -7,7 +7,7 @@ namespace DesktopPet.App.Services;
 /// 触发规则（每分钟 tick）：
 ///   ① 连续工作 ≥ ChatRestMinutes 分钟 → 休息提醒（两次提醒间隔 ≥ 60 分钟）
 ///   ② 每 12~20 分钟随机闲聊一次（仅当最近 3 分钟有活动——挂机不打扰）
-/// 语气：读好感度插件数据（data/plugins/com.lantern.affection/score.json）→ 4 级决定台词亲密度。
+/// 语气：读好感度插件数据（数据根/plugins/com.lantern.affection/score.json）→ 4 级决定台词亲密度。
 /// 台词：内置台词库（静态数组，{0}=称呼 {1}=猫名；L2/L3 阶段融入避免生疏期喊得太亲昵）。
 /// </summary>
 public sealed class ChatScheduler

@@ -33,6 +33,18 @@ internal static class Program
         // 看不见（症状：日志停在某一项、没有结尾那行，容易误判成"卡在那一项"）。
         // 改成 AutoFlush，保证结果随时可读。
         Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
+
+        // v0.1.98：数据根默认在 %AppData%\Neko —— 探针**必须**隔离自己的数据目录。
+        // 否则本文件末尾的「皮肤还原」会写进开发机/用户的真实 config.json，并可能互相污染好感度数据。
+        // 调用方（tools/ci.py / 开发者）已用 NEKO_DATA_DIR 指定时**沿用**；未指定才自造唯一临时目录。
+        // ⚠️ 必须在任何 Paths.* 访问【之前】设置 —— Paths 是静态初始化，一旦被触碰就定死了。
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(Paths.DataDirEnvVarName)))
+        {
+            Environment.SetEnvironmentVariable(
+                Paths.DataDirEnvVarName,
+                Path.Combine(Path.GetTempPath(), "neko-uiprobe-data-" + Guid.NewGuid().ToString("N")[..8]));
+        }
+
         Paths.EnsureCreated();
 
         // ---- 1. 径向菜单反复开关（复现旧崩溃：Close 期间 Show） ----

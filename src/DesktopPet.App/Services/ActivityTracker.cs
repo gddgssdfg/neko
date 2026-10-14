@@ -7,7 +7,7 @@ namespace DesktopPet.App.Services;
 /// <summary>
 /// v0.1.40：活跃度跟踪——供气泡闲聊调度用。
 /// 记录两件事：
-///   ① 今日累计活跃分钟：每分钟内有键鼠输入即 +1（跨天重置，持久化到 data/host/activity.json）
+///   ① 今日累计活跃分钟：每分钟内有键鼠输入即 +1（跨天重置，持久化到 数据根/host/activity.json）
 ///   ② 当前连续活跃分钟：输入间隔 &gt;3 分钟视为新会话（内存态，不落盘）
 /// 数据消费方：ChatScheduler（"工作很久了"提醒靠 ②，天气/备忘录等靠插件自己 Say）。
 /// </summary>

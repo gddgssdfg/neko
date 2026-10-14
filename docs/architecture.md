@@ -36,6 +36,7 @@
 - **形态**：Windows 10 桌面宠物《Neko》，像素橘猫，常驻桌面；左键抚摸、右键径向菜单、托盘进完整设置。
 - **技术栈**：C# + WPF + .NET 8（`net8.0-windows`）。
 - **项目分层（4+1）**：`DesktopPet.Core`（契约）/ `DesktopPet.Runtime`（插件运行时）/ `DesktopPet.Sdk`（插件基类）/ `DesktopPet.App`（WPF 宿主 → `Neko.exe`）；插件源码在 `builtins/`，运行时产物在 `plugins/<id>/`。
+- **两个目录（v0.1.98 起，别再混）**：**程序根**（exe 所在目录）= 只读随包内容（`plugins/`、`neko-assets/`、`builtins.lock.json`）；**数据根** = **唯一可写**的用户数据位置，默认 **`%AppData%\Neko`**（程序根存在 `portable.flag` 时改用程序根 `data/`；环境变量 `NEKO_DATA_DIR` 可覆盖）。旧版 exe 同级 `data/` 的内容会在首次运行时被复制过来。实现与迁移见 `src/DesktopPet.App/Core/Paths.cs`。
 - **当前版本能力**：9 个宠物状态动画、18 个内置插件（dogfooding）、径向菜单（每页 8 槽 + 分页 + 顺序/显隐/上限可配）、键鼠映射窗、气泡对话、皮肤系统（`neko-assets/<id>/skin.json` 零改码发现）、自动更新（Gitee 检查→提示→打开下载页）。
 - **完整目录结构**：见 [`README.md`](../README.md)。
 
@@ -214,7 +215,7 @@ plugins/* ─────→ DesktopPet.Sdk ─→ DesktopPet.Core
 | 顺序覆盖，不破坏插件 API | 插件声明的 `RadialSlot.Order` 是编译期写死常量。用户要在设置页覆盖它，但 `Core/RadialSlot` 与 `IUIApi.RegisterRadialSlot` 不能改（只增不改铁律）。 |
 | 三件事统一成一个模型 | 「顺序」「显隐」「数量上限」相互影响，必须定义清晰的合成管线。 |
 | 插件动态增减 | 用户配置是「跨插件全局」的，必须容忍槽位消失/新增。 |
-| 宿主级持久化 | 顺序是跨插件全局的，存宿主 `AppConfig`（`data/config.json`），不能存插件私有目录。 |
+| 宿主级持久化 | 顺序是跨插件全局的，存宿主 `AppConfig`（`<数据根>/config.json`），不能存插件私有目录。 |
 
 **方案**：**覆盖层（overlay）**，而非改 `RadialSlot` 结构——宿主侧维护 `slotId → 用户Order`、`slotId → 显隐` 两张映射 + 一个数量上限字段；排序「用户值优先，缺省回退插件声明 `Order`」。**纯函数解析器（Resolver）** 与 `UIApiImpl` 解耦，便于 QA 单测。**不引入第三方库**（LINQ + `System.Text.Json` 即可）。
 
@@ -351,12 +352,12 @@ sequenceDiagram
 - Core API 只增不改：覆盖层全部在宿主（App）。
 - 排序稳定：EffectiveOrder 平局按 slot.Id（StringComparer.Ordinal）兜底。
 - 配置对象永不为 null：AppConfig.RadialMenu 用 = new() 初始化；STJ 缺失字段保留初始化值。
-- 持久化统一走 ConfigManager.Save(Paths.ConfigFile, _config)（data/config.json）。
+- 持久化统一走 ConfigManager.Save(Paths.ConfigFile, _config)（`<数据根>/config.json`）。
 - 每页数量 MaxPerPage=8 是布局常量；MaxVisible 是全局可见总数上限，二者语义不同。
 - Resolve 是唯一「槽位 → 展示列表」转化点；保存前调用 Prune 清理残留 slotId。
 ```
 
-### 8.6 配置 JSON 示例（`data/config.json` 中新增段）
+### 8.6 配置 JSON 示例（`<数据根>/config.json` 中新增段）
 
 ```json
 {

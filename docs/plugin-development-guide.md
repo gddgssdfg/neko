@@ -54,6 +54,16 @@ plugins/com.yourname.myplugin/          # 目录名必须 == plugin.toml 的 [pl
 └── assets/          # 可选：插件自带资源
 ```
 
+> **📁 两个目录别混（v0.1.98 起）** —— 本文件用两个占位词：
+> - **`<程序根>`** = `Neko.exe` 所在目录（**只放随包分发的只读内容**：`plugins/`、`neko-assets/`、`builtins.lock.json`）。
+> - **`<数据根>`** = **唯一的可写用户数据目录**。解析顺序：① 环境变量 `NEKO_DATA_DIR` →
+>   ② 程序根存在 `portable.flag` 时用 `<程序根>\data`（便携模式）→ ③ **默认 `%AppData%\Neko`**。
+>
+> 所以默认安装下 `<数据根>\logs` 就是 `%AppData%\Neko\logs`（**不再是 exe 旁边的 `data\logs`**）。
+> 插件**永远不要自己拼数据路径** —— 用 `ctx.PluginDataDir`（= `<数据根>/plugins/<id>/`）。
+> 为什么改：v0.1.97 及以前数据写在 exe 同级 `data/`，而开发/CI 会反复删 `bin/`，于是
+> 「删 bin 前必须先备份 data/」成了一条**只能靠人记住**的红线 —— 现在从结构上消除了。
+
 **AI 生成时必须遵守的 8 条（其余细节见对应章节）：**
 
 1. **入口类继承 `DesktopPet.Sdk.PluginBase`**，`Id` 与目录名、`plugin.toml` 的 `id` **三者一致**（§1.1 / §2.2）。
@@ -61,7 +71,7 @@ plugins/com.yourname.myplugin/          # 目录名必须 == plugin.toml 的 [pl
 3. **不要用 `OnTick`**——宿主**不调用**它；周期任务一律 `Capability.Scheduler.Every/At`（§2.1 / §5 / §9 踩坑 6）。
 4. **只声明你真正用到的最小权限**；`other` 段**不加前缀**，`pet`/`ui`/`storage` 段**自动加前缀**（§3.2 / §3.3）。
 5. **不要声明 `file` / `process`**（高危 → 第三方一律拒载）；写自己的数据目录用 `file.own` 或直接用 `Capability.Storage`（§3.6 / §9 踩坑 6）。
-6. **数据只写 `Capability.Storage`**（= `data/plugins/<id>/`），**禁止写进插件目录**（§6.1）。
+6. **数据只写 `Capability.Storage`**（= `<数据根>/plugins/<id>/`），**禁止写进插件目录**（§6.1）。
 7. **不做裸 `catch {}`**；要留痕用 `Capability.System.Log(PluginLogLevel.Warn, msg, ex)`（§2.3 / §9 踩坑 3）。
 8. **`OnUnload` 必须清理**：`Dispose` 所有 `IScheduleHandle`、调用事件取消订阅委托（§4）。
 
@@ -285,8 +295,8 @@ public abstract class PluginBase : IPetPlugin
 public interface IPluginContext
 {
     Version HostVersion { get; }    // 宿主程序版本
-    string  DataRoot { get; }       // 宿主数据根目录（data/）
-    string  PluginDataDir { get; }  // 本插件数据目录（data/plugins/<id>/）
+    string  DataRoot { get; }       // 宿主数据根目录（默认 %AppData%\Neko，见文首「两个目录别混」）
+    string  PluginDataDir { get; }  // 本插件数据目录（<数据根>/plugins/<id>/）
     IPetApi         Pet { get; }        // 入口 1：宠物控制
     IUIApi          UI { get; }         // 入口 2：界面注册
     ICapabilityApi  Capability { get; } // 入口 3：能力（存储/调度/系统/事件）
@@ -406,7 +416,7 @@ void Log(PluginLogLevel level, string message, Exception? exception = null);
 |---|---|
 | **宿主自动加前缀** | 宿主会拼上 **`[插件:<id>]`**（如 `[插件:com.lantern.weather]`）便于定位是哪个插件在报。**你**不要自己拼这个前缀。 |
 | **级别映射** | 与宿主日志一一对应：`Debug→Debug`、`Info→Info`、`Warn→Warn`、`Error→Error`。 |
-| **默认不落盘** | 宿主默认级别 `warn` → **`Debug` / `Info` 默认不落盘**（只有用户把 `data/config.json` 的 `logLevel` 调成 `debug`/`info` 才会写出）。`Warn` / `Error` 默认落盘。 |
+| **默认不落盘** | 宿主默认级别 `warn` → **`Debug` / `Info` 默认不落盘**（只有用户把 `<数据根>/config.json` 的 `logLevel` 调成 `debug`/`info` 才会写出）。`Warn` / `Error` 默认落盘。 |
 | **异常堆栈** | 只有 `Error` 级别会带上 `exception` 的堆栈；其它级别忽略该参数。 |
 | **永不抛** | 实现**保证不抛异常**（宿主日志设施内部 try/catch 兜底）——可以放心在 `catch` 里调用它。 |
 | **隐私** | 日志**会落盘**，**不要把用户隐私内容**（剪贴板正文、待办标题、API Key…）写进 `message`。 |
@@ -480,7 +490,7 @@ Capability.System.Log(PluginLogLevel.Debug, $"tick 完成，缓存 {n} 条");
 | `network` | `Network` | `1<<8` | （宿主侧域名白名单） | 中 |
 | `file` | `FileAccess` | `1<<9` | 任意文件系统 | **高** |
 | `process` | `Process` | `1<<10` | 启动任意进程 | **高** |
-| `file.own` | `FileOwnDir` | `1<<11` | 仅写 `data/plugins/<id>/` | 低（v0.1.80 细分） |
+| `file.own` | `FileOwnDir` | `1<<11` | 仅写 `<数据根>/plugins/<id>/` | 低（v0.1.80 细分） |
 | `media` | `MediaKey` | `1<<12` | 发系统媒体键 | 低（v0.1.80 细分） |
 
 写入位置：
@@ -590,7 +600,7 @@ Context.Unload();                        // 卸载可回收 ALC
 
 | 必须做 | 不做的后果 | 正确写法 |
 |---|---|---|
-| **Dispose 所有 `IScheduleHandle`** | `System.Threading.Timer` 仍在线程池触发；回调跑在已卸载插件上 → 或持续占用 CPU，或抛异常刷 `data/logs`；连续失败 5 次后该定时器会被调度器自动停用（`MaxConsecutiveFailures`） | `_timer?.Dispose(); _timer = null;` |
+| **Dispose 所有 `IScheduleHandle`** | `System.Threading.Timer` 仍在线程池触发；回调跑在已卸载插件上 → 或持续占用 CPU，或抛异常刷 `<数据根>/logs`；连续失败 5 次后该定时器会被调度器自动停用（`MaxConsecutiveFailures`） | `_timer?.Dispose(); _timer = null;` |
 | **解绑事件订阅** | `IEventBus.On` 返回的「取消订阅」委托不调用 → 宿主每次 `Emit` 都会调用一个已卸载对象的处理器 → 内存/ALC 泄漏 + 异常 | `_offPet = Capability.Events.On(PetEvents.PetPetted, …);` → `OnUnload` 里 `_offPet?.Invoke();` |
 | **Dispose `HttpClient`（若是你自建的单例）** | 一个 `static readonly HttpClient` 会**钉住**可回收 ALC → 插件卸载后程序集**收不掉**（见 §9 踩坑 2） | 改「可释放单例」：`_http?.Dispose(); _http = null;` |
 | **注销 UI 注册** | 宿主 `DisablePlugin`/`Dispose` 会调用 `UIApiImpl.UnregisterAll(id)` 兜底，但**运行时热重载/异常路径**下不保证；残留槽位会指向已死回调 | 通常**不需要手动**；宿主按 id 批量撤销。若你能拿到 `IUIApi` 可显式 `UI.UnregisterAll(Id)` |
@@ -733,7 +743,7 @@ private void OnTimer()   // 线程池线程！
 
 插件目录必须保持「可整体覆盖替换」——这样以后更新插件直接覆盖整个文件夹，不会丢用户数据。
 
-**正确**：用 `ICapabilityApi.Storage`，真实路径 = `data/plugins/<插件id>/`：
+**正确**：用 `ICapabilityApi.Storage`，真实路径 = `<数据根>/plugins/<插件id>/`：
 
 ```csharp
 ctx.Capability.Storage.Set("lastRemind", DateTime.Now);
@@ -744,7 +754,7 @@ var t = ctx.Capability.Storage.Get<DateTime>("lastRemind");
 
 ### 6.2 `JsonPluginStorage` 的语义（源码：`src/DesktopPet.App/Services/JsonPluginStorage.cs`）
 
-- 一个 key ↔ 一个文件：`data/plugins/<id>/<key>.json`。
+- 一个 key ↔ 一个文件：`<数据根>/plugins/<id>/<key>.json`。
 - `Set<T>`：`JsonSerializer.Serialize(value, { WriteIndented = true })` 覆盖写。
 - `Get<T>`：文件不存在 → 返回 `default`；反序列化异常 → **catch 吞掉，返回 `default`**（不抛）。
 - `Contains`：就是文件是否存在。
@@ -864,7 +874,7 @@ stack.Children.Add(PluginUi.Button("保存"));
 |---|---|
 | 禁用 | `PluginHost.DisablePlugin(id)`：`OnUnload` → `UnregisterAll(id)` → `Dispose`（卸载 ALC）→ 记入 `_disabled` |
 | 启用 | `PluginHost.EnablePlugin(id)`：重新 `LoadOne` → `OnLoad` → 移出 `_disabled` |
-| 持久化 | 禁用清单存 `data/config.json` 的 **`DisabledPlugins`**（PascalCase——`ConfigManager` 未设命名策略；**不移动、不改名文件夹**） |
+| 持久化 | 禁用清单存 `<数据根>/config.json` 的 **`DisabledPlugins`**（PascalCase——`ConfigManager` 未设命名策略；**不移动、不改名文件夹**） |
 
 ---
 
@@ -872,12 +882,12 @@ stack.Children.Add(PluginUi.Button("保存"));
 
 ### 8.1 日志
 
-- 位置：`data/logs/neko-YYYYMMDD.log`（按天滚动；单文件超 5MB 追加 `-N` 序号；
+- 位置：`<数据根>/logs/neko-YYYYMMDD.log`（按天滚动；单文件超 5MB 追加 `-N` 序号；
   启动清理 7 天前旧日志）。
 - 行格式：`[时间] [级别] [ManagedThreadId] 消息`。**`[ThreadId]` 对排查线程问题极有用**。
 - 默认级别 `Warning`；`Debug` / `Info` **需在配置里开启**才会落盘（避免频繁刷盘）。
-  - 配置：`data/config.json` 的日志级别项（`Log.Initialize(level)`；接受 `off/debug/info/warn/error`）。
-- `Log.Error` 会**同时**追加到 `data/errors.log`（兼容旧名；⚠️ 是 `errors.log` 复数，见 `Log.cs:26`）。
+  - 配置：`<数据根>/config.json` 的日志级别项（`Log.Initialize(level)`；接受 `off/debug/info/warn/error`）。
+- `Log.Error` 会**同时**追加到 `<数据根>/errors.log`（兼容旧名；⚠️ 是 `errors.log` 复数，见 `Log.cs:26`）。
 - **插件写日志**（v0.1.83）：用 **`Capability.System.Log(PluginLogLevel.<级>, msg, ex?)`** —— 宿主自动加 `[插件:<id>]` 前缀，`Warn/Error` 默认落盘、`Debug/Info` 默认不落盘、永不抛。签名与语义见 §2.3 入口 3。**不要再靠 `Debug.WriteLine`**（Release 下静默）。
 - v0.1.82 起，插件**加载失败**会写明原因（`PluginHost.ReportErrors`）：
 
@@ -891,12 +901,14 @@ stack.Children.Add(PluginUi.Button("保存"));
 **定位法（推荐顺序）：**
 
 ```bash
+# 0) 先确定数据根：默认 %AppData%\Neko；便携模式为 <程序根>\data；被 $NEKO_DATA_DIR 覆盖时取它
+D="${NEKO_DATA_DIR:-$APPDATA/Neko}"      # PowerShell: $D = if ($env:NEKO_DATA_DIR) { $env:NEKO_DATA_DIR } else { "$env:APPDATA\Neko" }
 # 1) 找今天的日志
-ls data/logs/
+ls "$D/logs/"
 # 2) 只看插件相关（含插件自报日志 [插件:<id>] 与宿主加载日志 [插件]）
-grep -a "\[插件" data/logs/neko-*.log
+grep -a "\[插件" "$D"/logs/neko-*.log
 # 3) 看是否有跨线程 "调用线程无法访问此对象"（→ §5）
-grep -a "调用线程无法访问\|InvalidOperationException" data/logs/neko-*.log
+grep -a "调用线程无法访问\|InvalidOperationException" "$D"/logs/neko-*.log
 ```
 
 ### 8.2 启动参数
@@ -964,7 +976,7 @@ bash /c/Users/Lantern/neko-dotnet-env.sh run --project tests/PluginSmoke/PluginS
 ### 踩坑 1 —— 在 `Loaded` 回调里再挂 `Loaded`，延迟加载永不执行
 
 - **现象**：`weather / quote / wordcard / screenshot / fortune / hourly` 这 6 个「延迟插件」**从来没被加载过**
-  （发布版同样中招：`data/plugins/` 只有 11 个）。
+  （发布版同样中招：`<数据根>/plugins/` 只有 11 个）。
 - **根因**：`PetWindow.LoadPlugins()` 是被 App 的 `Loaded` 处理器调用的，而它内部又**无条件**
   `Loaded += (_, _) => LoadDeferred();`。**WPF 不会在事件触发过程中调用新挂的处理器，且 `Loaded` 不会重放**
   → `LoadDeferred()` 永不执行。**这是 WPF `Loaded` 事件的语义，不是 bug 报告里能查到的"偶发"**。
@@ -1050,7 +1062,7 @@ B) 机理对照（`--probe`，对插件自定义类型做一次序列化）：
   「调用线程无法访问此对象」；插件里 `catch {}` **全吞** → 静默失效，长期没被发现。
 - **正确做法**：
   1. **不要裸 `catch {}`**——至少用 **`Capability.System.Log(PluginLogLevel.Warn, "…", ex)`**（v0.1.83 新增，见 §2.3）或 `Notify` 记一笔，或向用户冒泡。静默失效最难查。
-  2. **别用 `Debug.WriteLine` 当插件日志**——Release 构建无调试器监听时它**完全静默**（与 `catch{}` 是同一「留不下痕」的病根）。要"事后能查"就必须走 `Capability.System.Log`（宿主落 `data/logs/`）。
+  2. **别用 `Debug.WriteLine` 当插件日志**——Release 构建无调试器监听时它**完全静默**（与 `catch{}` 是同一「留不下痕」的病根）。要"事后能查"就必须走 `Capability.System.Log`（宿主落 `<数据根>/logs/`）。
   3. 剪贴板/窗口等 STA/UI 亲和操作，**统一封送到 UI 线程**（§5.3）。
   4. 用「功能上必须能看到变化」的方式验证（气泡/眼睛/像素变化），而不是「没报错就算过」。
 
@@ -1100,12 +1112,12 @@ B) 机理对照（`--probe`，对插件自定义类型做一次序列化）：
 
 ### 踩坑 7 —— 插件加载失败而日志干净（可诊断性）
 
-- **现象**：右键菜单里插件**全没了**（只剩"无快捷项"），但 `data/logs/` 里**什么都没有**。
+- **现象**：右键菜单里插件**全没了**（只剩"无快捷项"），但 `<数据根>/logs/` 里**什么都没有**。
 - **根因**：`PluginHost._errors` 只收集、不落盘；而真实原因是构建形态错误（`SelfContained` 泄漏到
   构建期 → `AssemblyDependencyResolver` 失败，code `-2147450750`）。
 - **正确做法**：
   1. 宿主已加 `ReportErrors` 把失败原因写日志（v0.1.82）。
-  2. **你排查插件问题时的第一动作 = 看 `data/logs` 里的 `[插件]` 行**，别靠猜。
+  2. **你排查插件问题时的第一动作 = 看 `<数据根>/logs` 里的 `[插件]` 行**，别靠猜。
   3. 相关构建坑：`DesktopPet.App.csproj` 必须用 `<PublishSelfContained>` 而**不是** `<SelfContained>`
      （后者会影响 Debug 构建，导致所有插件加载失败）。这条是**宿主侧**的坑，但你若自行搭建宿主构建脚本会踩到。
 
@@ -1250,7 +1262,7 @@ private static double ReadDouble(object? payload, string name)
 | 权限 token → 位 → Capability 映射 | 与 `PermissionChecker.Map` 一致（13 个 token） |
 | 高风险 = `FileAccess | Process`；`file.own` / `media` 为低危 | 一致 |
 | `Scheduler` 回调在线程池；`IPetApi` 已封送 UI 线程 | 与 `SchedulerImpl` / `PetApiImpl` 一致 |
-| 存储路径 `data/plugins/<id>/` | 与 `Paths.PluginDataDir` / `JsonPluginStorage` 一致 |
+| 存储路径 `<数据根>/plugins/<id>/` | 与 `Paths.PluginDataDir` / `JsonPluginStorage` 一致 |
 | 径向菜单每页 8、`Order` 排序、图标回退 `default` | 与 `RadialMenu.cs` 一致 |
 
 ### B.2 发现的不一致 / 需宿主决策项（重要）

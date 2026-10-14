@@ -15,7 +15,7 @@ public enum LogLevel
 
 /// <summary>
 /// 轻量文件日志（v0.1.61）：
-///   - 落盘 data/logs/neko-YYYYMMDD.log，按天滚动；单文件超 5MB 追加序号滚动。
+///   - 落盘 数据根/logs/neko-YYYYMMDD.log，按天滚动；单文件超 5MB 追加序号滚动。
 ///   - 启动时清理 7 天前的旧日志。
 ///   - 线程安全（lock）；自身 IO 失败一律静默（绝不影响宿主）。
 ///   - 默认级别 Warning 及以上，避免频繁刷盘；Info/Debug 需配置开启。
@@ -23,7 +23,7 @@ public enum LogLevel
 /// 设计取舍：
 ///   - 每次写入用 File.AppendAllText 重新打开文件（不常驻句柄）——调用频率不高，
 ///     且避免单文件被外部进程占用时长期持有句柄。
-///   - Error 级同时追加到 data/errors.log，保持对既有 errors.log 的向后兼容。
+///   - Error 级同时追加到 数据根/errors.log，保持对既有 errors.log 的向后兼容。
 /// </summary>
 public static class Log
 {
