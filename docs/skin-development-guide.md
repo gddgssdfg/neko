@@ -124,6 +124,7 @@
 | `frameHeight` | int | `32` | **必须 > 0**，同上 |
 | `frames` | int | `4` | **必须 > 0**，同上；这是**全状态统一的帧数** |
 | `hasShadow` | bool | `false` | true 时尝试加载 `neko_shadow.png`（缺失则跳过，不报错） |
+| `pixelArt` | bool | `true` | v0.2.4 新增。true 保留最近邻像素缩放；手绘/高清插画可声明 false 使用平滑缩放。切换皮肤即时生效。 |
 | `recommendedScale` | double | `0` | 仅接受 **1.0–8.0**；缺失 / NaN / 越界 / 负数 → 落回 0（**不影响皮肤可用性**，只打 `Log.Warn`） |
 | `eyeLayers` | string[] | `[]` | 眼球层 key 列表；按 key 尝试加载 `neko_<key>.png`（缺失则跳过） |
 | `states` | array | — | 见下；**空数组 → 整张皮肤判非法** |

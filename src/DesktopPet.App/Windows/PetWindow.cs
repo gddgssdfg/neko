@@ -278,7 +278,7 @@ public sealed partial class PetWindow : Window
 
         // 内容（NearestNeighbor：3.2 倍非整数缩放，用最近邻保像素锐利，否则像素风会糊）
         var host = new DrawingVisualHost(_renderer);
-        RenderOptions.SetBitmapScalingMode(host, BitmapScalingMode.NearestNeighbor);
+        RenderOptions.SetBitmapScalingMode(host, _renderer.Atlas.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         Content = host;
         Background = Brushes.Transparent;
     }

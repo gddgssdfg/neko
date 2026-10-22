@@ -214,7 +214,7 @@ def make_motion_frames(base: Image.Image, state: str) -> list[Image.Image]:
     params = MOTION.get(state, MOTION["idle"])
     cw, ch = base.size
     out: list[Image.Image] = []
-    for dy, scale, angle, _dx in params[:FRAMES]:
+    for dy, scale, angle, dx in params[:FRAMES]:
         img = base
         if scale:
             s = 1.0 + scale
@@ -222,7 +222,7 @@ def make_motion_frames(base: Image.Image, state: str) -> list[Image.Image]:
         if angle:
             img = img.rotate(angle, resample=Image.BICUBIC, expand=False)
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(img, ((cw - img.width) // 2, ch - img.height + int(dy)), img)
+        canvas.alpha_composite(img, ((cw - img.width) // 2 + int(dx), ch - img.height + int(dy)))
         out.append(canvas)
     while len(out) < FRAMES:
         out.append(base)
@@ -286,6 +286,14 @@ def main() -> int:
     sheet = Image.open(src).convert("RGBA")
     W, H = sheet.size
     cw, ch = W // 3, H // 3
+    # Generated atlases may have uneven gutters. Explicit cuts avoid borrowing a neighbor's ears.
+    def cuts(flag: str, length: int) -> list[int]:
+        raw = arg_value(flag)
+        inner = [int(v) for v in raw.split(",")] if raw else [length // 3, length * 2 // 3]
+        if len(inner) != 2 or not 0 < inner[0] < inner[1] < length:
+            raise ValueError(f"{flag}: expected two increasing coordinates within 0..{length}")
+        return [0, *inner, length]
+    xs, ys = cuts("--grid-x", W), cuts("--grid-y", H)
     print(f"输入: {src.name}  {W}x{H}  格子 {cw}x{ch}")
 
     # 1) 切格 + 抠背 + 裁包围盒
@@ -293,7 +301,7 @@ def main() -> int:
     cutout_mode: bool | None = None      # 首格判定一次即可（同一张图各格情况一致）
     for idx, (name, cell, fps) in enumerate(STATES):
         r, c = (cell - 1) // 3, (cell - 1) % 3
-        cell_img = sheet.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
+        cell_img = sheet.crop((xs[c], ys[r], xs[c + 1], ys[r + 1]))
         if cutout_mode is None:
             cutout_mode = has_alpha_cutout(cell_img)
             print("背景：已带透明通道 → 跳过抠图" if cutout_mode
@@ -329,7 +337,7 @@ def main() -> int:
         canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
         x = (canvas_w - img.width) // 2
         y = canvas_h - PAD - img.height          # 底对齐
-        canvas.paste(img, (x, y), img)
+        canvas.alpha_composite(img, (x, y))
 
         # 2.4) 尺寸自适应：对统一画布下采样（每状态等宽，保证「总宽 / frames」整除）
         if pixel_mode:
@@ -348,7 +356,7 @@ def main() -> int:
         fw, fh = canvas.size
         sheet = Image.new("RGBA", (fw * len(frames), fh), (0, 0, 0, 0))
         for i, f in enumerate(frames):
-            sheet.paste(f, (i * fw, 0), f)
+            sheet.alpha_composite(f, (i * fw, 0))
         dst = out_dir / f"neko_{name}.png"
         sheet.save(dst)
         print(f"  写出 {dst.name}  {sheet.size}（{len(frames)} 帧 × {fw}px）")
@@ -363,6 +371,7 @@ def main() -> int:
         "frameHeight": frame_h,
         "frames": FRAMES,
         "hasShadow": False,
+        "pixelArt": pixel_mode,
         "eyeLayers": [],
         "recommendedScale": recommended_scale,
         "states": [

@@ -55,6 +55,9 @@ public sealed class SkinInfo
     /// <summary>是否加载 <c>neko_shadow.png</c> 影子层。</summary>
     public bool HasShadow { get; init; }
 
+    /// <summary>像素画用最近邻；手绘皮肤可声明 false 使用平滑缩放。缺省保持旧皮肤行为。</summary>
+    public bool PixelArt { get; init; } = true;
+
     /// <summary>眼球层 key 列表（仅 sheet 布局使用；按需探测文件是否存在）。</summary>
     public IReadOnlyList<string> EyeLayers { get; init; } = Array.Empty<string>();
 
@@ -287,6 +290,7 @@ public static class SkinRegistry
                 FrameHeight = frameHeight,
                 Frames = frames,
                 HasShadow = hasShadow,
+                PixelArt = GetBool(root, "pixelArt", true),
                 EyeLayers = eyeLayers,
                 States = states,
                 RecommendedScale = recommendedScale,

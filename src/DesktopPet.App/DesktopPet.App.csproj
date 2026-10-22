@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.2.3</Version>
+    <Version>0.2.4</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -144,6 +144,8 @@
     <None Include="..\..\neko-assets\bead\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\bead\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
+    <None Include="..\..\neko-assets\amber\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
+    <None Include="..\..\neko-assets\amber\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
     <None Remove="..\..\neko-assets\**\*preview*" />

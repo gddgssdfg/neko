@@ -349,7 +349,7 @@ public sealed partial class SettingsWindow : Window
         downBtn.IsEnabled = downEnabled;
         downBtn.Opacity = downEnabled ? 1.0 : 0.3;
 
-        var sw = new ToggleSwitch(ToggleOff) { IsOn = isVisible };
+        var sw = new ToggleSwitch(ToggleOff, Accent) { IsOn = isVisible };
         sw.Toggled += on => onToggleVisible();
 
         right.Children.Add(upBtn);
@@ -427,7 +427,7 @@ public sealed partial class SettingsWindow : Window
             // v0.1.46：插件启用/禁用开关
             var idCap = p.Manifest.Id;
             bool enabled = _pet.PluginHost.IsEnabled(idCap);
-            var toggle = new ToggleSwitch(ToggleOff)   // v0.1.50：主题色 offColor
+            var toggle = new ToggleSwitch(ToggleOff, Accent)   // v0.1.50：主题色 offColor
             {
                 IsOn = enabled,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -494,7 +494,7 @@ public sealed partial class SettingsWindow : Window
             {
                 if (page.Title == p.Manifest.Id || page.Title == p.Manifest.Name)
                 {
-                    try { if (page.BuildContent() is FrameworkElement u) { u.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(u); } }
+                    try { if (page.BuildContent() is FrameworkElement u) { ApplyPluginTheme(u); u.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(u); } }
                     catch (Exception ex)
                     {
                         // v0.1.82 P1-8：插件设置页构建失败（插件 bug）会让该页整块消失，必须留痕以便定位

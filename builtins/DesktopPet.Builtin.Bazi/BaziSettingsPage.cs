@@ -302,7 +302,13 @@ public sealed class BaziSettingsPage : ISettingsPage
         void Persist()
         {
             var draft = FullDraft();
-            draft.Save(_storage);
+            try { draft.Save(_storage); }
+            catch (System.Security.Cryptography.CryptographicException)
+            {
+                MessageBox.Show("Windows 用户加密暂不可用，设置未保存。原有数据保持不变，请检查当前 Windows 用户环境后重试。",
+                    "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             RefreshPreview();
             // v0.1.84：保存后通知插件重排每日播报（改时间 / 开关后立即取消旧排期、按新值重排）。
             _onSaved?.Invoke();

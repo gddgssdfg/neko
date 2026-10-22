@@ -10,7 +10,7 @@ namespace DesktopPet.Builtin.Bazi;
 /// <para>规格第 7 节：<c>Capability.Storage</c> 是明文 JSON，Key 不能明文落盘。</para>
 /// <para>存储格式：<c>enc:&lt;Base64(DPAPI 密文)&gt;</c>。<b>向后兼容</b>：读取时若无 <c>enc:</c> 前缀，
 /// 视为旧版明文原样返回；写回时一律加密。</para>
-/// <para>加密/解密失败均<b>不抛异常</b>：加密失败降级明文（避免丢数据），解密失败返回 null（要求用户重填）。</para>
+/// <para>加密失败抛出异常，中止保存并保留已有数据；解密失败返回 null（要求用户重填）。</para>
 /// </summary>
 public static class ApiKeyProtector
 {
@@ -22,7 +22,7 @@ public static class ApiKeyProtector
     /// <summary>最近一次 <see cref="SelfCheck"/> 的结果（"OK" 或 "FAIL: ..."）。供加载器回归读取。</summary>
     public static string LastSelfTest { get; private set; } = "未运行";
 
-    /// <summary>加密为存储串（带 <c>enc:</c> 前缀）。空串返回空串；失败降级为明文（绝不抛）。</summary>
+    /// <summary>加密为存储串。加密不可用时拒绝保存，绝不退回明文。</summary>
     public static string Protect(string plain)
     {
         if (string.IsNullOrEmpty(plain)) return "";
@@ -31,9 +31,9 @@ public static class ApiKeyProtector
             var enc = ProtectedData.Protect(Encoding.UTF8.GetBytes(plain), Entropy, DataProtectionScope.CurrentUser);
             return Prefix + Convert.ToBase64String(enc);
         }
-        catch
+        catch (Exception ex) when (ex is CryptographicException or PlatformNotSupportedException)
         {
-            return plain;   // 极罕见（非 Windows / CSP 受限）→ 降级明文，宁可不加密也不丢数据
+            throw new CryptographicException("Windows 用户加密不可用，API Key 未保存。", ex);
         }
     }
 

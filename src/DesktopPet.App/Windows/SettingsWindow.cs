@@ -84,6 +84,7 @@ public sealed partial class SettingsWindow : Window
     private readonly Color TextSub;
     private readonly Color ToggleOff;
     private readonly Color TitleBar;
+    private Color AccentText => _config.Theme == "light" ? Accent : Color.FromRgb(0xEE, 0xB5, 0x8F);
 
     /// <summary>v0.1.50：语言 helper（"zh"/"en"）—— 核心文案双语，其他后续</summary>
     private string T(string zh, string en) => _config.Language == "en" ? en : zh;
@@ -95,35 +96,35 @@ public sealed partial class SettingsWindow : Window
         // 主题：浅色 / 深色（默认深色，原 v0.1.31 色板）
         if (_config.Theme == "light")
         {
-            BgRoot = Color.FromRgb(0xF5, 0xF7, 0xFA);
-            BgSide = Color.FromRgb(0xEC, 0xEF, 0xF5);
-            BgSideSel = Color.FromRgb(0xE2, 0xE8, 0xF2);
+            BgRoot = Color.FromRgb(0xFA, 0xF7, 0xF2);
+            BgSide = Color.FromRgb(0xF1, 0xEB, 0xE3);
+            BgSideSel = Color.FromRgb(0xE8, 0xDC, 0xCD);
             BgCard = Color.FromRgb(0xFF, 0xFF, 0xFF);
-            BgCardHover = Color.FromRgb(0xF0, 0xF4, 0xFA);
-            BorderC = Color.FromRgb(0xD0, 0xD7, 0xE2);
-            Accent = Color.FromRgb(0x2B, 0x7F, 0xE0);
-            TextMain = Color.FromRgb(0x1F, 0x29, 0x33);
-            TextSub = Color.FromRgb(0x5A, 0x64, 0x70);
+            BgCardHover = Color.FromRgb(0xF1, 0xEB, 0xE3);
+            BorderC = Color.FromRgb(0xDE, 0xD5, 0xC9);
+            Accent = Color.FromRgb(0x9A, 0x4D, 0x2B);
+            TextMain = Color.FromRgb(0x32, 0x2B, 0x26);
+            TextSub = Color.FromRgb(0x76, 0x68, 0x5D);
             ToggleOff = Color.FromRgb(0xB8, 0xC0, 0xCC);
-            TitleBar = Color.FromRgb(0xE3, 0xE8, 0xEF);
+            TitleBar = Color.FromRgb(0xFA, 0xF7, 0xF2);
         }
         else
         {
-            BgRoot = Color.FromRgb(0x1E, 0x26, 0x2F);
-            BgSide = Color.FromRgb(0x25, 0x2F, 0x3B);
-            BgSideSel = Color.FromRgb(0x2A, 0x36, 0x47);
-            BgCard = Color.FromRgb(0x2B, 0x36, 0x47);
-            BgCardHover = Color.FromRgb(0x33, 0x40, 0x55);
-            BorderC = Color.FromRgb(0x38, 0x44, 0x5A);
-            Accent = Color.FromRgb(0x4C, 0x9F, 0xFF);
-            TextMain = Color.FromRgb(0xE5, 0xE7, 0xEB);
-            TextSub = Color.FromRgb(0x9C, 0xA3, 0xAF);
-            ToggleOff = Color.FromRgb(0x47, 0x55, 0x69);
-            TitleBar = Color.FromRgb(0x1B, 0x22, 0x2A);
+            BgRoot = Color.FromRgb(0x22, 0x24, 0x23);
+            BgSide = Color.FromRgb(0x1B, 0x1E, 0x1C);
+            BgSideSel = Color.FromRgb(0x3A, 0x32, 0x29);
+            BgCard = Color.FromRgb(0x2B, 0x2F, 0x2C);
+            BgCardHover = Color.FromRgb(0x36, 0x3C, 0x37);
+            BorderC = Color.FromRgb(0x47, 0x4D, 0x46);
+            Accent = Color.FromRgb(0xA9, 0x59, 0x31);
+            TextMain = Color.FromRgb(0xF6, 0xF0, 0xE5);
+            TextSub = Color.FromRgb(0xB8, 0xB7, 0xAC);
+            ToggleOff = Color.FromRgb(0x59, 0x63, 0x59);
+            TitleBar = Color.FromRgb(0x22, 0x24, 0x23);
         }
-        Title = "Neko 设置";
-        Width = 780;
-        Height = 640;   // v0.1.38：560→640，内容不再挤在一个矮窗口里
+        Title = T("Neko 设置", "Neko Settings");
+        Width = Math.Min(940, SystemParameters.WorkArea.Width);
+        Height = Math.Min(740, SystemParameters.WorkArea.Height);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(BgRoot);
         ResizeMode = ResizeMode.NoResize;
@@ -150,16 +151,16 @@ public sealed partial class SettingsWindow : Window
             Padding = new Thickness(20, 14, 20, 14),
             Child = new TextBlock
             {
-                Text = $"Neko 设置  ·  v{_config.GetType().Assembly.GetName().Version?.ToString(3) ?? "?"}",
-                FontSize = 14,
+                Text = T("NEKO  /  陪伴你的每一天", "NEKO  /  A little company, every day"),
+                FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(TextMain),
+                Foreground = new SolidColorBrush(TextSub),
             }
         };
 
         // 主体：sidebar + content
         var body = new Grid();
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(188) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         // Sidebar
@@ -185,38 +186,65 @@ public sealed partial class SettingsWindow : Window
     private Border BuildSidebar()
     {
         var panel = new StackPanel { Background = new SolidColorBrush(BgSide) };
+        var brand = new StackPanel { Margin = new Thickness(22, 24, 16, 30) };
+        var mascotPath = System.IO.Path.Combine(Paths.Assets, "amber", "thumb.png");
+        if (System.IO.File.Exists(mascotPath))
+        {
+            try
+            {
+                var mascot = new System.Windows.Media.Imaging.BitmapImage();
+                mascot.BeginInit();
+                mascot.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                mascot.UriSource = new Uri(mascotPath, UriKind.Absolute);
+                mascot.EndInit();
+                mascot.Freeze();
+                brand.Children.Add(new Image { Source = mascot, Width = 84, Height = 84,
+                    HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12) });
+            }
+            catch (Exception ex) { Log.Warn($"设置页品牌缩略图加载失败：{ex.Message}"); }
+        }
+        brand.Children.Add(new TextBlock { Text = "Neko", FontSize = 28, FontWeight = FontWeights.Bold,
+            Foreground = new SolidColorBrush(TextMain) });
+        brand.Children.Add(new TextBlock { Text = T("你的小小桌面伙伴", "Your desktop companion"), FontSize = 11,
+            Margin = new Thickness(0, 6, 0, 0), Foreground = new SolidColorBrush(TextSub) });
+        panel.Children.Add(brand);
         string[] sections = { "general", "pet", "input", "radial", "plugin", "about" };
         string[] labels = { T("通用", "General"), T("猫咪", "Cat"), T("输入", "Input"), T("径向菜单", "Radial Menu"), T("插件", "Plugins"), T("关于", "About") };   // v0.1.50：双语
-        string[] icons = { "⚙", "🐱", "⌨", "◎", "🔌", "ℹ" };   // Segoe UI Symbol / Emoji
+        string[] icons = { "\uE713", "\uE8D4", "\uE765", "\uE74C", "\uE71B", "\uE946" };
 
         for (int i = 0; i < sections.Length; i++)
         {
             var sec = sections[i];
             var item = new Border
             {
-                Background = new SolidColorBrush(Colors.Transparent),
+                Background = new SolidColorBrush(BgSide),
                 BorderThickness = new Thickness(3, 0, 0, 0),
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(10, 2, 10, 2),
+                Focusable = true,
+                ToolTip = labels[i],
                 BorderBrush = new SolidColorBrush(Colors.Transparent),
-                Padding = new Thickness(20, 12, 12, 12),
+                Padding = new Thickness(14, 13, 10, 13),
                 Cursor = Cursors.Hand,
                 Child = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Children =
                     {
-                        new TextBlock { Text = icons[i], FontSize = 16, Foreground = new SolidColorBrush(TextSub), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) },
+                        new TextBlock { Text = icons[i], FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16, Foreground = new SolidColorBrush(TextSub), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) },
                         new TextBlock { Text = labels[i], FontSize = 13, Foreground = new SolidColorBrush(TextSub), VerticalAlignment = VerticalAlignment.Center },
                     }
                 }
             };
             item.MouseLeftButtonUp += (_, _) => ShowSection(sec);
+            item.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { ShowSection(sec); e.Handled = true; } };
             // v0.1.47：hover/选中态用 ColorAnimation 平滑过渡（150ms），不再硬设新 brush
             var bgBrush = (SolidColorBrush)item.Background;
             var borderBrush = (SolidColorBrush)item.BorderBrush;
             var iconText = (TextBlock)((StackPanel)item.Child!).Children[0];
             var labelText = (TextBlock)((StackPanel)item.Child!).Children[1];
-            item.MouseEnter += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(Color.FromRgb(0x29, 0x33, 0x3F), TimeSpan.FromMilliseconds(150))); };
-            item.MouseLeave += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, TimeSpan.FromMilliseconds(150))); };
+            item.MouseEnter += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(BgCardHover, TimeSpan.FromMilliseconds(150))); };
+            item.MouseLeave += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(BgSide, TimeSpan.FromMilliseconds(150))); };
             _sideItems.Add(item);
             panel.Children.Add(item);
         }
@@ -238,11 +266,11 @@ public sealed partial class SettingsWindow : Window
             var iconText = (TextBlock)sp.Children[0];
             var labelText = (TextBlock)sp.Children[1];
             bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
-                new ColorAnimation(selected ? BgSideSel : Colors.Transparent, TimeSpan.FromMilliseconds(150)));
+                new ColorAnimation(selected ? BgSideSel : BgSide, TimeSpan.FromMilliseconds(150)));
             borderBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
                 new ColorAnimation(selected ? Accent : Colors.Transparent, TimeSpan.FromMilliseconds(150)));
             iconText.Foreground.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
-                new ColorAnimation(selected ? Accent : TextSub, TimeSpan.FromMilliseconds(150)));
+                new ColorAnimation(selected ? AccentText : TextSub, TimeSpan.FromMilliseconds(150)));
             labelText.Foreground.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
                 new ColorAnimation(selected ? TextMain : TextSub, TimeSpan.FromMilliseconds(150)));
         }

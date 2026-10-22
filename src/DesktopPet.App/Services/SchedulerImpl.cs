@@ -17,59 +17,69 @@ public sealed class SchedulerImpl : IScheduler, IDisposable
     /// <summary>连续失败阈值：达到后自动停表，避免刷屏 + 反复异常。</summary>
     private const int MaxConsecutiveFailures = 5;
 
-    private readonly List<TimerHandle> _handles = new();
+    private readonly HashSet<TimerHandle> _handles = new();
+    private bool _disposed;
 
     public IScheduleHandle Every(int intervalMs, Action callback)
-        => Add(intervalMs, intervalMs, callback);
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(intervalMs);
+        return Add(intervalMs, intervalMs, callback);
+    }
 
     public IScheduleHandle At(DateTime time, Action callback)
     {
-        var delay = Math.Max(0, (int)(time - DateTime.Now).TotalMilliseconds);
-        return Add(delay, Timeout.Infinite, callback);
+        var localTime = time.Kind == DateTimeKind.Utc ? time.ToLocalTime() : time;
+        return Add(DelayUntil(localTime), Timeout.Infinite, callback, localTime);
     }
 
-    private IScheduleHandle Add(int dueMs, int periodMs, Action callback)
-    {
-        // v0.1.77 修复致命竞态（原实现）：
-        //   timer = new Timer(_ => SafeInvoke(handle!, ...), null, dueMs, periodMs);  // handle 此刻仍为 null
-        //   handle = new TimerHandle(timer);
-        // 当 dueMs=0（At(DateTime.Now) 常见）时，回调可能抢在 handle 赋值前就在线程池触发 →
-        // SafeInvoke(null!) 内 NRE → catch 里再访问 null handle 二次 NRE → 逃出回调 →
-        // 线程池未处理异常 → CLR 直接终止进程（三层兜底拦不住）。
-        //
-        // 修法：Timer 先以 Timeout.Infinite 创建（装配完成前绝不触发）；等 handle 完全就位后再
-        // Change(dueMs, periodMs) 手动启动。回调闭包捕获的 handle 在启动前已是非 null 的完整对象。
-        //
-        // v0.1.82：把回调来源描述一次性算好并挂到 handle 上（仅在装配时反射一次，不在 tick 路径），
-        // 供失败日志定位到具体插件 —— 否则插件自身的 catch {} 会让故障彻底隐身。
-        var handle = new TimerHandle(DescribeCallback(callback));
-        var timer = new Timer(_ => SafeInvoke(handle, callback), null, Timeout.Infinite, Timeout.Infinite);
-        handle.Attach(timer);
-        lock (_handles) _handles.Add(handle);
-        timer.Change(dueMs, periodMs);   // 此刻 handle 已就位：回调无论何时触发都拿得到非 null handle
-        return handle;
-    }
+    // Long dates are re-armed in bounded chunks. Never truncate a double to int before clamping.
+    private static int DelayUntil(DateTime time)
+        => (int)Math.Clamp(Math.Ceiling((time - DateTime.Now).TotalMilliseconds), 0, int.MaxValue);
 
-    /// <summary>
-    /// v0.1.95（审计 P2-1 核心段）：释放本调度器的**全部**定时器。
-    /// <para>宿主（<c>PluginHost</c>）为每插件持有 <b>一份</b> <see cref="SchedulerImpl"/>，在插件禁用 / 宿主退出时
-    /// 调用本方法。<c>System.Threading.Timer</c> 只要不 Dispose，就会被运行时定时器队列<b>永久 root</b>
-    /// （并 root 住其回调委托 → 指向插件 ALC），表现为「禁用后回调仍在跑 + 插件 ALC 回收不了」。
-    /// 逐个 Dispose 即解开该 root（配合 <c>LoadedPlugin.Dispose</c> 的 <c>Context.Unload()</c> 才能真回收）。</para>
-    /// <para>幂等：重复调用安全（第二次快照为空）。线程安全：与 <see cref="Add"/> 共用 <c>_handles</c> 锁。</para>
-    /// </summary>
-    public void Dispose()
+    private IScheduleHandle Add(int dueMs, int periodMs, Action callback, DateTime? deadline = null)
     {
-        List<TimerHandle> snapshot;
+        ArgumentNullException.ThrowIfNull(callback);
         lock (_handles)
         {
-            snapshot = new List<TimerHandle>(_handles);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var handle = new TimerHandle(DescribeCallback(callback), RemoveHandle);
+            // Build everything with the timer disabled, then register and start under the owner lock.
+            // Dispose cannot miss a timer created concurrently with the shutdown snapshot.
+            var timer = new Timer(_ =>
+            {
+                if (deadline is { } target && DateTime.Now < target)
+                {
+                    handle.Reschedule(DelayUntil(target));
+                    return;
+                }
+                try { SafeInvoke(handle, callback); }
+                finally { if (periodMs == Timeout.Infinite) handle.Dispose(); }
+            }, null, Timeout.Infinite, Timeout.Infinite);
+            handle.Attach(timer);
+            _handles.Add(handle);
+            try { timer.Change(dueMs, periodMs); }
+            catch { handle.Dispose(); throw; }
+            return handle;
+        }
+    }
+
+    private void RemoveHandle(TimerHandle handle)
+    {
+        lock (_handles) _handles.Remove(handle);
+    }
+
+    /// <summary>Stop all owned timers and permanently reject new registrations. Does not wait for in-flight callbacks.</summary>
+    public void Dispose()
+    {
+        TimerHandle[] snapshot;
+        lock (_handles)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            snapshot = _handles.ToArray();
             _handles.Clear();
         }
-        foreach (var h in snapshot)
-        {
-            try { h.Dispose(); } catch { /* 停表单表失败不阻断其余（最后防线）*/ }
-        }
+        foreach (var handle in snapshot) handle.Dispose();
     }
 
     /// <summary>
@@ -141,7 +151,9 @@ public sealed class SchedulerImpl : IScheduler, IDisposable
     {
         private Timer? _timer;
         private int _consecutiveFailures;
-        private volatile bool _active = true;
+        private readonly object _gate = new();
+        private int _active = 1;
+        private Action<TimerHandle>? _onDisposed;
 
         /// <summary>
         /// 回调来源描述（插件类型 + 方法名）。在装配时一次性算出并缓存，供异常日志定位来源；
@@ -149,7 +161,11 @@ public sealed class SchedulerImpl : IScheduler, IDisposable
         /// </summary>
         public string Description { get; }
 
-        public TimerHandle(string description) => Description = description;
+        public TimerHandle(string description, Action<TimerHandle> onDisposed)
+        {
+            Description = description;
+            _onDisposed = onDisposed;
+        }
 
         /// <summary>
         /// 装配底层 Timer（构造后再注入）。
@@ -157,7 +173,15 @@ public sealed class SchedulerImpl : IScheduler, IDisposable
         /// </summary>
         public void Attach(Timer timer) => _timer = timer;
 
-        public bool IsActive => _active;
+        public bool IsActive => Volatile.Read(ref _active) != 0;
+
+        public void Reschedule(int dueMs)
+        {
+            lock (_gate)
+            {
+                if (IsActive) _timer?.Change(dueMs, Timeout.Infinite);
+            }
+        }
 
         public int IncrementFailures() => Interlocked.Increment(ref _consecutiveFailures);
 
@@ -165,8 +189,13 @@ public sealed class SchedulerImpl : IScheduler, IDisposable
 
         public void Dispose()
         {
-            _active = false;
-            try { _timer?.Dispose(); } catch { /* DispatcherTimer.Dispose 已停止计时：失败不追加影响（最后防线）*/ }
+            if (Interlocked.Exchange(ref _active, 0) == 0) return;
+            lock (_gate)
+            {
+                _timer?.Dispose();
+                _timer = null;
+            }
+            Interlocked.Exchange(ref _onDisposed, null)?.Invoke(this);
         }
     }
 }

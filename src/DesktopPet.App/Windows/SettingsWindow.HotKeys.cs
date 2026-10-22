@@ -24,15 +24,15 @@ public sealed partial class SettingsWindow : Window
     private Border BuildHotKeyCard(string title, HotKeyConfig current, Action<bool, bool, bool, string> onSave)
     {
         // 三 Toggle + TextBox + 保存
-        var ctrlSw = new ToggleSwitch(ToggleOff) { IsOn = current.Ctrl };   // v0.1.50：主题色
-        var altSw = new ToggleSwitch(ToggleOff) { IsOn = current.Alt };
-        var shiftSw = new ToggleSwitch(ToggleOff) { IsOn = current.Shift };
+        var ctrlSw = new ToggleSwitch(ToggleOff, Accent) { IsOn = current.Ctrl };   // v0.1.50：主题色
+        var altSw = new ToggleSwitch(ToggleOff, Accent) { IsOn = current.Alt };
+        var shiftSw = new ToggleSwitch(ToggleOff, Accent) { IsOn = current.Shift };
         var keyBox = new TextBox
         {
             Text = current.Key,
             MaxLength = 1,
             Width = 36, FontSize = 14,
-            Background = new SolidColorBrush(Color.FromRgb(0x1B, 0x22, 0x2A)),
+            Background = new SolidColorBrush(BgRoot),
             Foreground = new SolidColorBrush(TextMain),
             BorderBrush = new SolidColorBrush(BorderC),
             CaretBrush = new SolidColorBrush(Accent),

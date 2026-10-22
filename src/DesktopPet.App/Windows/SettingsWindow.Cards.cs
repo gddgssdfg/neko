@@ -19,7 +19,7 @@ public sealed partial class SettingsWindow : Window
 
     private Border BuildToggleCard(string title, string? desc, bool initial, Action<bool> onChange)
     {
-        var sw = new ToggleSwitch(ToggleOff) { IsOn = initial };   // v0.1.50：主题色
+        var sw = new ToggleSwitch(ToggleOff, Accent) { IsOn = initial };   // v0.1.50：主题色
         sw.Toggled += on => onChange(on);
         return BuildCard(title, desc, sw);
     }
@@ -31,13 +31,14 @@ public sealed partial class SettingsWindow : Window
         // v0.1.57(fix 存量 bug)：点击后选中态不刷新。Fix：卡内收集按钮 + RefreshSelection 统一刷新，
         // ColorAnimation 150ms 过渡（与 sidebar 选中 v0.1.47 一致）——按钮背景是 ctor 里 new 的
         // SolidColorBrush（非冻结），可直接 BeginAnimation。
-        var unselectedBg = Color.FromRgb(0x3A, 0x44, 0x57);
+        var unselectedBg = BgCardHover;
 
         void RefreshSelection(int newIdx)
         {
             for (int i = 0; i < buttons.Count; i++)
             {
                 var brush = (SolidColorBrush)buttons[i].Background;
+                ((TextBlock)buttons[i].Child).Foreground = new SolidColorBrush(newIdx == i ? Colors.White : TextMain);
                 brush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
                     new ColorAnimation(newIdx == i ? Accent : unselectedBg, TimeSpan.FromMilliseconds(150)));
             }
@@ -56,7 +57,7 @@ public sealed partial class SettingsWindow : Window
                 Padding = new Thickness(12, 6, 12, 6),
                 Margin = new Thickness(0, 0, 8, 0),
                 Cursor = Cursors.Hand,
-                Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(TextMain), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+                Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(i == selectedIdx ? Colors.White : TextMain), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
             };
             btn.MouseLeftButtonUp += (_, _) =>
             {
@@ -77,13 +78,14 @@ public sealed partial class SettingsWindow : Window
     {
         var sp = new WrapPanel { Orientation = Orientation.Horizontal };
         var buttons = new List<Border>();
-        var unselectedBg = Color.FromRgb(0x3A, 0x44, 0x57);
+        var unselectedBg = BgCardHover;
 
         void RefreshSelection(int newIdx)
         {
             for (int i = 0; i < buttons.Count; i++)
             {
                 var brush = (SolidColorBrush)buttons[i].Background;
+                ((TextBlock)buttons[i].Child).Foreground = new SolidColorBrush(newIdx == i ? Colors.White : TextMain);
                 brush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,
                     new ColorAnimation(newIdx == i ? Accent : unselectedBg, TimeSpan.FromMilliseconds(150)));
             }
@@ -102,7 +104,7 @@ public sealed partial class SettingsWindow : Window
                 Padding = new Thickness(12, 6, 12, 6),
                 Margin = new Thickness(0, 0, 8, 8),
                 Cursor = Cursors.Hand,
-                Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(TextMain), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+                Child = new TextBlock { Text = options[i], Foreground = new SolidColorBrush(i == selectedIdx ? Colors.White : TextMain), FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
             };
             btn.MouseLeftButtonUp += (_, _) =>
             {
@@ -143,7 +145,7 @@ public sealed partial class SettingsWindow : Window
             Background = new SolidColorBrush(BgCard),
             BorderBrush = new SolidColorBrush(BorderC),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(14),
             Padding = new Thickness(20, 16, 20, 16),
             Margin = new Thickness(0, 0, 0, 14),
             Child = sp,
@@ -164,7 +166,7 @@ public sealed partial class SettingsWindow : Window
         var valueText = new TextBlock
         {
             Text = formatter(initial),
-            FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Accent),
+            FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(AccentText),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0),
         };
         var sp = new StackPanel { Orientation = Orientation.Horizontal };
@@ -208,7 +210,7 @@ public sealed partial class SettingsWindow : Window
     {
         var b = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x44, 0x57)),
+            Background = new SolidColorBrush(BgCardHover),
             BorderBrush = new SolidColorBrush(BorderC),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
@@ -225,7 +227,7 @@ public sealed partial class SettingsWindow : Window
     {
         var btn = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x44, 0x57)),
+            Background = new SolidColorBrush(BgCardHover),
             BorderBrush = new SolidColorBrush(BorderC),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
@@ -246,13 +248,13 @@ public sealed partial class SettingsWindow : Window
     {
         var btn = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x44, 0x57)),
+            Background = new SolidColorBrush(BgCardHover),
             BorderBrush = new SolidColorBrush(BorderC),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(14, 6, 14, 6),
             Cursor = Cursors.Hand,
-            Child = new TextBlock { Text = "检查更新", Foreground = new SolidColorBrush(TextMain), FontSize = 13 },
+            Child = new TextBlock { Text = T("检查更新", "Check for updates"), Foreground = new SolidColorBrush(TextMain), FontSize = 13 },
         };
         var label = (TextBlock)btn.Child;
         var busy = false;
@@ -297,7 +299,7 @@ public sealed partial class SettingsWindow : Window
                 busy = false;
                 btn.IsEnabled = true;
                 btn.Opacity = 1.0;
-                label.Text = "检查更新";
+                label.Text = T("检查更新", "Check for updates");
             }
         };
         return BuildCard(T("检查更新", "Check for updates"), T("手动检查是否有新版本；只提示，不会自动安装。", "Manually check for a newer version; it only notifies — never auto-installs."), btn);
@@ -327,7 +329,7 @@ public sealed partial class SettingsWindow : Window
         var input = new TextBox
         {
             Text = initial ?? "",
-            Background = new SolidColorBrush(Color.FromRgb(0x21, 0x2A, 0x36)),
+            Background = new SolidColorBrush(BgRoot),
             Foreground = new SolidColorBrush(TextMain),
             CaretBrush = new SolidColorBrush(Accent),
             BorderBrush = new SolidColorBrush(BorderC),
@@ -370,7 +372,7 @@ public sealed partial class SettingsWindow : Window
     /// </summary>
     private Border BuildSkinPicker(IReadOnlyList<SkinInfo> skins, string currentId, Action<string> onPick)
     {
-        var unselected = Color.FromRgb(0x3A, 0x44, 0x57);
+        var unselected = BgCardHover;
         var list = new StackPanel();
         var rows = new List<(Border Row, SolidColorBrush Brush)>();
 
@@ -380,7 +382,7 @@ public sealed partial class SettingsWindow : Window
             {
                 bool sel = (row.Tag as string) == picked;
                 brush.BeginAnimation(SolidColorBrush.ColorProperty,
-                    new ColorAnimation(sel ? Accent : unselected, TimeSpan.FromMilliseconds(150)));
+                    new ColorAnimation(sel ? BgSideSel : unselected, TimeSpan.FromMilliseconds(150)));
             }
         }
 
@@ -392,7 +394,7 @@ public sealed partial class SettingsWindow : Window
             {
                 Width = 48, Height = 48,
                 CornerRadius = new CornerRadius(6),
-                Background = new SolidColorBrush(Color.FromRgb(0x1B, 0x22, 0x2A)),
+                Background = new SolidColorBrush(BgRoot),
                 BorderBrush = new SolidColorBrush(BorderC),
                 BorderThickness = new Thickness(1),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -434,15 +436,15 @@ public sealed partial class SettingsWindow : Window
                 BorderBrush = new SolidColorBrush(BorderC),
                 Cursor = Cursors.Hand,
                 Tag = skin.Id,
-                Background = new SolidColorBrush(isCur ? Accent : unselected),
+                Background = new SolidColorBrush(isCur ? BgSideSel : unselected),
             };
             row.MouseLeftButtonUp += (_, _) => { onPick(skin.Id); Refresh(skin.Id); };
             rows.Add((row, (SolidColorBrush)row.Background));
             list.Children.Add(row);
         }
 
-        return BuildWideCard("外观风格",
-            $"皮肤由 neko-assets/<皮肤名>/skin.json 定义；放入新目录即可扩展（当前 {skins.Count} 套）",
+        return BuildWideCard(T("外观风格", "Choose a companion"),
+            T($"挑一只喜欢的猫咪陪你。当前有 {skins.Count} 套外观。", $"Find your favorite companion. {skins.Count} styles available."),
             list);
     }
 
@@ -506,7 +508,7 @@ public sealed partial class SettingsWindow : Window
             Background = new SolidColorBrush(BgCard),
             BorderBrush = new SolidColorBrush(BorderC),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(14),
             Padding = new Thickness(20, 16, 20, 16),   // v0.1.38：内边距加大，文字不再贴卡边
             Margin = new Thickness(0, 0, 0, 14),       // v0.1.38：卡片间距 8→14
             Child = grid,
@@ -521,7 +523,7 @@ public sealed partial class SettingsWindow : Window
         public event Action<bool>? Toggled;
         private bool _isOn;
         private readonly Ellipse _knob;
-        private static readonly Brush OnColor = new SolidColorBrush(Color.FromRgb(0x4C, 0x9F, 0xFF));
+        private readonly Brush _onColor;
         private readonly Brush _offColor;
 
         public bool IsOn
@@ -530,9 +532,12 @@ public sealed partial class SettingsWindow : Window
             set { if (_isOn == value) return; _isOn = value; UpdateVisual(); }
         }
 
-        public ToggleSwitch(Color offColor)
+        public ToggleSwitch(Color offColor, Color onColor)
         {
             _offColor = new SolidColorBrush(offColor);
+            _onColor = new SolidColorBrush(onColor);
+            Focusable = true;
+            KeyDown += (_, e) => { if (e.Key is Key.Space or Key.Enter) { IsOn = !_isOn; Toggled?.Invoke(_isOn); e.Handled = true; } };
             Width = 40; Height = 22; CornerRadius = new CornerRadius(11);
             BorderThickness = new Thickness(0);
             Background = _offColor;
@@ -544,7 +549,7 @@ public sealed partial class SettingsWindow : Window
 
         private void UpdateVisual()
         {
-            Background = _isOn ? OnColor : _offColor;
+            Background = _isOn ? _onColor : _offColor;
             // 圆点滑到另一侧（动画 0.15s）
             var anim = new DoubleAnimation(_isOn ? 18 : 0, TimeSpan.FromMilliseconds(150))
             {

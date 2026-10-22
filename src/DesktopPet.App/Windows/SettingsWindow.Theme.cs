@@ -15,9 +15,44 @@ namespace DesktopPet.App.Windows;
 
 public sealed partial class SettingsWindow : Window
 {
+    // Map only the SDK's shared palette. Custom plugin artwork/colors remain under plugin control.
+    private void ApplyPluginTheme(DependencyObject element)
+    {
+        Brush? Map(Brush? brush)
+        {
+            if (ReferenceEquals(brush, DesktopPet.Sdk.PluginUi.Bg)) return new SolidColorBrush(BgRoot);
+            if (ReferenceEquals(brush, DesktopPet.Sdk.PluginUi.CardBg)) return new SolidColorBrush(BgCardHover);
+            if (ReferenceEquals(brush, DesktopPet.Sdk.PluginUi.TextMain)) return new SolidColorBrush(TextMain);
+            if (ReferenceEquals(brush, DesktopPet.Sdk.PluginUi.TextSub)) return new SolidColorBrush(TextSub);
+            if (ReferenceEquals(brush, DesktopPet.Sdk.PluginUi.Border)) return new SolidColorBrush(BorderC);
+            return brush;
+        }
+        void MapProperty(DependencyObject target, DependencyProperty property)
+        {
+            if (target.GetValue(property) is not Brush brush) return;
+            var mapped = Map(brush);
+            if (!ReferenceEquals(mapped, brush)) target.SetCurrentValue(property, mapped);
+        }
+        if (element is Control)
+        {
+            MapProperty(element, Control.ForegroundProperty);
+            MapProperty(element, Control.BackgroundProperty);
+            MapProperty(element, Control.BorderBrushProperty);
+        }
+        if (element is TextBlock) MapProperty(element, TextBlock.ForegroundProperty);
+        if (element is Panel) MapProperty(element, Panel.BackgroundProperty);
+        if (element is Border)
+        {
+            MapProperty(element, Border.BackgroundProperty);
+            MapProperty(element, Border.BorderBrushProperty);
+        }
+        foreach (var child in LogicalTreeHelper.GetChildren(element))
+            if (child is DependencyObject dependency) ApplyPluginTheme(dependency);
+    }
+
     private UIElement WrapPage(FrameworkElement content, string title)
     {
-        var sp = new StackPanel { Margin = new Thickness(24, 0, 24, 24) };   // v0.1.38：内容区左右留白，不再贴边
+        var sp = new StackPanel { Margin = new Thickness(30, 24, 30, 28) };
         sp.Children.Add(MakeHeader(title));
         sp.Children.Add(content);
         var sv = new ScrollViewer
@@ -29,6 +64,9 @@ public sealed partial class SettingsWindow : Window
         // v0.1.82：WPF 默认滚动条是浅色带箭头的，在深色设置页里非常突兀 → 换成深色细条
         // v0.1.88：改用静态缓存的样式实例（原来每次 WrapPage 都 XamlReader.Parse → ~0.8ms/次切页）
         sv.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), DarkScrollBar);
+        sv.Resources["Neko.ScrollThumb"] = new SolidColorBrush(ToggleOff);
+        sv.Resources["Neko.ScrollHover"] = new SolidColorBrush(TextSub);
+        sv.Resources["Neko.ScrollActive"] = new SolidColorBrush(Accent);
         return sv;
     }
 
@@ -64,13 +102,13 @@ public sealed partial class SettingsWindow : Window
               <Thumb>
                 <Thumb.Template>
                   <ControlTemplate TargetType='Thumb'>
-                    <Border x:Name='bar' Background='#3A4457' CornerRadius='5' Margin='2,0'/>
+                    <Border x:Name='bar' Background='{DynamicResource Neko.ScrollThumb}' CornerRadius='5' Margin='2,0'/>
                     <ControlTemplate.Triggers>
                       <Trigger Property='IsMouseOver' Value='True'>
-                        <Setter TargetName='bar' Property='Background' Value='#55657D'/>
+                        <Setter TargetName='bar' Property='Background' Value='{DynamicResource Neko.ScrollHover}'/>
                       </Trigger>
                       <Trigger Property='IsDragging' Value='True'>
-                        <Setter TargetName='bar' Property='Background' Value='#5B7FB0'/>
+                        <Setter TargetName='bar' Property='Background' Value='{DynamicResource Neko.ScrollActive}'/>
                       </Trigger>
                     </ControlTemplate.Triggers>
                   </ControlTemplate>
@@ -92,14 +130,15 @@ public sealed partial class SettingsWindow : Window
   </Setter>
 </Style>");
 
-    private FrameworkElement MakeHeader(string title) => new TextBlock
+    private FrameworkElement MakeHeader(string title)
     {
-        Text = title,
-        FontSize = 20,   // v0.1.38：标题更大更醒目
-        FontWeight = FontWeights.Bold,
-        Foreground = new SolidColorBrush(TextMain),
-        Margin = new Thickness(0, 0, 0, 22),
-    };
+        var header = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+        header.Children.Add(new TextBlock { Text = title, FontSize = 28,
+            FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(TextMain) });
+        header.Children.Add(new TextBlock { Text = T("让陪伴，刚刚好。", "Make yourself at home."),
+            FontSize = 12, Margin = new Thickness(0, 8, 0, 0), Foreground = new SolidColorBrush(TextSub) });
+        return header;
+    }
 
     /// <summary>v0.1.38：分组小节标题（如"快捷键"），与卡片之间拉开距离</summary>
     private FrameworkElement MakeSectionHeader(string title) => new TextBlock

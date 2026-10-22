@@ -108,6 +108,7 @@ public sealed class HotKeyConfig
 
 public static class ConfigManager
 {
+    private static readonly object FileGate = new();
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         WriteIndented = true,
@@ -121,12 +122,19 @@ public static class ConfigManager
     /// </summary>
     public static AppConfig Load(string path)
     {
+        lock (FileGate) return LoadCore(path);
+    }
+
+    private static AppConfig LoadCore(string path)
+    {
         if (File.Exists(path))
         {
             try
             {
                 var cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(path), JsonOpts);
-                if (cfg is not null) return cfg;
+                if (cfg is null) throw new JsonException("配置根必须为对象，不能是 null。");
+                Normalize(cfg);
+                return cfg;
             }
             catch (Exception ex)
             {
@@ -142,10 +150,22 @@ public static class ConfigManager
     /// </summary>
     public static void Save(string path, AppConfig config)
     {
+        // The temporary filename is shared. Serialize the entire read/write transaction,
+        // including retries, so another writer cannot replace or consume this call's temp file.
+        lock (FileGate) SaveCore(path, config);
+    }
+
+    private static void SaveCore(string path, AppConfig config)
+    {
         var tmp = path + ".tmp";
         try
         {
-            File.WriteAllText(tmp, JsonSerializer.Serialize(config, JsonOpts));
+            var json = JsonSerializer.Serialize(config, JsonOpts);
+            using var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var writer = new StreamWriter(stream, leaveOpen: true);
+            writer.Write(json);
+            writer.Flush();
+            stream.Flush(flushToDisk: true);
         }
         catch (Exception ex)
         {
@@ -197,6 +217,35 @@ public static class ConfigManager
 
     /// <summary>原子替换失败后的重试间隔（毫秒）。120ms 足够让"短暂持有文件的进程/杀软"松开。</summary>
     private const int RetryDelayMs = 120;
+
+    private static void Normalize(AppConfig config)
+    {
+        // Nullable annotations do not prevent explicit JSON null values. Repair fields individually
+        // instead of discarding valid names, plugin data and unknown extension fields.
+        var defaults = new AppConfig();
+        config.MenuHotKey ??= defaults.MenuHotKey;
+        config.TogglePetHotKey ??= defaults.TogglePetHotKey;
+        config.OpacityUpHotKey ??= defaults.OpacityUpHotKey;
+        config.OpacityDownHotKey ??= defaults.OpacityDownHotKey;
+        config.ScaleUpHotKey ??= defaults.ScaleUpHotKey;
+        config.ScaleDownHotKey ??= defaults.ScaleDownHotKey;
+        config.ResetPosHotKey ??= defaults.ResetPosHotKey;
+        config.DisabledPlugins ??= new();
+        config.RadialMenu ??= new();
+        config.RadialMenu.Order ??= new();
+        config.RadialMenu.Visible ??= new();
+        config.RadialMenu.MaxVisible = Math.Max(0, config.RadialMenu.MaxVisible);
+        config.Scale = double.IsFinite(config.Scale) ? Math.Clamp(config.Scale, 1, 8) : defaults.Scale;
+        config.Opacity = double.IsFinite(config.Opacity) ? Math.Clamp(config.Opacity, 0.2, 1) : defaults.Opacity;
+        config.CatName ??= defaults.CatName;
+        config.OwnerTitle ??= defaults.OwnerTitle;
+        config.Skin ??= defaults.Skin;
+        config.Theme ??= defaults.Theme;
+        config.Language ??= defaults.Language;
+        config.AppMode ??= defaults.AppMode;
+        config.GameModeAction ??= defaults.GameModeAction;
+        config.LogLevel ??= defaults.LogLevel;
+    }
 
     /// <summary>把解析失败的配置文件改名保留，供用户手工找回；改名失败仅记日志，不抛异常。</summary>
     private static void PreserveCorruptFile(string path, Exception cause)

@@ -53,6 +53,7 @@ public sealed class SpriteAtlas
     /// <c>&lt;= 0</c>（默认）表示未声明，宿主不得改用户缩放。</para>
     /// </summary>
     public double RecommendedScale { get; private set; }
+    public bool PixelArt { get; private set; } = true;
 
     /// <summary>
     /// v0.1.88：皮肤源位图相对宿主逻辑尺寸（<see cref="FrameW"/> = 32）的倍数 = 「源像素 / 逻辑像素」。
@@ -111,7 +112,7 @@ public sealed class SpriteAtlas
     /// </summary>
     private static SpriteAtlas LoadFromInfo(SkinInfo info, string skinDir)
     {
-        var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale };
+        var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale, PixelArt = info.PixelArt };
 
         foreach (var state in info.States)
         {

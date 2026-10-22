@@ -171,7 +171,11 @@ internal static class Program
         });
         Check("抚摸压测：Pet 连续 50 次", () =>
         {
-            for (int i = 0; i < 50; i++) petMethod.Invoke(win, null);
+            // v0.2.4：Pet 改为 Pet(Point)（分区抚摸）—— 这里显式给「头部」点，
+            // 保持与改动前一致的压测形态（每次都冒爱心）。
+            double hh = win.Height > 1 ? win.Height : 100;
+            var headPoint = new Point(win.Width / 2, hh * 0.2);
+            for (int i = 0; i < 50; i++) petMethod.Invoke(win, new object[] { headPoint });
         });
         Check("边缘吸附压测：AttachEdge/DetachEdge 各 20 次", () =>
         {
@@ -1070,15 +1074,15 @@ internal static class Program
                 win.Config.Theme = "dark";
                 var swDark = new SettingsWindow(win);
                 var bgDark = (Color)bgRootField.GetValue(swDark)!;
-                if (bgDark.R != 0x1E || bgDark.G != 0x26 || bgDark.B != 0x2F)
-                    throw new Exception($"深色主题 BgRoot 应=#1E262F 实际=#{bgDark.R:X2}{bgDark.G:X2}{bgDark.B:X2}");
+                if (bgDark.R != 0x22 || bgDark.G != 0x24 || bgDark.B != 0x23)
+                    throw new Exception($"深色主题 BgRoot 应=#222423 实际=#{bgDark.R:X2}{bgDark.G:X2}{bgDark.B:X2}");
                 swDark.Close();
 
                 win.Config.Theme = "light";
                 var swLight = new SettingsWindow(win);
                 var bgLight = (Color)bgRootField.GetValue(swLight)!;
-                if (bgLight.R != 0xF5 || bgLight.G != 0xF7 || bgLight.B != 0xFA)
-                    throw new Exception($"浅色主题 BgRoot 应=#F5F7FA 实际=#{bgLight.R:X2}{bgLight.G:X2}{bgLight.B:X2}");
+                if (bgLight.R != 0xFA || bgLight.G != 0xF7 || bgLight.B != 0xF2)
+                    throw new Exception($"浅色主题 BgRoot 应=#FAF7F2 实际=#{bgLight.R:X2}{bgLight.G:X2}{bgLight.B:X2}");
                 swLight.Close();
             }
             finally
@@ -1121,7 +1125,7 @@ internal static class Program
             if (buttons.Count != 3) throw new Exception($"游戏模式按钮数应=3 实际={buttons.Count}");
 
             var accent = (Color)typeof(SettingsWindow).GetField("Accent", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(settings)!;
-            var grey = Color.FromRgb(0x3A, 0x44, 0x57);
+            var grey = (Color)typeof(SettingsWindow).GetField("BgCardHover", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(settings)!;
             static int CD(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
 
             // 模拟点击第 2 项（索引 1 = 全屏时藏猫）：onChange + RefreshSelection
@@ -1298,6 +1302,167 @@ internal static class Program
             hearts.Close();
         });
 
+        // ---- v0.2.4：分区抚摸（头 / 躯干 / 爪尾 → 不同反应）----
+        Check("v0.2.4：分区抚摸（区域判定纯函数 + 点不同高度给出不同反应）", () =>
+        {
+            // 1) 区域判定是纯函数 → 边界两侧都要断言（防"把 < 写成 <=" 这类没人发现的改动）
+            if (PetRegionMath.Classify(0.0) != PetRegion.Head) throw new Exception("y=0.00 应为头");
+            if (PetRegionMath.Classify(0.37) != PetRegion.Head) throw new Exception("y=0.37 应为头");
+            if (PetRegionMath.Classify(PetRegionMath.HeadBodyBoundary) != PetRegion.Body)
+                throw new Exception("边界 y=0.38 应归躯干（下界含）");
+            if (PetRegionMath.Classify(0.60) != PetRegion.Body) throw new Exception("y=0.60 应为躯干");
+            if (PetRegionMath.Classify(PetRegionMath.BodyLowerBoundary) != PetRegion.Lower)
+                throw new Exception("边界 y=0.76 应归下半身（下界含）");
+            if (PetRegionMath.Classify(1.0) != PetRegion.Lower) throw new Exception("y=1.00 应为下半身");
+            // 越界 / NaN 先夹再判（调用方不必自己防御）
+            if (PetRegionMath.Classify(-5) != PetRegion.Head) throw new Exception("负值应夹到 0 → 头");
+            if (PetRegionMath.Classify(9) != PetRegion.Lower) throw new Exception(">1 应夹到 1 → 下半身");
+            if (PetRegionMath.Classify(double.NaN) != PetRegion.Head) throw new Exception("NaN 应视为 0 → 头");
+
+            // 2) 端到端：真窗口 + 真抚摸入口（私有 Pet(Point) 是 OnMouseLeftUp 的唯一落点）
+            var cfgP = new AppConfig { Skin = "pixel", Scale = 3.2, ChatEnabled = false };
+            var pw = new PetWindow(cfgP);
+            pw.Show();
+            pw.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+            var petMethod = typeof(PetWindow).GetMethod("Pet", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingMethodException("PetWindow.Pet(Point) 不存在");
+            var regionField = typeof(PetWindow).GetField("_lastPetRegion", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetWindow._lastPetRegion 不存在");
+            var heartsField = typeof(PetWindow).GetField("_hearts", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("PetWindow._hearts 不存在");
+            var particlesField = typeof(HeartParticleWindow).GetField("_particles", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("HeartParticleWindow._particles 不存在");
+
+            // 只 invoke 到 Render 优先级 ⇒ 粒子计时器（Background 优先级）不会推进 ⇒ 计数不受消散干扰
+            int Particles() => heartsField.GetValue(pw) is HeartParticleWindow h
+                ? ((System.Collections.ICollection)particlesField.GetValue(h)!).Count
+                : 0;
+            void ClickAt(double normalizedY)
+            {
+                petMethod.Invoke(pw, new object[] { new Point(pw.Width / 2, pw.Height * normalizedY) });
+                pw.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            }
+
+            ClickAt(0.20);   // 头
+            if ((PetRegion)regionField.GetValue(pw)! != PetRegion.Head) throw new Exception("点 y=20% 应判为头");
+            int afterHead = Particles();
+            if (afterHead < 3 || afterHead > 5) throw new Exception($"摸头应冒 3~5 颗爱心，实际 {afterHead}");
+
+            // 3) 首次抚摸的**落点**必须落在画布中部且横向散开。
+            //    为什么单独断这条：Burst 用浮层窗口的 Left/Top 换算画布坐标，而窗口首次 Show 之前
+            //    Left/Top 还没确定 → 算出来的一律被 Math.Clamp 夹到窗口边角（实测 StartX 全 = 112）
+            //    → 多颗爱心**叠成一颗**挂在浮层右下角。这是 v0.1.59 起就一直存在的实机缺陷，
+            //    只断"粒子个数"是抓不到的（真机取证才看出画面里只有半颗爱心）。
+            var winWF = typeof(HeartParticleWindow).GetField("WindowW", BindingFlags.NonPublic | BindingFlags.Static)
+                ?? throw new MissingFieldException("HeartParticleWindow.WindowW 不存在");
+            double canvasW = (double)winWF.GetValue(null)!;
+            var startXs = new List<double>();
+            var heartsObj = heartsField.GetValue(pw) as HeartParticleWindow
+                ?? throw new Exception("摸头后应已创建爱心浮层");
+            foreach (var p in (System.Collections.IEnumerable)particlesField.GetValue(heartsObj)!)
+            {
+                var sx = p.GetType().GetProperty("StartX")!.GetValue(p)!;
+                startXs.Add((double)sx);
+            }
+            if (startXs.Count == 0) throw new Exception("摸头后爱心浮层里应有粒子");
+            double canvasMid = canvasW / 2;
+            // NaN 也要判红：Math.Clamp(NaN, …) 会原样返回 NaN，若只比大小会**静默通过**（假绿）
+            if (startXs.Any(x => !double.IsFinite(x) || x < canvasMid - 25 || x > canvasMid + 25))
+                throw new Exception($"首次抚摸的爱心横向落点应是有限值且在画布中部（{canvasMid:F0}±25），实际 " +
+                                    $"[{string.Join(", ", startXs.Select(x => x.ToString("F1")))}] —— 疑似被夹/未被放置到浮层边角");
+            if (startXs.Max() - startXs.Min() <= 4)
+                throw new Exception($"首次抚摸的多颗爱心应横向散开（实测跨度 {startXs.Max() - startXs.Min():F1} ≤ 4，" +
+                                    $"疑似全部被夹到同一坐标 → 多颗叠成一颗）");
+
+            ClickAt(0.55);   // 躯干（爱心更少一档）
+            if ((PetRegion)regionField.GetValue(pw)! != PetRegion.Body) throw new Exception("点 y=55% 应判为躯干");
+            int afterBody = Particles();
+            int bodyDelta = afterBody - afterHead;
+            if (bodyDelta < 1 || bodyDelta > 3)
+                throw new Exception($"摸躯干应新增 1~3 颗爱心，实际新增 {bodyDelta}（头后 {afterHead} → 躯干后 {afterBody}）");
+
+            ClickAt(0.90);   // 爪/尾：不冒爱心（只瞪一眼）
+            if ((PetRegion)regionField.GetValue(pw)! != PetRegion.Lower) throw new Exception("点 y=90% 应判为下半身");
+            int afterLower = Particles();
+            if (afterLower != afterBody)
+                throw new Exception($"摸爪/尾不应冒爱心，实际 {afterBody} → {afterLower}");
+
+            // 4) 爱心窗口的分档 Burst 也要能真的按区间生成
+            var hw = new HeartParticleWindow();
+            hw.Show();
+            hw.Burst(new Point(200, 200), 1, 3);
+            hw.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            int n = ((System.Collections.ICollection)particlesField.GetValue(hw)!).Count;
+            if (n < 1 || n > 3) throw new Exception($"Burst(p,1,3) 应生成 1~3 颗，实际 {n}");
+            hw.Close();
+
+            pw.Dispose();
+            pw.Close();
+        });
+
+        // ---- v0.2.4：爱心浮层的「重启定时器首帧误杀」回归（A4 实机取证抓出）----
+        Check("v0.2.4：爱心浮层第二轮抚摸仍应正常冒爱心（重启定时器不得把空闲间隔当成 dt）", () =>
+        {
+            // 缺陷本体：EnsureTimer 重启定时器时没重置 _lastTickMs，于是重启后**第一个 tick** 把
+            // 「上一次停止到本次启动之间的整段空闲」当成真实 dt（实测空闲 1.8s ⇒ dt=1800ms）→
+            // 新生成的粒子在第一帧就判定 age ≥ 800ms 被全部回收 → 窗口立刻 Hide。
+            // 症状：一个会话里**只有第一次抚摸有爱心**，之后怎么摸都没有（肉眼像"功能坏了"）。
+            // 为什么老断言抓不到：既有 A4 断言只 invoke 到 Render 优先级、故意不让粒子计时器推进，
+            // 于是只验了"粒子被创建"这一步，看不到"第一个 tick 就把它们全杀了"。
+            // 本断言反过来——**必须真推进计时器**，且必须在"定时器已停过一次"之后再来一轮。
+            var hearts = new HeartParticleWindow();
+            hearts.Show();
+            var partF = typeof(HeartParticleWindow).GetField("_particles", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("HeartParticleWindow._particles 不存在");
+            var lastTickF = typeof(HeartParticleWindow).GetField("_lastTickMs", BindingFlags.NonPublic | BindingFlags.Instance)
+                ?? throw new MissingFieldException("HeartParticleWindow._lastTickMs 不存在");
+            int Count() => ((System.Collections.ICollection)partF.GetValue(hearts)!).Count;
+
+            // 反复 PushFrame + 短等确定性驱动 dispatcher（单 timer 等待曾在嵌套泵下提前退出）
+            void Pump(int ms)
+            {
+                var deadline = DateTime.Now.AddMilliseconds(ms);
+                while (DateTime.Now < deadline)
+                {
+                    var frame = new DispatcherFrame();
+                    var t = new DispatcherTimer(DispatcherPriority.Background)
+                    {
+                        Interval = TimeSpan.FromMilliseconds(20),
+                    };
+                    t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+                    t.Start();
+                    Dispatcher.PushFrame(frame);
+                }
+                hearts.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            }
+
+            // 第 1 轮：完整寿命 → 粒子消散 + 窗口自动隐藏 + 定时器停（复刻真实时序）
+            hearts.Burst(new Point(100, 100), 3, 5);
+            if (Count() < 3) throw new Exception($"v0.2.4：第一轮 Burst 应立即生成 3~5 颗，实际 {Count()}");
+            Pump(1100);
+            if (Count() != 0) throw new Exception($"v0.2.4：第一轮爱心寿命 800ms 后应消散，实际剩 {Count()}");
+            if (hearts.IsVisible) throw new Exception("v0.2.4：第一轮爱心播完应自动隐藏");
+
+            // 第 2 轮（回归触发点）：此刻定时器已停、_lastTickMs 还指着 1s 前
+            if ((long)lastTickF.GetValue(hearts)! == 0)
+                throw new Exception("v0.2.4：前置条件不成立——一轮播完后 _lastTickMs 不该是 0（否则本断言没测到重启路径）");
+            hearts.Burst(new Point(100, 100), 3, 5);
+            int born = Count();
+            if (born < 3) throw new Exception($"v0.2.4：第二轮 Burst 应立即生成 3~5 颗，实际 {born}");
+            Pump(300);   // 真推进计时器：回归版会在第一个 tick 把粒子全部误杀
+            int alive = Count();
+            if (alive < 3)
+                throw new Exception($"v0.2.4：第二轮爱心 300ms 后应仍在存活期（寿命 800ms），实际只剩 {alive} " +
+                                    "—— 疑似重启定时器首个 tick 的 dt 把空闲间隔算了进去，粒子被首帧误杀");
+            if (!hearts.IsVisible)
+                throw new Exception("v0.2.4：第二轮爱心仍在存活期，浮层不应提前隐藏");
+            Pump(900);
+            if (Count() != 0 || hearts.IsVisible)
+                throw new Exception($"v0.2.4：第二轮爱心也应按时消散并隐藏（剩 {Count()}，可见={hearts.IsVisible}）");
+            hearts.Close();
+        });
+
         // ---- v0.1.59 第 28 项：⑦ 扔猫抛物线物理（真实时序：水平飞行 + 越界防护）----
         Check("v0.1.59(⑦)：抛物线物理——真实时序水平飞行 + 越界防护 + 触地摩擦常量", () =>
         {
@@ -1356,7 +1521,10 @@ internal static class Program
                 ?? throw new MissingFieldException("SchedulerImpl._handles 不存在");
 
             static int HandleCount(SchedulerImpl s, FieldInfo hf)
-                => ((System.Collections.ICollection)hf.GetValue(s)!).Count;
+            {
+                var registry = hf.GetValue(s)!;
+                lock (registry) return ((System.Collections.IEnumerable)registry).Cast<object>().Count();
+            }
 
             // 任取一个有调度器的已加载插件（宿主应为每个已加载插件都持有**一份**调度器）
             var schedulers = (System.Collections.IDictionary)schedField.GetValue(win.PluginHost)!;
@@ -1520,7 +1688,7 @@ internal static class Program
             TaskScheduler.UnobservedTaskException += onUnobserved;
             try
             {
-                var sched = new SchedulerImpl();
+                using var sched = new SchedulerImpl();
                 int fired = 0;
                 const int threads = 4;
                 const int perThread = 125;   // 4 × 125 = 500 个 due≈0 定时器
@@ -1551,19 +1719,22 @@ internal static class Program
                 if (Volatile.Read(ref fired) < threads * perThread)
                     throw new Exception($"仅 {fired}/{threads * perThread} 个 At(DateTime.Now) 回调触发（回调被静默吞掉）");
 
-                // 每个句柄都必须是有效对象（非 null、未被误熔断/误释放）
+                // v0.2.4：回调必须全部执行一次，完成的一次性句柄随后自动释放。
                 foreach (var h in handles)
                 {
                     if (h is null) throw new Exception("存在 null 句柄（handle 装配竞态未消除）");
-                    if (!h.IsActive) throw new Exception("存在已失效句柄（被误熔断/误释放）");
                 }
+                if (!SpinWait.SpinUntil(() => handles.All(h => !h.IsActive), 2000))
+                    throw new Exception("一次性任务已执行，但句柄没有自动释放");
+                if (Volatile.Read(ref fired) != threads * perThread)
+                    throw new Exception($"应恰好执行 {threads * perThread} 次，实际 {fired}");
                 foreach (var h in handles) h.Dispose();
 
                 if (Volatile.Read(ref unhandled) != 0)
                     throw new Exception($"捕获到 {unhandled} 次未处理异常（应被 SafeInvoke 全部隔离）");
 
                 Console.WriteLine($"  {threads * perThread} 个 At(DateTime.Now)(4 线程并发) 回调全部触发；" +
-                                  "句柄均有效；进程存活；0 未处理异常");
+                                  "句柄均已释放；进程存活；0 未处理异常");
             }
             finally
             {

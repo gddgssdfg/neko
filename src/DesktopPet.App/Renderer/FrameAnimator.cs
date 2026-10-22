@@ -33,15 +33,17 @@ public sealed class FrameAnimator
         if (_state is null || _state.Frames.Length == 0) return false;
 
         var fps = _state.Fps * Playback;
-        if (fps <= 0) return false;
+        if (!double.IsFinite(fps) || fps <= 0 || delta <= TimeSpan.Zero) return false;
 
         _accumulator += delta.TotalSeconds * fps;
-        // v0.1.1 fix：clamp 防溢出。delta 极大时 (int)_accumulator 会溢出成 Int32.MinValue，
-        // 导致 _frame = (0 + Int32.MinValue) % 4 = 0 永远停住（PetWindow._lastTick 已修，此处加防御深度）
-        var step = Math.Min((int)_accumulator, _state.Frames.Length);
-        if (step <= 0) return false;
-
-        _accumulator -= step;
+        // Reduce in floating point before converting: resume after sleep must not overflow int
+        // or leave a backlog that keeps spinning through complete cycles on every subsequent tick.
+        if (!double.IsFinite(_accumulator)) { _accumulator = 0; return false; }
+        var wholeFrames = Math.Floor(_accumulator);
+        if (wholeFrames < 1) return false;
+        _accumulator -= wholeFrames;
+        var step = (int)(wholeFrames % _state.Frames.Length);
+        if (step == 0) return false;
         _frame = (_frame + step) % _state.Frames.Length;
         return true;
     }

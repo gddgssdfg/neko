@@ -53,6 +53,8 @@ public sealed partial class PetWindow : Window
         _config.Skin = skin;
         var newAtlas = SpriteAtlas.LoadSkin(Paths.Assets, skin);
         _renderer.SetAtlas(newAtlas);
+        if (Content is DependencyObject visual)
+            RenderOptions.SetBitmapScalingMode(visual, newAtlas.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         _stateMachine.Play(DesktopPet.Core.PetState.Idle);   // 强制从新 atlas 重拉（避免 _animator 缓存旧 SpriteState）
         // v0.1.81：皮肤可声明推荐缩放（recommendedScale）。>0 时自动套用——
         // 否则高清皮肤（源图 256px）会被缩进 32×Scale 的逻辑框，用户必须手动把缩放开到 4 才 1:1。

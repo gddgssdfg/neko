@@ -42,6 +42,8 @@
     <None Include="..\..\neko-assets\bead\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\bead\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
     <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
+    <None Include="..\..\neko-assets\amber\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
+    <None Include="..\..\neko-assets\amber\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
     <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
     <None Remove="..\..\neko-assets\**\*preview*" />
     <None Remove="..\..\neko-assets\**\*.bak-*" />

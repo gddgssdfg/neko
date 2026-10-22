@@ -89,6 +89,7 @@ public sealed class BaziProfile
             // （AlcPinProbe: profilesave = PINNED(N)）。输出与旧版反射路径逐字节一致，旧存档仍可读。
             storage.Set(StorageKey, JsonSerializer.Serialize(this, BaziJsonContext.Default.BaziProfile));
         }
+        catch (System.Security.Cryptography.CryptographicException) { throw; }
         catch
         {
             // 持久化失败不拖垮宿主（手册铁律 7）；P5 打磨阶段接入统一日志。

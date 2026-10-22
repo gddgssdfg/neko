@@ -77,6 +77,8 @@ TEST_PROJECTS = [
     ("LoaderTest", REPO_ROOT / "tests" / "LoaderTest" / "LoaderTest.csproj", "LoaderTest.exe"),
     ("UiProbe", REPO_ROOT / "tests" / "UiProbe" / "UiProbe.csproj", "UiProbe.exe"),
     ("PluginSmoke", REPO_ROOT / "tests" / "PluginSmoke" / "PluginSmoke.csproj", "PluginSmoke.exe"),
+    ("ReliabilityProbe", REPO_ROOT / "tests" / "ReliabilityProbe" / "ReliabilityProbe.csproj", "ReliabilityProbe.exe"),
+    ("ConfigSaveProbe", REPO_ROOT / "tests" / "ConfigSaveProbe" / "ConfigSaveProbe.csproj", "ConfigSaveProbe.exe"),
 ]
 
 # 🔴 测试的**间接依赖**（v0.1.87 补）：必须与测试工程一起构建，否则「清 bin 之后必挂」。
@@ -280,7 +282,9 @@ def run_captured(
 
 
 def dotnet(args: list[str]) -> list[str]:
-    """把 dotnet 参数包装成经过 env 包装脚本的命令。"""
+    """Windows uses its native SDK; Git Bash retains the historical env wrapper."""
+    if os.name == "nt" and "NEKO_DOTNET_WRAPPER" not in os.environ:
+        return ["dotnet", *args]
     return ["bash", DOTNET_WRAPPER, *args]
 
 
@@ -314,7 +318,7 @@ def step_build_solution() -> StepResult:
 
 def step_build_tests() -> StepResult:
     """步骤 2：逐个单独构建三个测试工程（sln 不含 tests/，必须单独构建）+ 测试的间接依赖。"""
-    name = "build tests (LoaderTest/UiProbe/PluginSmoke)"
+    name = f"build tests ({len(TEST_PROJECTS)} projects)"
     duration = 0.0
     for label, csproj, _exe in TEST_PROJECTS:
         log = LOG_DIR / f"02_build_{label}.log"
@@ -339,7 +343,7 @@ def step_build_tests() -> StepResult:
         if r.rc != 0:
             return StepResult(name, False, duration, f"构建依赖 {label} 失败（退出码 {r.rc}）", log)
 
-    return StepResult(name, True, duration, "3 个测试工程 + 1 个测试依赖均构建成功", None)
+    return StepResult(name, True, duration, f"{len(TEST_PROJECTS)} 个测试工程 + 1 个测试依赖均构建成功", None)
 
 
 def _find_test_exe(label: str, exe_name: str) -> Path | None:
@@ -462,6 +466,28 @@ def judge_uiprobe(r: RunResult) -> tuple[bool, str]:
     raise AssertionError("unreachable")
 
 
+def step_run_reliability() -> StepResult:
+    name = "ReliabilityProbe (storage / animation / assets)"
+    exe = REPO_ROOT / "tests" / "ReliabilityProbe" / CI_OUTPUT_DIR / "Debug" / "net8.0-windows" / "win-x64" / "ReliabilityProbe.exe"
+    log = LOG_DIR / "03_reliability.log"
+    r = run_captured([str(exe)], log, timeout=60, echo=True,
+                     env=_test_data_env("ReliabilityProbe"))
+    ok = r.rc == 0 and "=== ALL PASSED ===" in r.text
+    return StepResult(name, ok, r.duration, "all passed" if ok else r.tail, log)
+
+
+def step_run_configsave() -> StepResult:
+    name = "ConfigSaveProbe (locked file retry / normal save)"
+    exe = _find_test_exe("ConfigSaveProbe", "ConfigSaveProbe.exe")
+    log = LOG_DIR / "03_configsave.log"
+    if exe is None:
+        return StepResult(name, False, 0, "ConfigSaveProbe executable missing", log)
+    r = run_captured([str(exe)], log, timeout=60, echo=True,
+                     env=_test_data_env("ConfigSaveProbe"))
+    ok = r.rc == 0 and "=== 全部通过 ===" in r.text
+    return StepResult(name, ok, r.duration, "all passed" if ok else r.tail, log)
+
+
 def step_git_status() -> StepResult:
     """步骤 4：打印 git status --short（信息项，非闸门）。"""
     name = "git status --short"
@@ -536,12 +562,15 @@ def _fail_banner(step: StepResult) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    # Build targets must use this working interpreter, not the Windows Store python alias.
+    os.environ.setdefault("PythonExe", sys.executable)
     print("Neko 本地 CI 开始")
     print(f"  仓库根        : {REPO_ROOT}")
-    print(f"  dotnet 包装器 : {DOTNET_WRAPPER}")
+    print(f"  dotnet 命令   : {' '.join(dotnet([]))}")
 
-    if shutil.which("bash") is None:
-        print("[环境错误] 找不到 bash（dotnet 包装脚本需要它）。", file=sys.stderr)
+    runner = dotnet([])[0]
+    if shutil.which(runner) is None:
+        print(f"[环境错误] 找不到 {runner}。请安装 .NET SDK 或配置 NEKO_DOTNET_WRAPPER。", file=sys.stderr)
         return 1
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -552,6 +581,8 @@ def main() -> int:
         step_run_loadertest,
         step_run_pluginsmoke,
         step_run_uiprobe,
+        step_run_reliability,
+        step_run_configsave,
         step_git_status,
     ]
 

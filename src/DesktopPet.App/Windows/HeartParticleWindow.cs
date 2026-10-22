@@ -75,14 +75,31 @@ public sealed class HeartParticleWindow : Window
     }
 
     /// <summary>冒出一簇爱心（3~5 颗）。已显示时追加，不打断上一簇。</summary>
-    public void Burst(Point catHeadCenter)
+    public void Burst(Point catHeadCenter) => Burst(catHeadCenter, MinBurst, MaxBurst);
+
+    /// <summary>默认簇规模下限（3 颗）。</summary>
+    public const int MinBurst = 3;
+
+    /// <summary>默认簇规模上限（5 颗）。</summary>
+    public const int MaxBurst = 5;
+
+    /// <summary>
+    /// v0.2.4：按区间指定簇规模 —— 分区抚摸用不同档位
+    /// （头 3~5 颗 / 躯干 1~3 颗 / 爪尾 0 颗即不调用本方法）。
+    /// </summary>
+    /// <param name="minCount">下限（含）。≤0 时直接返回，不建窗口。</param>
+    /// <param name="maxCount">上限（含）；小于下限时按下限处理。</param>
+    public void Burst(Point catHeadCenter, int minCount, int maxCount)
     {
+        if (minCount <= 0) return;                                  // 0 颗 = 不冒爱心（爪/尾）
+        if (maxCount < minCount) maxCount = minCount;
+
         if (!IsVisible) Show();
         // 把猫头中心（屏幕 DIP 坐标）转成窗口内相对坐标
         double localX = catHeadCenter.X - Left;
         double localY = catHeadCenter.Y - Top;
 
-        int count = 3 + _rng.Next(0, 3);   // 3~5 颗
+        int count = minCount + _rng.Next(0, maxCount - minCount + 1);   // [min, max] 闭区间
         for (int i = 0; i < count; i++)
         {
             double jitterX = (_rng.NextDouble() - 0.5) * 36;   // 横向散布
@@ -116,7 +133,16 @@ public sealed class HeartParticleWindow : Window
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TickMs) };
             _timer.Tick += (_, _) => OnTick();
         }
-        if (!_timer.IsEnabled) _timer.Start();
+        if (!_timer.IsEnabled)
+        {
+            // v0.2.4 修复（A4 实机取证抓出）：重启定时器必须清掉「上一次运行的最后 tick 时刻」。
+            // 否则重启后的第一个 tick 会把**整段空闲间隔**当成真实 dt（实测空闲 1.8s ⇒ dt=1800ms），
+            // 于是新生成的粒子在第一帧就判定 age >= 800ms 被全部回收 → 窗口立刻 Hide。
+            // 症状：一个会话里**只有第一次抚摸有爱心**，之后怎么摸都不冒（因为 _lastTickMs 永远滞后）。
+            // 清零后首个 tick 的 dt=0（OnTick 内 `_lastTickMs == 0` 分支），语义与首次启动一致。
+            _lastTickMs = 0;
+            _timer.Start();
+        }
     }
 
     private void OnTick()
