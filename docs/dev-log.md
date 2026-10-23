@@ -1215,3 +1215,10 @@ Gitee `/tags` 返回数组（`[{name, commit:{sha,date}, ...}]`，结构按官�
 - 本机曾因沙箱还原留下 NU1900 缓存警告，正常网络下 `dotnet restore src/DesktopPet.sln --force --no-cache` 后重新检查通过，未关闭漏洞检查。
 - 审阅工具必须匹配宿主采样和启动流程：SkinRenderProbe 需按 PixelArt 设最近邻；直接构造 PetWindow 后还未设置初始动画，截图工具需走 LoadPlugins 初始化，并检查非空白后再保存。
 - 细节与边界见 `docs/pixel-redraw-2026-10-23.md`。当前不包含独立眼部动画或完整步态，未打包安装器。
+
+## 2026-10-23 · v0.2.6 原生 32×32 像素猫
+
+- 用户明确反馈：上一版偏写实；本次目标是原版 pixel 的简洁纯像素造型。后续修改该皮肤时优先直接编辑原生网格、猫的轮廓与动作，不把高清插画降采样视为完成原版重绘。
+- 重画尖耳、宽脸、短腿、卷尾和九状态，保持 32×32、四帧、固定眼部锚点及原有清单；重画五个眼层并更新缩略图。生成器不再默认覆盖托盘与键盘爪，预览写入 _eval。
+- 完整 tools/ci.py 全部通过：主构建零警告零错误、五测试工程、18/18 插件、界面、可靠性、保存与六项素材回归。SkinRenderProbe 出图确认四种眼部相位不同；ReliabilityProbe 实际窗口 pet.png 非空且已目视检查。
+- 本次未打包安装器；预览在 _eval/pixel-native-redraw，实际窗口在 _eval/pixel-native-ui。

@@ -26,7 +26,7 @@ Neko 像素猫雪碧图生成器
     "states": [ { "name": "idle", "fps": 4, "eyeLayer": "eyes_open" }, ... ]
   }
 - "states[].fps"：状态名 → 每秒帧数，**宿主读它作为 fps 唯一来源**（skin.json 优先，无二次覆盖）。
-- 本脚本只生成 PNG 素材（neko_<state>.png 横排 4 帧 / 眼球层 / shadow / tray.ico），
+- 本脚本只生成 PNG 素材（neko_<state>.png 横排 4 帧 / 眼球层 / shadow），
   **不再生成 anim.json**——旧的 anim.json fps 覆盖表会静默盖掉 skin.json（作者陷阱），已从宿主移除。
   skin.json 由作者手写/维护（本脚本不覆盖它，避免把手调的 fps 冲掉）。
 - 新增皮肤 = 新目录（如 neko-assets/pikachu/）+ skin.json（清单）+ 同名 PNG（neko_<state>.png / 眼球层）。
@@ -39,6 +39,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageChops
 SIZE = 32
 NF = 4
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PREVIEW_OUT = os.path.join(ROOT, "_eval", "pixel-native-redraw")
 OUT = os.path.join(ROOT, "neko-assets", "pixel")   # v0.1.74：像素皮肤迁入 neko-assets/pixel/（与 skin.json 同目录）
 
 # 头部锚点：所有需要叠加眼球层的状态都必须用这个坐标
@@ -101,281 +102,148 @@ class Cv:
 
 
 # ---------------- 部件 ----------------
-def ears(c, hcx, hcy, twitch=0):
-    # 左耳
-    c.poly([(hcx - 7, hcy - 4), (hcx - 5, hcy - 9 - twitch), (hcx - 2, hcy - 5)], C_FUR_M)
-    c.poly([(hcx - 6, hcy - 5), (hcx - 5, hcy - 8 - twitch), (hcx - 3, hcy - 5)], C_PAW)
-    # 右耳
-    c.poly([(hcx + 2, hcy - 5), (hcx + 5, hcy - 9 + twitch), (hcx + 7, hcy - 4)], C_FUR_M)
-    c.poly([(hcx + 3, hcy - 5), (hcx + 5, hcy - 8 + twitch), (hcx + 6, hcy - 5)], C_PAW)
+def cat_head(c, expression="open", cx=17, cy=11):
+    # Wide cheeks and outward triangular ears, drawn directly on the 32px grid.
+    def points(ps):
+        return [(cx + x, cy + y) for x, y in ps]
+    c.poly(points([(-9,-3),(-9,-8),(-7,-8),(-3,-5),(3,-5),(7,-8),(9,-8),(9,-2)]), C_FUR_M)
+    c.poly(points([(-8,-6),(-7,-6),(-5,-4),(-8,-3)]), C_PAW)
+    c.poly(points([(8,-6),(7,-6),(5,-4),(8,-3)]), C_PAW)
+    c.poly(points([(-7,-5),(7,-5),(9,-2),(9,2),(7,5),(4,7),(-4,7),(-7,5),(-9,2),(-9,-2)]), C_FUR_M)
+    c.rect(cx-5,cy-4,cx-3,cy-4,C_FUR_L)
+    for x in (-3,0,3):
+        c.rect(cx+x,cy-4,cx+x,cy-3+(x==0),C_FUR_D)
+    c.poly(points([(-3,3),(-1,2),(0,3),(1,2),(3,3),(3,5),(1,6),(-1,6),(-3,5)]), C_WHITE)
+    c.rect(cx-1,cy+3,cx+1,cy+3,C_NOSE)
+    c.rect(cx,cy+4,cx,cy+5,C_OUTLINE)
+    c.rect(cx-2,cy+5,cx-1,cy+5,C_OUTLINE)
+    c.rect(cx+1,cy+5,cx+2,cy+5,C_OUTLINE)
+    for side in (-1,1):
+        c.rect(cx+side*6,cy+2,cx+side*7,cy+2,C_FUR_DP)
+        c.rect(cx+side*6,cy+4,cx+side*7,cy+4,C_FUR_DP)
+    if expression in ("open", "scared"):
+        for x in (-5,3):
+            c.rect(cx+x,cy-1,cx+x+3,cy+2,C_WHITE)
+    elif expression == "sleep":
+        for x in (-5,3):
+            c.rect(cx+x,cy+1,cx+x+3,cy+1,C_OUTLINE)
+            c.rect(cx+x,cy,cx+x,cy,C_OUTLINE)
+    if expression == "scared":
+        c.rect(cx,cy+5,cx+1,cy+6,C_PUPIL)
 
 
-def head(c, hcx, hcy, rx=7, ry=6):
-    c.ell(hcx, hcy, rx, ry, C_FUR_M)
-    # 额头虎斑 M 纹：中间短两边长
-    c.rect(hcx - 3, hcy - 5, hcx - 3, hcy - 3, C_FUR_D)
-    c.rect(hcx - 1, hcy - 5, hcx - 1, hcy - 4, C_FUR_D)
-    c.rect(hcx + 1, hcy - 5, hcx + 1, hcy - 4, C_FUR_D)
-    c.rect(hcx + 3, hcy - 5, hcx + 3, hcy - 3, C_FUR_D)
-    # v0.1.53 AI 造型学：头顶顶光晕（FUR_L 提亮两点，圆润立体感）
-    c.rect(hcx - 4, hcy - 6, hcx - 3, hcy - 6, C_FUR_L)
-    c.rect(hcx + 1, hcy - 7, hcx + 2, hcy - 7, C_FUR_L)
+def curled_tail(c, f, y=23):
+    tip = [0,-1,0,1][f]
+    c.pline([(10,y),(6,y),(3,y-3),(3,y-7),(5,y-9+tip),(7,y-9+tip)],3,C_FUR_M)
+    c.rect(3,y-5,4,y-4,C_FUR_D)
+    c.rect(6,y-10+tip,7,y-8+tip,C_WHITE)
 
 
-def _blush(c, hcx, hcy):
-    """v0.1.53 AI 造型学：脸颊腮红（两侧 2x1 粉点，像素可爱风）"""
-    c.rect(hcx - 7, hcy + 2, hcx - 6, hcy + 3, C_PAW)
-    c.rect(hcx + 6, hcy + 2, hcx + 7, hcy + 3, C_PAW)
+def torso(c, y=22):
+    c.ell(17,y,8,5,C_FUR_M)
+    c.ell(18,y+1,4,4,C_WHITE)
+    c.rect(10,y-1,12,y,C_FUR_D)
+    c.rect(24,y,24,y+2,C_FUR_D)
 
 
-def face_open(c, hcx, hcy):
-    """睁眼：只画眼白，瞳孔由眼球层叠加。v0.1.53：+腮红（AI 造型学）"""
-    c.rect(hcx - 5, hcy - 2, hcx - 1, hcy + 3, C_WHITE)
-    c.rect(hcx + 1, hcy - 2, hcx + 5, hcy + 3, C_WHITE)
-    c.rect(hcx - 1, hcy + 4, hcx + 1, hcy + 5, C_NOSE)
-    c.rect(hcx - 3, hcy + 5, hcx + 3, hcy + 6, C_WHITE)
-    _blush(c, hcx, hcy)
+def paw(c,x,y):
+    c.rect(x,y-2,x+3,y,C_FUR_M)
+    c.rect(x,y,x+3,y+1,C_WHITE)
 
 
-def face_closed(c, hcx, hcy):
-    """闭眼（sleep）：两端上翘的横线"""
-    c.rect(hcx - 5, hcy + 2, hcx - 1, hcy + 2, C_OUTLINE)
-    c.rect(hcx - 5, hcy + 1, hcx - 5, hcy + 1, C_OUTLINE)
-    c.rect(hcx + 1, hcy + 2, hcx + 5, hcy + 2, C_OUTLINE)
-    c.rect(hcx + 5, hcy + 1, hcx + 5, hcy + 1, C_OUTLINE)
-    c.rect(hcx - 1, hcy + 4, hcx + 1, hcy + 5, C_NOSE)
-    c.rect(hcx - 3, hcy + 5, hcx + 3, hcy + 6, C_WHITE)
-
-
-def face_pet(c, hcx, hcy):
-    """被抚摸：不画眼白（眼球层画弯月），加腮红"""
-    c.rect(hcx - 1, hcy + 4, hcx + 1, hcy + 5, C_NOSE)
-    c.rect(hcx - 3, hcy + 5, hcx + 3, hcy + 6, C_WHITE)
-    c.rect(hcx - 7, hcy + 3, hcx - 6, hcy + 4, C_PAW)
-    c.rect(hcx + 6, hcy + 3, hcx + 7, hcy + 4, C_PAW)
-    _blush(c, hcx, hcy)
-
-
-def face_scared(c, hcx, hcy):
-    """惊恐：眼白 + 张嘴"""
-    c.rect(hcx - 5, hcy - 2, hcx - 1, hcy + 3, C_WHITE)
-    c.rect(hcx + 1, hcy - 2, hcx + 5, hcy + 3, C_WHITE)
-    c.rect(hcx - 1, hcy + 4, hcx + 1, hcy + 5, C_NOSE)
-    c.rect(hcx - 2, hcy + 6, hcx + 2, hcy + 8, C_TONGUE)
-
-
-def body(c, bcx, bcy, rx, ry):
-    c.ell(bcx, bcy, rx, ry, C_FUR_M)
-    # 肚子白
-    c.ell(bcx + 1, bcy + 2, max(rx - 3, 1), max(ry - 2, 1), C_WHITE)
-    # 侧身条纹（v0.1.53：左右对称，AI 虎斑感更强）
-    for i in range(2):
-        x = bcx - rx + 2 + i * 3
-        c.rect(x, bcy - 2, x, bcy + 1, C_FUR_D)
-        xr = bcx + rx - 1 - i * 3
-        c.rect(xr, bcy - 2, xr, bcy + 1, C_FUR_D)
-
-
-def leg(c, x, y0, y1, w=3):
-    c.rect(x, y0, x + w - 1, y1, C_FUR_M)
-    c.rect(x, y1 - 1, x + w - 1, y1, C_WHITE)
-
-
-def tail(c, pts, w=3, stripe=True):
-    c.pline(pts, w, C_FUR_M)
-    if stripe and len(pts) >= 3:
-        i = len(pts) // 2
-        c.pline(pts[i:i + 2], w, C_FUR_D)
-
-
-# ---------------- 8 个状态 ----------------
-def st_idle(f):
-    c = Cv()
-    # v0.1.57 两级呼吸：帧序 0:-1 / 1:-2 / 2:-1 / 3:0 —— 幅度 2px、有起有伏（比原 ±1px 更明显）
-    # 只移身体/腿/尾（头部锚点 HEAD_CX/HEAD_CY 固定），eyes_open 眼球层与头严格对齐不受影响
-    bob = [-1, -2, -1, 0][f]
-    tip = [(8, 15), (7, 14), (8, 15), (9, 16)][f]
-    bcy = 22 + bob
-    tail(c, [(9, bcy + 2), (5, bcy - 1), (3, bcy - 5), tip])
-    leg(c, 10, 24 + bob, 31)
-    body(c, 15, bcy, 8, 5)
-    leg(c, 19, 24 + bob, 31)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_open(c, HEAD_CX, HEAD_CY)
+def pose(f, state):
+    c=Cv()
+    bob=[0,-1,0,1][f]
+    curled_tail(c,f,23 if state != "sit" else 24)
+    torso(c,22 + (bob if state in ("idle","pet") else 0))
+    if state == "walk":
+        swing=[-2,0,2,0][f]
+        paw(c,11+swing,27-(f==1))
+        paw(c,21-swing,27-(f==3))
+    elif state in ("drag","fall"):
+        spread=[0,1,0,-1][f]
+        paw(c,9-spread,25)
+        paw(c,23+spread,25)
+        c.rect(10,24,12,24,C_PAW)
+        c.rect(24,24,26,24,C_PAW)
+    elif state == "climb":
+        paw(c,7,16+[0,2,4,2][f])
+        paw(c,26,20-[0,2,4,2][f])
+        paw(c,13,28-(f%2))
+        paw(c,21,27+(f%2))
+    elif state == "work":
+        paw(c,10,27-(f%2)*3)
+        paw(c,22,24+(f%2)*3)
+    else:
+        paw(c,12,28 if state=="sit" else 27)
+        paw(c,21,28 if state=="sit" else 27)
+    cat_head(c,"pet" if state=="pet" else "scared" if state in ("drag","fall") else "open")
+    if state=="pet":
+        c.rect(9,14,10,14,C_PAW)
+        c.rect(24,14,25,14,C_PAW)
     return c.out()
 
 
-def st_walk(f):
-    c = Cv()
-    swing = [-3, -1, 3, 1][f]
-    bob = [-1, 0, 1, 0][f]
-    tip = [(8, 14), (7, 12), (8, 14), (9, 16)][f]
-    bcy = 22 + bob
-    tail(c, [(9, bcy + 2), (5, bcy - 1), (3, bcy - 5), tip])
-    leg(c, 10 + swing, 24 + bob, 31)
-    body(c, 15, bcy, 8, 5)
-    leg(c, 19 - swing, 24 + bob, 31)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_open(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-def st_sit(f):
-    c = Cv()
-    # v0.1.57 呼吸：坐姿身体轻起伏（帧 1/2 上浮 1px，底缘仍被盘坐后腿压住，不露缝）
-    bob = [0, -1, -1, 0][f]
-    tip = [(25, 25), (26, 24), (25, 25), (24, 26)][f]
-    tail(c, [(22, 26), (25, 25), tip])
-    body(c, 15, 22 + bob, 7, 6)            # 身体竖起
-    leg(c, 12, 25 + bob, 30)
-    leg(c, 18, 25 + bob, 30)
-    c.ell(14, 30 + bob, 6, 2, C_WHITE)     # 盘坐的后腿（更明显）
-    c.ell(13, 31 + bob, 2, 1, C_PAW)       # 露出的肉垫
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_open(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-# v0.1.48：work 状态（BongoCat 化——猫伏低前探+前爪伸向下方键盘=画面底沿）
-def st_work(f):
-    c = Cv()
-    bcy = 22 - [0, 0, 1, 0][f]                  # 慢呼吸（f=2 时下压 1px）
-    # 尾巴自然垂
-    tail(c, [(23, 25), (26, 27), (28, 30), (29, 31)])
-    # 身体蹲低（更宽更扁）
-    body(c, 15, bcy, 9, 5)
-    # 前爪：圆形掌+肉垫（不画 leg——leg 太直像"站姿的两条腿"）—— 伸到画面底沿（y=31）
-    c.ell(12, 30, 3, 2, C_FUR_M)                 # 左前掌（橙）
-    c.ell(18, 30, 3, 2, C_FUR_M)                 # 右前掌（橙）
-    c.ell(12, 30, 1, 1, C_PAW)                   # 左肉垫
-    c.ell(18, 30, 1, 1, C_PAW)                   # 右肉垫
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_open(c, HEAD_CX, HEAD_CY)
-    return c.out()
+def st_idle(f): return pose(f,"idle")
+def st_walk(f): return pose(f,"walk")
+def st_sit(f): return pose(f,"sit")
+def st_pet(f): return pose(f,"pet")
+def st_drag(f): return pose(f,"drag")
+def st_fall(f): return pose((f+1)%4,"fall")
+def st_climb(f): return pose(f,"climb")
+def st_work(f): return pose(f,"work")
 
 
 def st_sleep(f):
-    c = Cv()
-    br = [0, 1, 1, 0][f]
-    tail(c, [(24, 27), (28, 25), (27, 20), (23, 19)])
-    body(c, 16, 24, 9, 5)
-    ears(c, 12, 21)
-    head(c, 12, 21, 6, 5)
-    face_closed(c, 12, 21)
-    del br
+    c=Cv()
+    c.ell(19,24,10,5,C_FUR_M)
+    c.rect(22,20,23,22,C_FUR_D)
+    c.rect(26,23,28,24,C_FUR_D)
+    cat_head(c,"sleep",12,21)
+    c.pline([(24,28),(28,27),(28,24),(27,22)],3,C_FUR_M)
+    c.rect(26,21,28,22,C_WHITE)
     return c.out()
 
 
-def st_pet(f):
-    c = Cv()
-    sq = [0, 1, 1, 0][f]
-    tip = [(8, 13), (6, 11), (8, 13), (10, 15)][f]
-    bcy = 22 + sq
-    tail(c, [(9, bcy + 2), (5, bcy - 1), (3, bcy - 5), tip])
-    leg(c, 10, 24 + sq, 31)
-    body(c, 15, bcy, 8 + sq, 5 - sq)       # squash 挤压
-    leg(c, 19, 24 + sq, 31)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_pet(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-def st_drag(f):
-    c = Cv()
-    w = [-2, 0, 2, 0][f]
-    c.pline([(9, 24), (5, 22), (2, 20), (1, 17)], 4, C_FUR_M)   # 尾巴炸毛
-    c.pline([(3, 21), (1, 19)], 2, C_FUR_D)
-    leg(c, 7 + w, 25, 30)
-    body(c, 15, 22, 8, 5)
-    leg(c, 21 - w, 25, 30)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_scared(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-def st_fall(f):
-    c = Cv()
-    w = [0, 2, 4, 2][f]
-    c.pline([(7, 22), (3, 17), (4, 11), (8, 7)], 3, C_FUR_M)   # v0.1.51：尾巴大幅上飘（像飘起来）
-    c.rect(6, 24, 10 + w, 27, C_FUR_M)
-    c.rect(6, 24, 7, 27, C_WHITE)
-    body(c, 15, 23, 7, 4)                                 # 身体更小（缩+4 帧 0-3 跳）
-    c.rect(20 - w, 24, 25, 27, C_FUR_M)
-    c.rect(24, 24, 25, 27, C_WHITE)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY, 5, 4)                        # 头小一圈（缩+惊）
-    face_scared(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-def st_climb(f):
-    c = Cv()
-    d = [0, 1, 0, -1][f]
-    c.rect(14, 2, 16, 6 + d, C_FUR_M)      # 前爪抓上边缘
-    c.rect(14, 2, 16, 3, C_WHITE)
-    c.rect(19, 2, 21, 6 - d, C_FUR_M)
-    c.rect(19, 2, 21, 3, C_WHITE)
-    body(c, 16, 21, 6, 6)                   # 身体下垂
-    c.pline([(16, 27), (16, 29), (14 + d, 31)], 3, C_FUR_M)
-    ears(c, HEAD_CX, HEAD_CY)
-    head(c, HEAD_CX, HEAD_CY)
-    face_open(c, HEAD_CX, HEAD_CY)
-    return c.out()
-
-
-# ---------------- 眼球层（独立，坐标基于 HEAD_CX/CY）----------------
 def eyes_open():
-    c = Cv()
-    for x0 in (13, 19):
-        c.rect(x0, 9, x0 + 2, 12, C_PUPIL)
-        c.rect(x0, 9, x0, 9, C_HI)
+    c=Cv()
+    for x in (12,20):
+        c.rect(x,10,x+1,13,C_PUPIL)
+        c.rect(x,10,x,10,C_HI)
     return c.im
 
 
 def eyes_pet():
-    """眯眼弯月 ∩"""
-    c = Cv()
-    for x0 in (12, 18):
-        c.rect(x0 + 1, 10, x0 + 3, 10, C_PUPIL)
-        c.rect(x0, 11, x0, 11, C_PUPIL)
-        c.rect(x0 + 4, 11, x0 + 4, 11, C_PUPIL)
+    c=Cv()
+    for x in (12,20):
+        c.rect(x-1,11,x+2,11,C_PUPIL)
+        c.rect(x,10,x+1,10,C_PUPIL)
+        c.rect(x-1,12,x-1,12,C_PUPIL)
+        c.rect(x+2,12,x+2,12,C_PUPIL)
     return c.im
 
 
 def eyes_blink():
-    c = Cv()
-    for x0 in (12, 18):
-        c.rect(x0, 11, x0 + 4, 11, C_PUPIL)
+    c=Cv()
+    for x in (12,20):
+        c.rect(x,10,x+3,13,C_FUR_M)
+        c.rect(x,12,x+3,12,C_PUPIL)
     return c.im
 
 
 def eyes_half():
-    """半闭（v0.1.57 眨眼中间帧）：眼睑下压盖住眼白上 2px（y9-10），瞳孔只露下半 2px（y11-12）。
-    坐标与 eyes_open/eyes_blink 一致，基于 HEAD_CX=17/HEAD_CY=11 的眼球锚区。"""
-    c = Cv()
-    for x0 in (12, 18):
-        # 眼睑：毛色盖住眼白上半 → 视觉上眼皮压下来
-        c.rect(x0, 9, x0 + 4, 10, C_FUR_M)
-        # 眼睑下缘：半闭细缝上沿的阴影线
-        c.rect(x0, 10, x0 + 4, 10, C_OUTLINE)
-    for x0 in (13, 19):
-        # 露出的下半瞳孔 + 高光
-        c.rect(x0, 11, x0 + 2, 12, C_PUPIL)
-        c.rect(x0, 11, x0, 11, C_HI)
+    c=Cv()
+    for x in (12,20):
+        c.rect(x,10,x+3,11,C_FUR_M)
+        c.rect(x,12,x+3,12,C_PUPIL)
+        c.rect(x+1,13,x+2,13,C_PUPIL)
     return c.im
 
 
 def eyes_scared():
-    c = Cv()
-    for x0 in (12, 18):
-        c.rect(x0 + 1, 8, x0 + 3, 13, C_PUPIL)
-        c.rect(x0 + 1, 8, x0 + 1, 8, C_HI)
+    c=Cv()
+    for x in (12,20):
+        c.rect(x,10,x+1,13,C_PUPIL)
     return c.im
 
 
@@ -468,7 +336,7 @@ STATES = [
     ("idle",  st_idle,  4,  "eyes_open"),   # v0.1.57：idle 2→4fps（4 帧呼吸循环更顺滑）
     ("walk",  st_walk,  8,  "eyes_open"),
     ("sit",   st_sit,   4,  "eyes_open"),   # v0.1.57：sit 2→4fps
-    ("sleep", st_sleep, 1,  None),
+    ("sleep", st_sleep, 0,  None),
     ("pet",   st_pet,   10, "eyes_pet"),
     ("drag",  st_drag,  6,  "eyes_scared"),
     ("fall",  st_fall,  12, "eyes_scared"),
@@ -501,6 +369,7 @@ STATE_EYE = {
 
 def main():
     os.makedirs(OUT, exist_ok=True)
+    os.makedirs(PREVIEW_OUT, exist_ok=True)
     sheets = {}
 
     for name, fn, fps, _ in STATES:
@@ -516,12 +385,6 @@ def main():
     make_shadow().save(os.path.join(OUT, "neko_shadow.png"))
     print(f"  眼球分层 x{len(eye_imgs)} + 阴影")
 
-    t32 = tray_32()
-    t32.save(os.path.join(OUT, "tray.ico"),
-             sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
-    print("  tray.ico (16/32/48/256)")
-
-    make_paw_assets()
     make_preview(sheets, eye_imgs)
     make_gif(sheets, eye_imgs)
 
@@ -531,7 +394,7 @@ def main():
 
 
 def make_preview(sheets, eye_imgs):
-    """8 行 x 4 列，每格放大 3 倍，左侧标注状态名，已叠加对应眼球层"""
+    """9 行 x 4 列，每格放大 3 倍，左侧标注状态名，已叠加对应眼球层"""
     S = 96
     PAD, LBL = 6, 86
     w = LBL + NF * S + (NF - 1) * PAD + 20
@@ -550,16 +413,16 @@ def make_preview(sheets, eye_imgs):
                 composed.alpha_composite(eye_imgs[eye_key])
             x = LBL + i * (S + PAD)
             bg.alpha_composite(composed.resize((S, S), Image.NEAREST), (x, y))
-    bg.save(os.path.join(OUT, "preview.png"))
+    bg.save(os.path.join(PREVIEW_OUT, "preview.png"))
     print(f"  preview.png ({w}x{h})")
 
 
 def make_gif(sheets, eye_imgs):
-    """8 个状态依次播放，每状态循环 2 次，放大 3 倍，已叠加眼球层"""
+    """9 个状态依次播放，每状态循环 2 次，放大 3 倍，已叠加眼球层"""
     S = 96
     frames, durations = [], []
     for name, _, fps, _ in STATES:
-        delay = max(int(1000 / fps), 40)
+        delay = max(int(1000 / fps), 40) if fps else 500
         imgs = sheets[name][0]
         eye_key = STATE_EYE[name]
         for _ in range(2):
@@ -571,7 +434,7 @@ def make_gif(sheets, eye_imgs):
                 bg.alpha_composite(composed.resize((S, S), Image.NEAREST), (0, 0))
                 frames.append(bg.convert("RGB"))
                 durations.append(delay)
-    frames[0].save(os.path.join(OUT, "preview.gif"), save_all=True,
+    frames[0].save(os.path.join(PREVIEW_OUT, "preview.gif"), save_all=True,
                    append_images=frames[1:], duration=durations,
                    loop=0, disposal=2)
     print(f"  preview.gif ({len(frames)} 帧)")
