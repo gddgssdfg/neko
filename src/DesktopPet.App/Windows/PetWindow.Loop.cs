@@ -73,6 +73,7 @@ public sealed partial class PetWindow : Window
     private void UpdateWalk(TimeSpan delta)
     {
         var vx = _stateMachine.WalkVelocityX;   // px/s，含方向；非 Walk 时为 0
+        _renderer.SetWalkDirection(vx);
         if (vx == 0)
         {
             _walkTravel = 0;                    // 离开 Walk → 本次走动统计归零
@@ -99,6 +100,7 @@ public sealed partial class PetWindow : Window
             if (!_walkReversed && _walkTravel < Width * 0.5)
             {
                 _stateMachine.ReverseWalk();
+                _renderer.SetWalkDirection(_stateMachine.WalkVelocityX);
                 _walkReversed = true;
                 var flipped = Left + _stateMachine.WalkVelocityX * delta.TotalSeconds;
                 if (flipped > minLeft && flipped < maxLeft)   // 反侧有空间 → 走反方向

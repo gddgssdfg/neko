@@ -14,23 +14,28 @@ public sealed class FrameAnimator
 
     public SpriteState? State => _state;
     public int FrameIndex => _frame;
+    public bool Loop { get; set; } = true;
+    public bool IsComplete { get; private set; }
 
     /// <summary>当前状态的播放倍率（加速/减速）</summary>
     public double Playback { get; set; } = 1.0;
 
     /// <summary>切换状态并重置帧计时</summary>
-    public void SetState(SpriteState? state)
+    public void SetState(SpriteState? state) => SetState(state, restart: false);
+
+    public void SetState(SpriteState? state, bool restart)
     {
-        if (_state == state) return;
+        if (_state == state && !restart) return;
         _state = state;
         _frame = 0;
         _accumulator = 0;
+        IsComplete = false;
     }
 
     /// <summary>推进一帧。delta 秒。返回是否需要重绘。</summary>
     public bool Tick(TimeSpan delta)
     {
-        if (_state is null || _state.Frames.Length == 0) return false;
+        if (_state is null || _state.Frames.Length == 0 || IsComplete) return false;
 
         var fps = _state.Fps * Playback;
         if (!double.IsFinite(fps) || fps <= 0 || delta <= TimeSpan.Zero) return false;
@@ -42,6 +47,14 @@ public sealed class FrameAnimator
         var wholeFrames = Math.Floor(_accumulator);
         if (wholeFrames < 1) return false;
         _accumulator -= wholeFrames;
+        if (!Loop)
+        {
+            var previous = _frame;
+            var remaining = _state.Frames.Length - 1 - _frame;
+            if (wholeFrames > remaining) IsComplete = true;
+            _frame += (int)Math.Min(wholeFrames, remaining);
+            return _frame != previous || IsComplete;
+        }
         var step = (int)(wholeFrames % _state.Frames.Length);
         if (step == 0) return false;
         _frame = (_frame + step) % _state.Frames.Length;

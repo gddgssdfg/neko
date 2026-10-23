@@ -44,7 +44,7 @@ public sealed partial class PetWindow : Window
         // 在飞行半路把猫吸到边缘，破坏抛物线轨迹。
         // v0.1.91：走路中（Walk）同样跳过——走路是主动位移，撞边由 UpdateWalk 处理成"停住+回 Idle"，
         // 不能让吸附判定的 Climb 抢走状态（否则一步三摇地往墙上爬）。停稳回 Idle 后吸附才重新生效。
-        if (_dragging || _moveAnimating || _fallTimer is not null || _stateMachine.Current is PetState.Walk)
+        if (_dragging || _moveAnimating || _fallTimer is not null || _renderer.IsLanding || _stateMachine.Current is PetState.Walk)
         {
             if (_dragging && _edgeAttached) DetachEdge();
             return;
@@ -117,8 +117,10 @@ public sealed partial class PetWindow : Window
     /// </summary>
     private void StartFall(Vector initialVelocity)
     {
+        if (_isDisposed) return;
         // 取消上一次未结束的弹跳（同一时刻只应有一个落体物理模拟在改 Left/Top）
         if (_fallTimer is not null) { _fallTimer.Stop(); _fallTimer = null; }
+        _stateMachine.Play(DesktopPet.Core.PetState.Fall);
 
         var work = GetWorkArea();
         var targetBottom = work.Y + work.Height - SpriteAtlas.FrameH * _config.Scale;
@@ -182,6 +184,8 @@ public sealed partial class PetWindow : Window
                     _fallTimer?.Stop();
                     _fallTimer = null;
                     _stateMachine.Play(DesktopPet.Core.PetState.Idle);
+                    _renderer.PlayLanding();
+                    _eventBus.Emit(DesktopPet.Core.PetEvents.PetLanded, null);
                     SavePosition(); // v0.1.26 位置记忆：落定后的最终位置
                 }
             }

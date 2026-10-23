@@ -12,6 +12,9 @@ public enum SkinLayout
     Files,
 }
 
+/// <summary>原画方向。未声明时不随行走方向镜像，兼容旧皮肤。</summary>
+public enum SkinFacing { None, Left, Right }
+
 /// <summary>皮肤中的一个动画状态（来自 skin.json）。</summary>
 public sealed class SkinState
 {
@@ -23,7 +26,13 @@ public sealed class SkinState
 
     /// <summary>叠加的眼球层 key（<c>neko_&lt;eyeLayer&gt;.png</c>）；null 表示不叠加（如 sleep，或眼睛已画在身体里）。</summary>
     public string? EyeLayer { get; init; }
+
+    /// <summary>每帧眼层锚点相对原画的平移（源像素）；缺省不偏移。</summary>
+    public IReadOnlyList<SkinEyeOffset> EyeOffsets { get; init; } = Array.Empty<SkinEyeOffset>();
+    public SkinFacing Facing { get; init; }
 }
+
+public readonly record struct SkinEyeOffset(double X, double Y);
 
 /// <summary>
 /// 单个皮肤的元数据（由 <c>neko-assets/&lt;skinId&gt;/skin.json</c> 解析而来）。
@@ -289,7 +298,29 @@ public static class SkinRegistry
                     if (fps < 0 || !double.IsFinite(fps)) throw new FormatException($"状态 '{name}' 的 fps 必须为有限非负数");
                     var eye = GetString(s, "eyeLayer");
                     if (!string.IsNullOrWhiteSpace(eye) && !IsAssetName(eye)) throw new FormatException($"非法眼层引用 '{eye}'");
-                    states.Add(new SkinState { Name = name!, Fps = fps, EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye });
+                    var eyeOffsets = new List<SkinEyeOffset>();
+                    if (s.TryGetProperty("eyeOffsets", out var offsets))
+                    {
+                        if (offsets.ValueKind != JsonValueKind.Array || offsets.GetArrayLength() != frames)
+                            throw new FormatException($"状态 '{name}' 的 eyeOffsets 必须与 frames 数量一致");
+                        foreach (var offset in offsets.EnumerateArray())
+                        {
+                            if (offset.ValueKind != JsonValueKind.Object) throw new FormatException("eyeOffsets 每项必须为对象");
+                            var x = GetDouble(offset, "x", double.NaN);
+                            var y = GetDouble(offset, "y", double.NaN);
+                            if (!double.IsFinite(x) || !double.IsFinite(y) || Math.Abs(x) > frameWidth || Math.Abs(y) > frameHeight)
+                                throw new FormatException($"状态 '{name}' 的眼层偏移必须为画幅范围内的有限数字");
+                            eyeOffsets.Add(new SkinEyeOffset(x, y));
+                        }
+                    }
+                    var facing = GetString(s, "facing")?.ToLowerInvariant() switch
+                    {
+                        null or "none" => SkinFacing.None,
+                        "left" => SkinFacing.Left,
+                        "right" => SkinFacing.Right,
+                        var invalid => throw new FormatException($"状态 '{name}' 的 facing '{invalid}' 无效，应为 left/right/none"),
+                    };
+                    states.Add(new SkinState { Name = name!, Fps = fps, EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye, EyeOffsets = eyeOffsets, Facing = facing });
                 }
             }
             if (states.Count == 0) return null;   // 没有可用状态的皮肤不可用

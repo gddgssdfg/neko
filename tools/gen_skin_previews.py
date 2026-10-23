@@ -59,7 +59,9 @@ def pick_idle_frame(skin_dir: Path, meta: dict) -> Image.Image | None:
                     with Image.open(eye_file) as source:
                         eyes = source.convert("RGBA")
                     if eyes.size == frame.size:
-                        frame.alpha_composite(eyes)
+                        offsets = state.get("eyeOffsets", [])
+                        anchor = offsets[0] if offsets else {"x": 0, "y": 0}
+                        frame.alpha_composite(eyes, (round(anchor.get("x", 0)), round(anchor.get("y", 0))))
                 return frame
     return None
 

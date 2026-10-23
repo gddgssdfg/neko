@@ -103,7 +103,6 @@ public sealed partial class PetWindow : Window
 
         // 落体物理：初速 = 释放时速度，重力加速度，触底反弹
         StartFall(_dragVelocity);
-        _eventBus.Emit(DesktopPet.Core.PetEvents.PetLanded, null);
     }
 
 /// <summary>键鼠反应（v0.1.40 BongoCat 键盘映射借鉴 + v0.1.47 打字互动）：打字/点击时猫短暂"瞪眼"，

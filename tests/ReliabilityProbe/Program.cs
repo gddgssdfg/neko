@@ -21,6 +21,7 @@ internal static partial class Program
         Paths.EnsureCreated();
         Log.Initialize("debug", Path.Combine(root, "logs"));
         RunExtensionChecks(root);
+        RunAnimationChecks();
         Check("scheduler does not run a task scheduled forty days in the future", () =>
         {
             using var scheduler = new SchedulerImpl();
@@ -213,6 +214,8 @@ internal static partial class Program
         });
         if (args.Length >= 2 && args[0] == "--capture")
             Check("render settings pages in both themes", () => Capture(Path.GetFullPath(args[1]), args.Length >= 3 ? args[2] : "amber"));
+        if (args.Length >= 2 && args[0] == "--capture-animation")
+            Check("render all native action frames through the production renderer", () => CaptureAnimations(Path.GetFullPath(args[1])));
         Console.WriteLine(_failed == 0 ? "=== ALL PASSED ===" : $"=== FAILED: {_failed} ===");
         return _failed == 0 ? 0 : 1;
     }

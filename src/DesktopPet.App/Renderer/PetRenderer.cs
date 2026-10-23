@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using DesktopPet.Core;
+using DesktopPet.App.Core;
 
 namespace DesktopPet.App.Renderer;
 
@@ -14,6 +15,8 @@ public sealed class PetRenderer
     private SpriteAtlas _atlas;   // v0.1.48：去掉 readonly（支持 SetAtlas 热切换皮肤）
     private readonly FrameAnimator _animator = new();
     private readonly Random _rng = new();
+    private bool _landing;
+    private bool _walkFacingRight;
 
     // 眼球偏移（眼神追踪）
     private Vector _eyeOffset;
@@ -48,10 +51,22 @@ public sealed class PetRenderer
     /// <summary>v0.1.57：眨眼 3 步序列 open → half(80ms) → closed(60ms) → open；总 ~150ms（与原 100ms 持平/略长，Phase 内平滑）
     /// HasTransientVisual 揭示"瞬时活动"——宿主据此保持主循环高频 tick（位移/拖拽/打字外加 blink/flash/speech）。</summary>
     public bool HasTransientVisual =>
+        _landing ||
         _blinkPhase != BlinkPhase.Open ||
         _clockMs < _typingUntilMs ||
         _clockMs < _flashEyesUntilMs ||
         _speechTimer > 0;
+
+    public bool IsLanding => _landing;
+
+    /// <summary>原画行走朝左；向右移动时整套身体、眼层和遮罩一并镜像。</summary>
+    public void SetWalkDirection(double velocityX)
+    {
+        var right = velocityX > 0;
+        if (_walkFacingRight == right) return;
+        _walkFacingRight = right;
+        if (_animator.State?.Name == "walk") RenderInvalidated?.Invoke();
+    }
 
     // v0.1.58(任务5)：眨眼相位时长（毫秒）。锚定 _blinkStartMs：Half 到 start+HalfMs、Open 到 start+TotalMs。
     // 名义值 80/60ms（总 140ms）；活动期 tick 50ms 量化后实际显示约 Half 100ms + Closed 50ms = 150ms。
@@ -71,6 +86,7 @@ public sealed class PetRenderer
     {
         _atlas = atlas;
         _socketBrushCache.Clear();
+        _landing = false;
         _animator.SetState(null);
         RenderInvalidated?.Invoke();
     }
@@ -80,8 +96,21 @@ public sealed class PetRenderer
 
     public void Play(PetState state, bool loop = true)
     {
+        _landing = false;
         var name = state.ToString().ToLowerInvariant();
-        _animator.SetState(_atlas.States.GetValueOrDefault(name));
+        var restart = !loop || _animator.IsComplete || _animator.Loop != loop;
+        _animator.Loop = loop;
+        _animator.SetState(_atlas.States.GetValueOrDefault(name), restart);
+        RenderInvalidated?.Invoke();
+    }
+
+    /// <summary>皮肤可选的落地缓冲动作，播放一次后回待机；旧皮肤保持原行为。</summary>
+    public void PlayLanding()
+    {
+        if (!_atlas.States.TryGetValue("land", out var state)) return;
+        _landing = true;
+        _animator.Loop = false;
+        _animator.SetState(state, restart: true);
         RenderInvalidated?.Invoke();
     }
 
@@ -120,6 +149,11 @@ public sealed class PetRenderer
 
         _animator.Playback = _moodIntensity;
         var changed = _animator.Tick(delta);
+        if (_landing && _animator.IsComplete)
+        {
+            Play(PetState.Idle);
+            changed = true;
+        }
 
         // v0.1.47：打字活跃检测 → 眨眼更频繁 + 身体呼吸晃动（看键盘效果在 Draw 里）
         bool typing = _clockMs < _typingUntilMs;
@@ -196,6 +230,13 @@ public sealed class PetRenderer
     {
         var state = _animator.State;
         if (state is null) return;
+        var mirror = state.Name == "walk" && state.Facing switch
+        {
+            SkinFacing.Left => _walkFacingRight,
+            SkinFacing.Right => !_walkFacingRight,
+            _ => false,
+        };
+        if (mirror) dc.PushTransform(new MatrixTransform(-1, 0, 0, 1, SpriteAtlas.FrameW * Scale, 0));
 
         var frame = state.Frames[_animator.FrameIndex];
         // v0.1.47：身体 Y 偏移（打字时呼吸/晃动感）
@@ -238,9 +279,15 @@ public sealed class PetRenderer
             }
             if (eye is not null && eyeKey is not null)
             {
+                // Anchor motion follows the head, while gaze remains relative to that anchor.
+                // Apply the transform to the layer, clipping and socket mask together.
+                var anchor = state.EyeOffsets.Count > _animator.FrameIndex ? state.EyeOffsets[_animator.FrameIndex] : default;
+                dc.PushTransform(new TranslateTransform(anchor.X * SpriteAtlas.FrameW * Scale / eye.PixelWidth,
+                    _breathOffset + anchor.Y * SpriteAtlas.FrameH * Scale / eye.PixelHeight));
                 // 眼神偏移：眼球层整体平移；v0.1.47 打字时眼球下移（看键盘）
                 double eyeDown = (_clockMs < _typingUntilMs) ? _eyeLookDownOffset : 0;
                 var offset = ScreenEyeOffset(eyeKey, eyeDown);
+                if (mirror) offset = new Vector(-offset.X, offset.Y);
                 var eyeRect = new Rect(offset.X, offset.Y, SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale);
 
                 // v0.1.88：用「眼眶」（该状态的闭合层轮廓）当遮罩，把平移后的瞳孔**裁在眼内**。
@@ -263,6 +310,7 @@ public sealed class PetRenderer
                 dc.DrawImage(eye, eyeRect);
                 if (socketBrush is not null) dc.Pop();
                 if (clip is not null) dc.Pop();
+                dc.Pop();
             }
         }
 
@@ -275,6 +323,7 @@ public sealed class PetRenderer
                 32 * Scale, 16 * Scale);
             dc.DrawImage(_atlas.Shadow, sh);
         }
+        if (mirror) dc.Pop();
     }
 
     /// <summary>v0.1.88：眼眶遮罩画刷缓存（key = 眼球层名 + Scale）。每帧新建画刷会拖慢渲染，故缓存并 Freeze。</summary>

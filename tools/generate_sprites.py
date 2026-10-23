@@ -9,7 +9,7 @@ Neko 像素猫雪碧图生成器
   - 画布 32x32，放大 3 倍 = 96x96 显示
   - 每状态 4 帧，横向排列成 128x32 雪碧图
   - 眼球独立分层，坐标与身体层严格对齐
-  - 头部中心统一固定在 (13, 11)，保证眼球层零偏移对齐
+  - 基础头部中心 (13, 11)，逐帧 eyeOffsets 同时驱动头部与眼球层
   - sleep 状态自带闭眼，不叠加眼球层
   - 纯硬边像素，无抗锯齿
 
@@ -34,15 +34,19 @@ Neko 像素猫雪碧图生成器
 """
 
 import os
+import json
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
 
 SIZE = 32
 NF = 4
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PREVIEW_OUT = os.path.join(ROOT, "_eval", "pixel-b01-redraw")
+PREVIEW_OUT = os.path.join(ROOT, "_eval", "pixel-b01-actions")
 OUT = os.path.join(ROOT, "neko-assets", "pixel")   # v0.1.74：像素皮肤迁入 neko-assets/pixel/（与 skin.json 同目录）
 
-# 头部锚点：所有需要叠加眼球层的状态都必须用这个坐标
+# 基础眼层锚点。动作的逐帧偏移从 skin.json 读取，身体头部与眼层共用。
+with open(os.path.join(OUT, "skin.json"), encoding="utf-8") as manifest_file:
+    META = json.load(manifest_file)
+STATE_META = {state["name"]: state for state in META["states"]}
 HEAD_CX, HEAD_CY = 13, 11
 
 # ---------------- 调色板（严格 12 色）----------------
@@ -150,56 +154,159 @@ def paw(c,x,y):
     c.rect(x+1,y,x+1,y,C_WSH)
 
 
-def pose(f, state):
+def head_at(c, state, f, expression="open"):
+    offsets = STATE_META[state].get("eyeOffsets", [])
+    anchor = offsets[f] if offsets else {"x":0,"y":0}
+    cat_head(c, expression, HEAD_CX+anchor["x"], HEAD_CY+anchor["y"])
+
+
+def limb(c, start, end, far=False):
+    # Stop the square brush above the toe baseline so its cap cannot cross the frame margin.
+    c.pline([start,(end[0],end[1]-1)],3,C_FUR_D if far else C_FUR_M)
+    x,y=end
+    c.rect(x-1,y-1,x+2,y,C_WSH if far else C_WHITE)
+    c.rect(x,y,x,y,C_FUR_D if far else C_WSH)
+
+
+def raised_tail(c, f):
+    tip=[0,1,0,-1][f]
+    c.pline([(22,24),(26,22),(28,18),(27,15+tip),(25,14+tip)],3,C_FUR_M)
+    c.rect(26,19,28,20,C_FUR_D)
+    c.rect(24,13+tip,26,15+tip,C_WHITE)
+
+
+def st_idle(f):
     c=Cv()
-    bob=[0,-1,0,1][f]
-    curled_tail(c,f,26)
-    torso(c,23+(bob if state in ("idle","pet") else 0))
-    if state=="walk":
-        swing=[-1,0,1,0][f]
-        paw(c,8+swing,28-(f==1)*2)
-        paw(c,16-swing,28-(f==3)*2)
-    elif state in ("drag","fall"):
-        spread=[0,1,0,-1][f]
-        paw(c,5-spread,25)
-        paw(c,19+spread,25)
-        c.rect(6-spread,24,7-spread,24,C_PAW)
-        c.rect(20+spread,24,21+spread,24,C_PAW)
-    elif state=="climb":
-        paw(c,3,17+[0,2,4,2][f])
-        paw(c,23,21-[0,2,4,2][f])
-        paw(c,9,28-(f%2))
-        paw(c,16,27+(f%2))
-    elif state=="work":
-        paw(c,7,28-(f%2)*3)
-        paw(c,17,25+(f%2)*3)
-    else:
-        paw(c,8,28)
-        paw(c,15,28)
-    cat_head(c,"pet" if state=="pet" else "scared" if state in ("drag","fall") else "open")
-    if state=="pet":
-        c.rect(6,14,7,14,C_PAW)
-        c.rect(19,14,20,14,C_PAW)
+    curled_tail(c,f)
+    torso(c,23+[0,0,1,0][f])
+    paw(c,8,28)
+    paw(c,15,28)
+    head_at(c,"idle",f)
     return c.out()
 
 
-def st_idle(f): return pose(f,"idle")
-def st_walk(f): return pose(f,"walk")
-def st_sit(f): return pose((f+1)%4,"sit")
-def st_pet(f): return pose(f,"pet")
-def st_drag(f): return pose(f,"drag")
-def st_fall(f): return pose((f+1)%4,"fall")
-def st_climb(f): return pose(f,"climb")
-def st_work(f): return pose(f,"work")
+def st_walk(f):
+    """Four-beat gait: rear pair and front pair alternate support and lift."""
+    c=Cv()
+    raised_tail(c,f)
+    stride=[-2,0,2,0][f]
+    limb(c,(13,23),(13-stride,27+(f==1)),far=True)
+    limb(c,(22,23),(22+stride,27+(f==3)),far=True)
+    c.ell(17,22+(f%2),10,4,C_FUR_M)
+    c.ell(17,24+(f%2),6,2,C_WHITE)
+    c.rect(23,21+(f%2),25,22+(f%2),C_FUR_D)
+    limb(c,(9,23),(9+stride,[29,27,27,29][f]))
+    limb(c,(23,23),(23-stride,[27,29,29,27][f]))
+    head_at(c,"walk",f)
+    return c.out()
+
+
+def st_sit(f):
+    c=Cv()
+    curled_tail(c,(f+1)%4)
+    c.ell(13,25,9,3,C_FUR_M)
+    torso(c,24)
+    paw(c,8,28)
+    paw(c,15,28)
+    head_at(c,"sit",f)
+    return c.out()
+
+
+def st_pet(f):
+    """Nuzzle left/right and knead with alternating front mittens."""
+    c=Cv()
+    curled_tail(c,(f*2)%4)
+    torso(c,24 if f==1 else 23)
+    head_at(c,"pet",f,"pet")
+    limb(c,(9,23),(8,28-(f%2)*2))
+    limb(c,(17,23),(17,26+(f%2)*2))
+    anchor=STATE_META["pet"]["eyeOffsets"][f]
+    for x in (6,19):
+        c.rect(x+anchor["x"],14+anchor["y"],x+1+anchor["x"],14+anchor["y"],C_PAW)
+    return c.out()
+
+
+def st_drag(f):
+    """Suspended body: narrow torso, dangling paws and a loose lowered tail."""
+    c=Cv()
+    sway=[0,-1,0,1][f]
+    c.pline([(20,23),(25+sway,25),(28,27),(26+sway,28)],3,C_FUR_M)
+    c.rect(26,26,28,27,C_FUR_D)
+    c.ell(13+sway,23,6,4,C_FUR_M)
+    c.ell(13+sway,23,3,4,C_WHITE)
+    limb(c,(9+sway,22),(7+sway,27+(f%2)))
+    limb(c,(17+sway,22),(20+sway,28-(f%2)))
+    limb(c,(11+sway,25),(10+sway,29))
+    limb(c,(16+sway,25),(17+sway,29))
+    head_at(c,"drag",f,"scared")
+    return c.out()
+
+
+def st_fall(f):
+    """Open paws brace separately from the suspended drag silhouette."""
+    c=Cv()
+    raised_tail(c,(f+2)%4)
+    c.ell(14,22,7,4,C_FUR_M)
+    c.ell(14,23,4,3,C_WHITE)
+    spread=[0,1,0,-1][f]
+    limb(c,(9,21),(5-spread,23))
+    limb(c,(18,21),(23+spread,23))
+    limb(c,(10,25),(8-spread,28))
+    limb(c,(17,25),(19+spread,28))
+    head_at(c,"fall",f,"scared")
+    c.rect(4-spread,22,5-spread,22,C_PAW)
+    c.rect(22+spread,22,23+spread,22,C_PAW)
+    return c.out()
+
+
+def st_climb(f):
+    """Alternating reaching forepaws and pushing back paws."""
+    c=Cv()
+    c.pline([(20,25),(26,26),(28,23),(27,21)],3,C_FUR_M)
+    c.rect(26,22,28,23,C_FUR_D)
+    torso(c,23)
+    limb(c,(10,24),(8,[29,27,26,28][f]))
+    limb(c,(18,24),(21,[26,28,29,27][f]))
+    head_at(c,"climb",f)
+    limb(c,(6,20),(3,[10,13,17,13][f]))
+    limb(c,(21,20),(25,[17,13,10,13][f]))
+    return c.out()
+
+
+def st_work(f):
+    """Lower chest and alternating downward taps, with distinct release frames."""
+    c=Cv()
+    curled_tail(c,f)
+    c.ell(14,24,9,4,C_FUR_M)
+    c.ell(14,24,4,3,C_WHITE)
+    head_at(c,"work",f)
+    limb(c,(8,22),(7,[29,27,26,28][f]))
+    limb(c,(18,22),(19,[26,28,29,27][f]))
+    return c.out()
+
+
+def st_land(f):
+    """Contact -> compress -> rebound -> settled; played once by the renderer."""
+    if f==3:
+        return st_idle(0)  # Exact resting pose avoids a pop when the one-shot finishes.
+    c=Cv()
+    curled_tail(c,[1,0,2,0][f])
+    y=[25,24,22,23][f]
+    c.ell(13,y,[10,9,7,8][f],[3,4,5,5][f],C_FUR_M)
+    c.ell(13,y,4,3,C_WHITE)
+    paw(c,[7,8,9,8][f],28)
+    paw(c,[17,16,15,15][f],28)
+    head_at(c,"land",f)
+    return c.out()
 
 
 def st_sleep(f):
     c=Cv()
-    c.ell(18,24,10,5,C_FUR_M)
-    c.rect(22,20,23,22,C_FUR_D)
-    c.rect(26,23,28,24,C_FUR_D)
+    c.ell(18,25,10,4,C_FUR_M)
+    c.rect(21,22,22,23,C_FUR_D)
+    c.rect(25,24,27,25,C_FUR_D)
     cat_head(c,"sleep",12,20)
-    c.pline([(23,28),(27,27),(28,24),(26,23)],3,C_FUR_M)
+    c.pline([(22,28),(27,27),(28,24),(26,23)],3,C_FUR_M)
     c.rect(25,22,27,23,C_WHITE)
     return c.out()
 
@@ -330,17 +437,13 @@ def strip(frames):
     return im
 
 
-STATES = [
-    ("idle",  st_idle,  4,  "eyes_open"),   # v0.1.57：idle 2→4fps（4 帧呼吸循环更顺滑）
-    ("walk",  st_walk,  8,  "eyes_open"),
-    ("sit",   st_sit,   4,  "eyes_open"),   # v0.1.57：sit 2→4fps
-    ("sleep", st_sleep, 0,  None),
-    ("pet",   st_pet,   10, "eyes_pet"),
-    ("drag",  st_drag,  6,  "eyes_scared"),
-    ("fall",  st_fall,  12, "eyes_scared"),
-    ("climb", st_climb, 4,  "eyes_open"),
-    ("work",  st_work,  2,  "eyes_open"),   # v0.1.48：BongoCat 化——猫伏低前探+前爪伸向下方键盘
-]
+STATE_FUNCTIONS = {
+    "idle": st_idle, "walk": st_walk, "sit": st_sit, "sleep": st_sleep,
+    "pet": st_pet, "drag": st_drag, "fall": st_fall, "climb": st_climb,
+    "work": st_work, "land": st_land,
+}
+STATES = [(state["name"], STATE_FUNCTIONS[state["name"]], state["fps"], state.get("eyeLayer"))
+          for state in META["states"]]
 
 
 EYE_LAYERS = {
@@ -352,17 +455,18 @@ EYE_LAYERS = {
 }
 
 # 每个状态对应的眼球层（None 表示不叠加，如 sleep 自带闭眼）
-STATE_EYE = {
-    "idle":  "eyes_open",
-    "walk":  "eyes_open",
-    "sit":   "eyes_open",
-    "sleep": None,
-    "pet":   "eyes_pet",
-    "drag":  "eyes_scared",
-    "fall":  "eyes_scared",
-    "climb": "eyes_open",
-    "work":  "eyes_open",   # v0.1.48：工作模式睁眼看键盘
-}
+STATE_EYE = {state["name"]: state.get("eyeLayer") for state in META["states"]}
+
+
+def composed_frame(body_frame, eye_imgs, name, index):
+    composed=body_frame.copy()
+    eye_key=STATE_EYE[name]
+    if eye_key:
+        offsets=STATE_META[name].get("eyeOffsets", [])
+        anchor=offsets[index] if offsets else {"x":0,"y":0}
+        composed.alpha_composite(eye_imgs[eye_key],(anchor["x"],anchor["y"]))
+    return composed
+
 
 
 def main():
@@ -392,7 +496,7 @@ def main():
 
 
 def make_preview(sheets, eye_imgs):
-    """9 行 x 4 列，每格放大 3 倍，左侧标注状态名，已叠加对应眼球层"""
+    """状态数行 x 4 列，每格放大 3 倍，左侧标注状态名，已叠加对应眼球层"""
     S = 96
     PAD, LBL = 6, 86
     w = LBL + NF * S + (NF - 1) * PAD + 20
@@ -406,9 +510,7 @@ def make_preview(sheets, eye_imgs):
         frames = sheets[name][0]
         eye_key = STATE_EYE[name]
         for i, f in enumerate(frames):
-            composed = f.copy()
-            if eye_key:
-                composed.alpha_composite(eye_imgs[eye_key])
+            composed = composed_frame(f, eye_imgs, name, i)
             x = LBL + i * (S + PAD)
             bg.alpha_composite(composed.resize((S, S), Image.NEAREST), (x, y))
     bg.save(os.path.join(PREVIEW_OUT, "preview.png"))
@@ -416,19 +518,17 @@ def make_preview(sheets, eye_imgs):
 
 
 def make_gif(sheets, eye_imgs):
-    """9 个状态依次播放，每状态循环 2 次，放大 3 倍，已叠加眼球层"""
+    """所有状态依次播放，每状态循环 2 次，放大 3 倍，已叠加眼球层"""
     S = 96
     frames, durations = [], []
     for name, _, fps, _ in STATES:
         delay = max(int(1000 / fps), 40) if fps else 500
         imgs = sheets[name][0]
         eye_key = STATE_EYE[name]
-        for _ in range(2):
-            for im in imgs:
+        for _ in range(1 if name == "land" else 2):
+            for index, im in enumerate(imgs):
                 bg = Image.new("RGBA", (S, S), (0xE8, 0xE6, 0xE1, 255))
-                composed = im.copy()
-                if eye_key:
-                    composed.alpha_composite(eye_imgs[eye_key])
+                composed = composed_frame(im, eye_imgs, name, index)
                 bg.alpha_composite(composed.resize((S, S), Image.NEAREST), (0, 0))
                 frames.append(bg.convert("RGB"))
                 durations.append(delay)

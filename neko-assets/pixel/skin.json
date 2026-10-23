@@ -8,14 +8,24 @@
   "hasShadow": true,
   "eyeLayers": ["eyes_open", "eyes_pet", "eyes_blink", "eyes_half", "eyes_scared"],
   "states": [
-    { "name": "idle",  "fps": 4,  "eyeLayer": "eyes_open" },
-    { "name": "walk",  "fps": 8,  "eyeLayer": "eyes_open" },
-    { "name": "sit",   "fps": 4,  "eyeLayer": "eyes_open" },
-    { "name": "sleep", "fps": 0,  "eyeLayer": null },
-    { "name": "pet",   "fps": 10, "eyeLayer": "eyes_pet" },
-    { "name": "drag",  "fps": 6,  "eyeLayer": "eyes_scared" },
-    { "name": "fall",  "fps": 12, "eyeLayer": "eyes_scared" },
-    { "name": "climb", "fps": 4,  "eyeLayer": "eyes_open" },
-    { "name": "work",  "fps": 2,  "eyeLayer": "eyes_open" }
+    {"name": "idle", "fps": 4, "eyeLayer": "eyes_open",
+     "eyeOffsets": [{"x": 0, "y": 0}, {"x": 0, "y": 0}, {"x": 0, "y": 1}, {"x": 0, "y": 0}]},
+    {"name": "walk", "fps": 8, "eyeLayer": "eyes_open", "facing": "left",
+     "eyeOffsets": [{"x": 0, "y": 0}, {"x": 0, "y": 1}, {"x": 0, "y": 0}, {"x": 0, "y": 1}]},
+    {"name": "sit", "fps": 4, "eyeLayer": "eyes_open",
+     "eyeOffsets": [{"x": 0, "y": 1}, {"x": 0, "y": 1}, {"x": 0, "y": 0}, {"x": 0, "y": 1}]},
+    {"name": "sleep", "fps": 0, "eyeLayer": null},
+    {"name": "pet", "fps": 10, "eyeLayer": "eyes_pet",
+     "eyeOffsets": [{"x": -1, "y": 1}, {"x": 0, "y": 2}, {"x": 1, "y": 1}, {"x": 0, "y": 0}]},
+    {"name": "drag", "fps": 6, "eyeLayer": "eyes_scared",
+     "eyeOffsets": [{"x": 0, "y": 0}, {"x": -1, "y": 1}, {"x": 0, "y": 0}, {"x": 1, "y": 1}]},
+    {"name": "fall", "fps": 12, "eyeLayer": "eyes_scared",
+     "eyeOffsets": [{"x": 0, "y": 1}, {"x": 0, "y": 0}, {"x": 0, "y": 1}, {"x": 0, "y": 0}]},
+    {"name": "climb", "fps": 4, "eyeLayer": "eyes_open",
+     "eyeOffsets": [{"x": 0, "y": 1}, {"x": 0, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 2}]},
+    {"name": "work", "fps": 2, "eyeLayer": "eyes_open",
+     "eyeOffsets": [{"x": 0, "y": 1}, {"x": 0, "y": 2}, {"x": 0, "y": 1}, {"x": 0, "y": 2}]},
+    {"name": "land", "fps": 12, "eyeLayer": "eyes_open",
+     "eyeOffsets": [{"x": 0, "y": 2}, {"x": 0, "y": 1}, {"x": 0, "y": -1}, {"x": 0, "y": 0}]}
   ]
 }

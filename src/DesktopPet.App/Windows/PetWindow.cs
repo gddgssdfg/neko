@@ -427,6 +427,8 @@ public sealed partial class PetWindow : Window
         _isDisposed = true;
         _loopTimer.Stop();
         _gameTimer.Stop();
+        _fallTimer?.Stop();
+        _fallTimer = null;
         _chatScheduler?.Stop();    // v0.1.40
         _globalInput.Dispose();
         CloseRadialMenu();

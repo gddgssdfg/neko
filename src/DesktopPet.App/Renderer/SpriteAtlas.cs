@@ -33,6 +33,8 @@ public sealed class SpriteState
     public required double Fps { get; init; }
     /// <summary>此状态叠加的眼球层 key（null 表示不叠加，如 sleep 或柔光版——眼睛已画在身体里）</summary>
     public string? EyeLayer { get; init; }
+    public IReadOnlyList<SkinEyeOffset> EyeOffsets { get; init; } = Array.Empty<SkinEyeOffset>();
+    public SkinFacing Facing { get; init; }
 }
 
 public sealed class SpriteAtlas
@@ -169,6 +171,8 @@ public sealed class SpriteAtlas
                     Frames = frames,
                     Fps = state.Fps,
                     EyeLayer = state.EyeLayer,
+                    EyeOffsets = state.EyeOffsets,
+                    Facing = state.Facing,
                 };
             }
             catch (Exception ex)

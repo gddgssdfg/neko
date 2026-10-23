@@ -52,6 +52,18 @@ class PreviewTests(unittest.TestCase):
             frame = previews.pick_idle_frame(root, {"layout": "files", "frameWidth": 16, "frameHeight": 16})
             self.assertEqual(frame.getpixel((0, 0)), (0, 255, 0, 255))
 
+    def test_preview_moves_the_eye_layer_with_the_first_head_anchor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            Image.new("RGBA", (32, 32), (220, 140, 60, 255)).save(root / "neko_idle.png")
+            eyes = Image.new("RGBA", (32, 32))
+            eyes.putpixel((10, 10), (20, 20, 20, 255))
+            eyes.save(root / "neko_eyes_open.png")
+            frame = previews.pick_idle_frame(root, {"frameWidth": 32, "frameHeight": 32,
+                "states": [{"name": "idle", "eyeLayer": "eyes_open", "eyeOffsets": [{"x": 3, "y": 2}]}]})
+            self.assertEqual(frame.getpixel((13, 12)), (20, 20, 20, 255))
+            self.assertEqual(frame.getpixel((10, 10)), (220, 140, 60, 255))
+
 
 class PixelAssetTests(unittest.TestCase):
     def test_native_pixel_has_safe_frames_and_aligned_independent_eyes(self):
@@ -66,7 +78,7 @@ class PixelAssetTests(unittest.TestCase):
                 frames = [sheet.crop((i * 32, 0, (i + 1) * 32, 32)) for i in range(4)]
                 if state["fps"] > 0:
                     self.assertGreater(len({frame.tobytes() for frame in frames}), 1)
-                for frame in frames:
+                for index, frame in enumerate(frames):
                     bounds = frame.getchannel("A").getbbox()
                     self.assertIsNotNone(bounds)
                     self.assertGreaterEqual(min(bounds[:2]), 1)
@@ -78,9 +90,16 @@ class PixelAssetTests(unittest.TestCase):
                     if state.get("eyeLayer"):
                         with Image.open(root / f"neko_{state['eyeLayer']}.png") as eyes:
                             self.assertEqual(eyes.size, (32, 32))
+                            aligned = Image.new("RGBA", (32, 32))
+                            offsets = state.get("eyeOffsets", [])
+                            anchor = offsets[index] if offsets else {"x": 0, "y": 0}
+                            aligned.alpha_composite(eyes.convert("RGBA"), (anchor["x"], anchor["y"]))
                             self.assertTrue(all(not eye or body for eye, body in
-                                                zip(eyes.convert("RGBA").tobytes()[3::4], data[3::4])))
+                                                zip(aligned.tobytes()[3::4], data[3::4])))
         self.assertLessEqual(len(colors), 12)
+        with Image.open(root / "neko_land.png") as landing, Image.open(root / "neko_idle.png") as idle:
+            self.assertEqual(landing.convert("RGBA").crop((96, 0, 128, 32)).tobytes(),
+                             idle.convert("RGBA").crop((0, 0, 32, 32)).tobytes())
 
     def test_invisible_colors_do_not_consume_the_palette(self):
         image = Image.new("RGBA", (64, 64), (0, 0, 255, 0))

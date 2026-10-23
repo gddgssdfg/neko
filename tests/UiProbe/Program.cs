@@ -849,6 +849,7 @@ internal static class Program
                 ("idle", 4, "eyes_open"), ("walk", 8, "eyes_open"), ("sit", 4, "eyes_open"),
                 ("sleep", 0, null), ("pet", 10, "eyes_pet"), ("drag", 6, "eyes_scared"),
                 ("fall", 12, "eyes_scared"), ("climb", 4, "eyes_open"), ("work", 2, "eyes_open"),
+                ("land", 12, "eyes_open"),
             };
             if (pixel.States.Count != expectedPixel.Length)
                 throw new Exception($"pixel states 应 {expectedPixel.Length} 个，实际 {pixel.States.Count}");
@@ -880,7 +881,7 @@ internal static class Program
             // 3) 素材加载行为回归零差异
             var pixelAtlas = SpriteAtlas.LoadSkin(Paths.Assets, "pixel");
             if (pixelAtlas.Skin != "pixel") throw new Exception($"pixel Skin 应='pixel'，实际='{pixelAtlas.Skin}'");
-            if (pixelAtlas.States.Count != 9) throw new Exception($"pixel 应有 9 状态，实际 {pixelAtlas.States.Count}");
+            if (pixelAtlas.States.Count != expectedPixel.Length) throw new Exception($"pixel 应有 {expectedPixel.Length} 状态，实际 {pixelAtlas.States.Count}");
             // 3b) v0.1.76：移除 anim.json 覆盖后，pixel 渲染图集 fps 仍逐项等于 skin.json（零行为变化）
             foreach (var (name, fps, _) in expectedPixel)
             {
