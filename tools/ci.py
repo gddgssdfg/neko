@@ -488,6 +488,14 @@ def step_run_configsave() -> StepResult:
     return StepResult(name, ok, r.duration, "all passed" if ok else r.tail, log)
 
 
+def step_skin_tools() -> StepResult:
+    name = "skin compilers (previews / pixel palette / margins)"
+    log = LOG_DIR / "03_skin_tools.log"
+    result = run_captured([sys.executable, str(REPO_ROOT / "tests" / "test_skin_tools.py")],
+                          log, timeout=60, echo=True)
+    return StepResult(name, result.rc == 0, result.duration, "all passed" if result.rc == 0 else result.tail, log)
+
+
 def step_git_status() -> StepResult:
     """步骤 4：打印 git status --short（信息项，非闸门）。"""
     name = "git status --short"
@@ -583,6 +591,7 @@ def main() -> int:
         step_run_uiprobe,
         step_run_reliability,
         step_run_configsave,
+        step_skin_tools,
         step_git_status,
     ]
 

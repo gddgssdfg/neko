@@ -206,6 +206,7 @@ internal static class Program
         flashField.SetValue(r, branchKey == "flash" ? double.MaxValue : 0.0);
 
         var visual = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(visual, r.Atlas.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
         using (DrawingContext dc = visual.RenderOpen())
         {
             r.Draw(dc);

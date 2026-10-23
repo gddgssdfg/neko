@@ -196,18 +196,46 @@ internal static class Program
             }
             finally { settings.Close(); pet.Dispose(); pet.Close(); }
         });
-        if (args.Length == 2 && args[0] == "--capture")
-            Check("render settings pages in both themes", () => Capture(Path.GetFullPath(args[1])));
+        Check("redrawn pixel skin deploys, selects and retains nearest-neighbor scaling", () =>
+        {
+            var atlas = SpriteAtlas.Load(Paths.Assets, "pixel_redraw");
+            Require(atlas.Skin == "pixel_redraw" && atlas.PixelArt && atlas.States.Count == 9, "new skin missing from deployment");
+            var pet = new PetWindow(new AppConfig { Skin = "pixel", Scale = 2 });
+            try
+            {
+                pet.SetSkin("pixel_redraw");
+                Require(pet.Config.Skin == "pixel_redraw" && pet.Config.Scale == 4, "selection or recommended scale failed");
+                Require(RenderOptions.GetBitmapScalingMode((DependencyObject)pet.Content) == BitmapScalingMode.NearestNeighbor,
+                    "pixel skin was smoothed");
+            }
+            finally { pet.Dispose(); pet.Close(); }
+        });
+        if (args.Length >= 2 && args[0] == "--capture")
+            Check("render settings pages in both themes", () => Capture(Path.GetFullPath(args[1]), args.Length >= 3 ? args[2] : "amber"));
         Console.WriteLine(_failed == 0 ? "=== ALL PASSED ===" : $"=== FAILED: {_failed} ===");
         return _failed == 0 ? 0 : 1;
     }
 
-    private static void Capture(string output)
+    private static void Capture(string output, string skin)
     {
         Directory.CreateDirectory(output);
-        var pet = new PetWindow(new AppConfig { Skin = "amber", Scale = 4 });
+        var pet = new PetWindow(new AppConfig { Skin = skin, Scale = 4 });
         try
         {
+            pet.Show();
+            pet.LoadPlugins(); // Match App startup: this also starts the initial idle animation.
+            pet.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+            var petVisual = (FrameworkElement)pet.Content;
+            petVisual.UpdateLayout();
+            var petBitmap = new RenderTargetBitmap((int)Math.Ceiling(petVisual.ActualWidth),
+                (int)Math.Ceiling(petVisual.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            petBitmap.Render(petVisual);
+            var petPixels = new byte[petBitmap.PixelWidth * petBitmap.PixelHeight * 4];
+            petBitmap.CopyPixels(petPixels, petBitmap.PixelWidth * 4, 0);
+            Require(Enumerable.Range(0, petPixels.Length / 4).Any(i => petPixels[i * 4 + 3] != 0), "captured pet is blank");
+            var petEncoder = new PngBitmapEncoder();
+            petEncoder.Frames.Add(BitmapFrame.Create(petBitmap));
+            using (var stream = File.Create(Path.Combine(output, "pet.png"))) petEncoder.Save(stream);
             foreach (var theme in new[] { "light", "dark" })
             {
                 pet.Config.Theme = theme;

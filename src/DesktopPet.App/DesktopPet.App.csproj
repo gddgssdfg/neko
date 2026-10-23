@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.2.4</Version>
+    <Version>0.2.5</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -60,6 +60,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\neko-assets\pixel_redraw\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+    <None Include="..\..\neko-assets\pixel_redraw\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+
     <ProjectReference Include="..\DesktopPet.Core\DesktopPet.Core.csproj" />
     <ProjectReference Include="..\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
     <!-- 引用 Sdk：确保宿主进程加载 DesktopPet.Sdk.dll，插件 ALC 才能把 Sdk 路由回宿主侧（类型分裂修复的关键） -->

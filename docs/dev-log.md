@@ -1204,3 +1204,14 @@ Gitee `/tags` 返回数组（`[{name, commit:{sha,date}, ...}]`，结构按官�
 - ConfigSaveProbe 纳入本地 CI；验证命令为 `python tools/ci.py`。Windows 默认用原生 dotnet，构建 PythonExe 自动继承实际运行 CI 的解释器。
 - 经验：原生 Windows DPAPI 在本任务沙箱内失败，正常用户环境下成功；遇到同类差异先对照执行环境，不应通过明文保存或跳过加密测试来规避。此结论适用于本机本次环境，不代表所有沙箱均不可用。
 - 详细审查见 `docs/code-review-2026-10-22.md`，续改说明见 `docs/continuation-2026-10-23.md`。
+
+
+## 2026-10-23 · v0.2.5 像素猫重绘与皮肤预览修复
+
+- 新增 pixel_redraw 可选皮肤，64×64、16 色共用调色板、九姿态各四帧整数微动；保留原版像素猫身体帧及用户选择。原画和提示词见 `neko-assets/reference/pixel_redraw/README.md`。
+- 预览生成器的四个问题经测试复现后修复：小图不放大、遗漏眼球层、独立帧误取攀爬图、高分辨率独立帧被按清单逻辑尺寸裁空。重建全部 11 套缩略图，源身体帧未批量重建。
+- 像素编译器仅用可见像素训练全皮肤共享调色板，留出运动边距；六项离线测试已加入本地 CI。
+- 完整 CI 通过，含构建、LoaderTest、18/18 插件加载与 ALC 回收、UiProbe、ReliabilityProbe、ConfigSaveProbe、六项素材检查；实际宠物窗口内容与设置界面已出图审阅。
+- 本机曾因沙箱还原留下 NU1900 缓存警告，正常网络下 `dotnet restore src/DesktopPet.sln --force --no-cache` 后重新检查通过，未关闭漏洞检查。
+- 审阅工具必须匹配宿主采样和启动流程：SkinRenderProbe 需按 PixelArt 设最近邻；直接构造 PetWindow 后还未设置初始动画，截图工具需走 LoadPlugins 初始化，并检查非空白后再保存。
+- 细节与边界见 `docs/pixel-redraw-2026-10-23.md`。当前不包含独立眼部动画或完整步态，未打包安装器。

@@ -229,7 +229,22 @@ def make_motion_frames(base: Image.Image, state: str) -> list[Image.Image]:
     return out
 
 
-def pixelize(img: Image.Image, colors: int) -> Image.Image:
+def build_pixel_palette(images: list[Image.Image], colors: int) -> Image.Image:
+    """Train on visible pixels only; one shared palette keeps colors stable across poses."""
+    if not 1 <= colors <= 256:
+        raise ValueError("pixel colors must be between 1 and 256")
+    samples = []
+    for image in images:
+        data = image.convert("RGBA").tobytes()
+        samples.extend((data[i], data[i + 1], data[i + 2]) for i in range(0, len(data), 4)
+                       if data[i + 3] >= PIXEL_ALPHA_CUTOFF)
+    training = Image.new("RGB", (max(1, len(samples)), 1))
+    if samples:
+        training.putdata(samples)
+    return training.quantize(colors=colors, method=Image.MEDIANCUT)
+
+
+def pixelize(img: Image.Image, colors: int, palette: Image.Image | None = None) -> Image.Image:
     """把高分辨率插画降成硬边像素画：量化调色板 + alpha 二值化。
 
     为什么两步都要：
@@ -239,7 +254,8 @@ def pixelize(img: Image.Image, colors: int) -> Image.Image:
     img = img.convert("RGBA")
     # alpha 二值化：硬边（半透明像素在桌面上会显出桌面颜色，破坏像素感）
     alpha = img.getchannel("A").point(lambda v: 255 if v >= PIXEL_ALPHA_CUTOFF else 0)
-    quant = img.convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT)
+    palette = palette if palette is not None else build_pixel_palette([img], colors)
+    quant = img.convert("RGB").quantize(palette=palette, dither=Image.Dither.NONE)
     out = quant.convert("RGBA")
     out.putalpha(alpha)
     return out
@@ -253,7 +269,7 @@ def make_pixel_motion_frames(base: Image.Image, state: str) -> list[Image.Image]
     for i in range(FRAMES):
         dx, dy = params[i % len(params)]
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(base, (dx, dy), base)      # 整数偏移 → 无插值，颜色不变
+        canvas.alpha_composite(base, (dx, dy))
         out.append(canvas)
     return out
 
@@ -322,6 +338,8 @@ def main() -> int:
     pixel_mode = "--pixel" in sys.argv
     pixel_size = int(arg_value("--pixel-size") or DEFAULT_PIXEL_SIZE)
     pixel_colors = int(arg_value("--pixel-colors") or DEFAULT_PIXEL_COLORS)
+    if pixel_mode and pixel_size < 8:
+        raise ValueError("pixel size must be at least 8")
 
     if pixel_mode:
         frame_w = frame_h = pixel_size
@@ -332,7 +350,7 @@ def main() -> int:
         if (frame_w, frame_h) != (canvas_w, canvas_h):
             print(f"下采样: {canvas_w}x{canvas_h} → {frame_w}x{frame_h}（LANCZOS，max-frame={max_frame}）")
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    prepared: list[tuple[str, Image.Image]] = []
     for name, _cell, _fps, img in pieces:
         canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
         x = (canvas_w - img.width) // 2
@@ -343,14 +361,23 @@ def main() -> int:
         if pixel_mode:
             # 先保持宽高比缩进 pixel_size 方框（thumbnail 不放大、不变形），再底对齐合成正方帧
             inner = canvas.copy()
-            inner.thumbnail((pixel_size, pixel_size), Image.LANCZOS)
+            motion_margin = 3
+            inner.thumbnail((pixel_size - motion_margin * 2, pixel_size - motion_margin * 2), Image.LANCZOS)
             sq = Image.new("RGBA", (pixel_size, pixel_size), (0, 0, 0, 0))
-            sq.paste(inner, ((pixel_size - inner.width) // 2, pixel_size - inner.height), inner)
-            canvas = pixelize(sq, pixel_colors)
-            frames = make_pixel_motion_frames(canvas, name)
+            sq.alpha_composite(inner, ((pixel_size - inner.width) // 2, pixel_size - motion_margin - inner.height))
+            canvas = sq
         else:
             if (frame_w, frame_h) != (canvas_w, canvas_h):
                 canvas = canvas.resize((frame_w, frame_h), Image.LANCZOS)
+        prepared.append((name, canvas))
+
+    shared_palette = build_pixel_palette([canvas for _, canvas in prepared], pixel_colors) if pixel_mode else None
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, canvas in prepared:
+        if pixel_mode:
+            canvas = pixelize(canvas, pixel_colors, shared_palette)
+            frames = make_pixel_motion_frames(canvas, name)
+        else:
             # 2.5) 单帧 → 4 帧微动（否则猫是静态图，不会呼吸）
             frames = make_motion_frames(canvas, name)
         fw, fh = canvas.size

@@ -19,6 +19,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\neko-assets\pixel_redraw\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+    <None Include="..\..\neko-assets\pixel_redraw\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+
     <ProjectReference Include="..\..\src\DesktopPet.App\DesktopPet.App.csproj" />
     <!-- 素材是 <None> 项，不会随项目引用传递，需显式复制到本测试输出目录。
          v0.1.78 P2-3：改白名单，与 DesktopPet.App.csproj 同步（测试要能扫到 icons/mirror/pixel/soft + tray.ico）；

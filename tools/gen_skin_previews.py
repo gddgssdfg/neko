@@ -26,7 +26,7 @@ from pathlib import Path
 
 from PIL import Image
 
-ROOT = Path(r"G:\lantetn-li\neko")
+ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "neko-assets"
 
 CELL = 96
@@ -37,15 +37,30 @@ PIXEL_THRESHOLD = 64      # 帧边长 ≤ 这个值视为像素风 → 用最近
 def pick_idle_frame(skin_dir: Path, meta: dict) -> Image.Image | None:
     fw = int(meta.get("frameWidth", 32))
     fh = int(meta.get("frameHeight", 32))
-    candidates = [skin_dir / "neko_idle.png"]
+    idle_file = "neko_idle_0.png" if meta.get("layout", "sheet").lower() == "files" else "neko_idle.png"
+    candidates = [skin_dir / idle_file]
     # 没有 idle 的皮肤（理论上不该有）退用第一个非附属状态图
     candidates += [p for p in sorted(skin_dir.glob("neko_*.png"))
                    if not any(k in p.name for k in ("eyes", "shadow", "preview"))]
     for p in candidates:
         if p.is_file():
-            im = Image.open(p).convert("RGBA")
-            if im.width >= fw and im.height >= fh:
-                return im.crop((0, 0, fw, fh))
+            with Image.open(p) as source:
+                im = source.convert("RGBA")
+            files_layout = meta.get("layout", "sheet").lower() == "files"
+            if files_layout or (im.width >= fw and im.height >= fh):
+                # File-layout sources are complete frames. The renderer also uses their full
+                # bitmap, which may be higher resolution than the manifest's logical dimensions.
+                frame = im if files_layout else im.crop((0, 0, fw, fh))
+                state_name = p.stem.removeprefix("neko_").removesuffix("_0")
+                state = next((s for s in meta.get("states", []) if s.get("name") == state_name), {})
+                eye_key = state.get("eyeLayer")
+                eye_file = skin_dir / f"neko_{eye_key}.png"
+                if eye_key and eye_file.is_file():
+                    with Image.open(eye_file) as source:
+                        eyes = source.convert("RGBA")
+                    if eyes.size == frame.size:
+                        frame.alpha_composite(eyes)
+                return frame
     return None
 
 
@@ -53,11 +68,16 @@ def build_preview(skin_dir: Path, meta: dict) -> Image.Image | None:
     frame = pick_idle_frame(skin_dir, meta)
     if frame is None:
         return None
-    resample = Image.NEAREST if max(frame.size) <= PIXEL_THRESHOLD else Image.LANCZOS
-    inner = frame.copy()
-    inner.thumbnail((CELL - PAD * 2, CELL - PAD * 2), resample)
+    pixel_art = meta.get("pixelArt", max(frame.size) <= PIXEL_THRESHOLD)
+    bounds = frame.getchannel("A").getbbox()
+    if bounds is None:
+        return None
+    frame = frame.crop(bounds)
+    resample = Image.NEAREST if pixel_art else Image.LANCZOS
+    scale = (CELL - PAD * 2) / max(frame.size)
+    inner = frame.resize((max(1, round(frame.width * scale)), max(1, round(frame.height * scale))), resample)
     canvas = Image.new("RGBA", (CELL, CELL), (0, 0, 0, 0))
-    canvas.paste(inner, ((CELL - inner.width) // 2, CELL - PAD - inner.height), inner)
+    canvas.alpha_composite(inner, ((CELL - inner.width) // 2, CELL - PAD - inner.height))
     return canvas
 
 

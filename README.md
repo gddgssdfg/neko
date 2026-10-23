@@ -80,6 +80,10 @@ dotnet run --project tests/PluginSmoke/PluginSmoke.csproj -c Debug  # 真加载�
 # 版本号一致性检查（csproj ↔ CHANGELOG ↔ git tag）
 python tools/check_version.py
 
+# 素材编译与离线检查需要 Pillow
+python -m pip install -r tools/requirements-art.txt
+python tests/test_skin_tools.py
+
 # 重新生成素材
 python tools/generate_sprites.py
 python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 thumb.png）

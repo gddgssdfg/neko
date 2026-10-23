@@ -409,6 +409,8 @@ public sealed partial class SettingsWindow : Window
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
+            if (thumb.Child is Image previewImage)
+                RenderOptions.SetBitmapScalingMode(previewImage, skin.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
 
             var textCol = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
             textCol.Children.Add(new TextBlock

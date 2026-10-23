@@ -8,6 +8,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="..\..\neko-assets\pixel_redraw\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+    <None Include="..\..\neko-assets\pixel_redraw\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
+
     <ProjectReference Include="../../src/DesktopPet.App/DesktopPet.App.csproj" />
     <None Include="../../neko-assets/amber/*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets/amber" />
     <None Include="../../neko-assets/amber/skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets/amber" />
