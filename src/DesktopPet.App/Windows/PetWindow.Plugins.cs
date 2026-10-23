@@ -16,6 +16,8 @@ namespace DesktopPet.App.Windows;
 
 public sealed partial class PetWindow : Window
 {
+    private bool _pluginsStarted;
+    private bool _isDisposed;
     /// <summary>切换径向菜单开关（全局热键调用）</summary>
     public void ToggleRadialMenu()
     {
@@ -57,6 +59,7 @@ public sealed partial class PetWindow : Window
     /// </summary>
     public void PrewarmRadialMenu()
     {
+        if (_isDisposed) return;
         var menu = EnsureRadialMenu();
         try
         {
@@ -75,6 +78,9 @@ public sealed partial class PetWindow : Window
     /// <summary>加载插件（窗口显示后调用）</summary>
     public void LoadPlugins()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (_pluginsStarted) return;
+        _pluginsStarted = true;
         _pluginHost.LoadCore(); // v0.1.34：只立即加载核心插件（deferred 集合外的）；延迟插件主窗口显示后异步加载
 
         // v0.1.34：窗口首次显示完成后 Background 加载 deferred 插件（不抢首屏渲染）
@@ -85,6 +91,7 @@ public sealed partial class PetWindow : Window
         // 正确做法：已加载完就直接排后台任务；否则才挂一次性处理器。
         void QueueDeferredLoad() => Dispatcher.BeginInvoke(new Action(() =>
         {
+            if (_isDisposed) return;
             _pluginHost.LoadDeferred();
             DeferredPluginsLoaded?.Invoke();   // 通知 App/TrayManager 等刷新
             PruneRadialMenuConfig();           // v0.1.71：插件全加载完后清一次径向菜单配置残留 slotId

@@ -221,17 +221,24 @@ public static class SkinRegistry
             // id：缺省用目录名
             var id = GetString(root, "id");
             if (string.IsNullOrWhiteSpace(id)) id = System.IO.Path.GetFileName(skinDir.TrimEnd('\\', '/'));
+            if (!IsAssetName(id!) || !string.Equals(id, System.IO.Path.GetFileName(skinDir.TrimEnd('\\', '/')), StringComparison.OrdinalIgnoreCase))
+                throw new FormatException("id 必须与皮肤目录名一致，且不能包含路径字符");
 
             var displayName = GetString(root, "displayName");
             if (string.IsNullOrWhiteSpace(displayName)) displayName = id;
 
-            var layout = string.Equals(GetString(root, "layout"), "files", StringComparison.OrdinalIgnoreCase)
+            var layoutName = GetString(root, "layout") ?? "sheet";
+            if (!string.Equals(layoutName, "sheet", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(layoutName, "files", StringComparison.OrdinalIgnoreCase))
+                throw new FormatException($"未知 layout '{layoutName}'，请使用 sheet 或 files");
+            var layout = string.Equals(layoutName, "files", StringComparison.OrdinalIgnoreCase)
                 ? SkinLayout.Files : SkinLayout.Sheet;
 
             int frameWidth = GetInt(root, "frameWidth", DefaultFrameSize);
             int frameHeight = GetInt(root, "frameHeight", DefaultFrameSize);
             int frames = GetInt(root, "frames", DefaultFrames);
             if (frameWidth <= 0 || frameHeight <= 0 || frames <= 0) return null;
+            if (frames > 256) throw new FormatException("frames 不能超过 256");
 
             bool hasShadow = GetBool(root, "hasShadow", false);
 
@@ -253,7 +260,11 @@ public static class SkinRegistry
                     if (e.ValueKind == JsonValueKind.String)
                     {
                         var v = e.GetString();
-                        if (!string.IsNullOrWhiteSpace(v)) eyeLayers.Add(v!);
+                        if (!string.IsNullOrWhiteSpace(v))
+                        {
+                            if (!IsAssetName(v)) throw new FormatException($"非法眼层名 '{v}'");
+                            if (!eyeLayers.Contains(v, StringComparer.OrdinalIgnoreCase)) eyeLayers.Add(v);
+                        }
                     }
                 }
             }
@@ -266,6 +277,8 @@ public static class SkinRegistry
                     if (s.ValueKind != JsonValueKind.Object) continue;
                     var name = GetString(s, "name");
                     if (string.IsNullOrWhiteSpace(name)) continue;   // 无名状态无意义，跳过该条
+                    if (!IsAssetName(name) || states.Any(state => string.Equals(state.Name, name, StringComparison.OrdinalIgnoreCase)))
+                        throw new FormatException($"状态名非法或重复：'{name}'");
                     double fps = GetDouble(s, "fps", 0);
                     // v0.1.82：**fps == 0 是合法的「静止」声明**，不能判为损坏。
                     // 反例（真踩过）：为了做"猫大部分时间不动"，待机/坐/睡的帧数写 1、fps 写 0，
@@ -273,8 +286,9 @@ public static class SkinRegistry
                     // 表现为"新皮肤在设置页里根本不存在"，而且日志里只有一行难懂的"跳过非法皮肤目录"。
                     // 引擎侧是支持静止的：FrameAnimator.Tick 里 `if (fps <= 0) return false;`（帧永不推进）。
                     // 这里只拦真正非法的值：负数 / NaN（缺字段时 GetDouble 回落成 0 → 视为静止，偏宽容但有意义）。
-                    if (fps < 0 || double.IsNaN(fps)) return null;
+                    if (fps < 0 || !double.IsFinite(fps)) throw new FormatException($"状态 '{name}' 的 fps 必须为有限非负数");
                     var eye = GetString(s, "eyeLayer");
+                    if (!string.IsNullOrWhiteSpace(eye) && !IsAssetName(eye)) throw new FormatException($"非法眼层引用 '{eye}'");
                     states.Add(new SkinState { Name = name!, Fps = fps, EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye });
                 }
             }
@@ -305,6 +319,11 @@ public static class SkinRegistry
 
     private static string? GetString(JsonElement obj, string name)
         => obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static bool IsAssetName(string value) => value.Length > 0 && value is not "." and not ".."
+        && value == value.Trim() && !value.EndsWith('.')
+        && value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) < 0
+        && !value.Contains('/') && !value.Contains('\\');
 
     private static bool GetBool(JsonElement obj, string name, bool fallback)
         => obj.TryGetProperty(name, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False)

@@ -32,7 +32,10 @@ public sealed partial class PetWindow : Window
     }
 
     /// <summary>v0.1.74：运行时切换皮肤（支持任意已注册皮肤，含用户自制；未知 id 回退默认 pixel）。</summary>
-    public void SetSkin(string skin)
+    public void SetSkin(string skin) => SetSkin(skin, forceReload: false);
+
+    /// <summary>选择皮肤；forceReload 允许作者替换素材后刷新当前皮肤。</summary>
+    public void SetSkin(string skin, bool forceReload)
     {
         if (!SkinRegistry.Exists(Paths.Assets, skin)) skin = SkinRegistry.DefaultSkinId;
 
@@ -40,7 +43,7 @@ public sealed partial class PetWindow : Window
         // 陷阱（v0.1.81 踩过）：旧代码在「已是同一皮肤」时直接 return，导致
         // 设置页对「已选中项」也触发回调时（鼠标点击无条件调 onChange），推荐缩放不重套——
         // 用户手动把缩放调回 2 后再点 hd，应被拉回作者的推荐值 4，却仍是 2。
-        bool atlasChanged = _config.Skin != skin || _renderer.Atlas.Skin != skin;
+        bool atlasChanged = forceReload || _config.Skin != skin || _renderer.Atlas.Skin != skin;
         if (!atlasChanged)
         {
             // 同一皮肤被重复选择：不重载素材，但若作者声明了推荐缩放且当前值不同，仍套用。
@@ -50,8 +53,8 @@ public sealed partial class PetWindow : Window
             return;
         }
 
-        _config.Skin = skin;
         var newAtlas = SpriteAtlas.LoadSkin(Paths.Assets, skin);
+        _config.Skin = newAtlas.Skin;
         _renderer.SetAtlas(newAtlas);
         if (Content is DependencyObject visual)
             RenderOptions.SetBitmapScalingMode(visual, newAtlas.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);

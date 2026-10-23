@@ -11,7 +11,7 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.2.6</Version>
+    <Version>0.2.7</Version>
     <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
@@ -60,8 +60,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\neko-assets\pixel_redraw\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
-    <None Include="..\..\neko-assets\pixel_redraw\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel_redraw" />
 
     <ProjectReference Include="..\DesktopPet.Core\DesktopPet.Core.csproj" />
     <ProjectReference Include="..\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />
@@ -112,48 +110,6 @@
     <ProjectReference Include="..\..\builtins\DesktopPet.Builtin.WordCard\DesktopPet.Builtin.WordCard.csproj"                     ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- v0.1.78 P2-3：素材复制改「白名单」——只复制真运行时素材目录 + 托盘图标。
-         旧实现用 ..\..\neko-assets\**\*.png 通配，把 _icon_clean.png(1.1MB)、*_preview*.png、
-         reference\ 参考图等开发噪声一并复制进 publish → 进而被 MSI 打进安装包（与 P0-1 同源）。
-         运行时经代码核对真正引用：
-           · icons\**\*.png   —— RadialMenu 槽位图标缓存（RadialMenu.cs）
-           · mirror\**\*.png  —— InputMirrorWindow 爪子素材 paw_up/paw_down
-           · <skin>\**        —— SkinRegistry 扫 <skin>\skin.json 发现皮肤（pixel/soft）及帧图
-           · tray.ico         —— TrayManager 托盘图标 + ApplicationIcon
-         新增内置皮肤需在此补一行（用户自制皮肤放运行时 neko-assets，不受此影响）。
-         ⚠️ v0.1.80 P0 修复：LinkBase 必须把子目录写进去（neko-assets\icons 而非仅 neko-assets）。
-         MSBuild 的 LinkBase 会自动拼接 %(RecursiveDir)，而 %(RecursiveDir) 是相对「通配符基准目录」的——
-         白名单把基准目录下移到 icons\ / pixel\ 等，若 LinkBase 仍只写 neko-assets，则 icons\book.png
-         会被摊平到 neko-assets\book.png（丢一层目录）。运行时按 neko-assets/icons 定位 → 图标全丢。
-         正确写法：LinkBase 补齐子目录，使 RecursiveDir 相对其后拼接，还原 v0.1.78 通配的目录结构。 -->
-    <None Include="..\..\neko-assets\icons\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\icons" />
-    <None Include="..\..\neko-assets\mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mirror" />
-    <None Include="..\..\neko-assets\pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixel" />
-    <None Include="..\..\neko-assets\soft\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\soft" />
-    <!-- v0.1.81：AI 高清皮肤（由 tools/ai_sheet_to_skin.py 生成） -->
-    <None Include="..\..\neko-assets\hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\hd" />
-    <None Include="..\..\neko-assets\pixelai\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\pixelai" />
-    <None Include="..\..\neko-assets\cat_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_pixel" />
-    <None Include="..\..\neko-assets\cat_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\cat_hd" />
-    <None Include="..\..\neko-assets\phoebe_pixel\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_pixel" />
-    <None Include="..\..\neko-assets\phoebe_hd\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\phoebe_hd" />
-    <!-- 拼豆皮肤（第 9 套，仅"可被选到"；默认皮肤仍是 pixel，见 SkinRegistry.DefaultSkinId）。
-         刻意用 *.png + skin.json 而非 **\*，把 bead/model/*.beads.json 排除在包外：
-           · 运行时零依赖该模型 —— SkinRegistry 只扫 <skin>/skin.json；SpriteAtlas 只读
-             neko_<state>.png / neko_<eye>.png / neko_shadow.png（均为 *.png）。
-           · model/*.beads.json 是烘焙器（tools/bead）的**源模型/输入**，属构建期产物，不该进运行时包。
-         与其它 8 套皮肤的目录结构不同（只有 bead 有 model/ 子目录），故此处白名单收窄而非照抄 **\*。 -->
-    <None Include="..\..\neko-assets\bead\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
-    <None Include="..\..\neko-assets\bead\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\bead" />
-    <None Include="..\..\neko-assets\ui\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\ui" />
-    <None Include="..\..\neko-assets\amber\*.png" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
-    <None Include="..\..\neko-assets\amber\skin.json" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\amber" />
-    <None Include="..\..\neko-assets\tray.ico" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets" />
-    <!-- 兜底：即便白名单目录里混入预览图 / *.bak-* 噪声，也一律剔除（与 gen_setup_wxs.py 规则对齐） -->
-    <None Remove="..\..\neko-assets\**\*preview*" />
-    <None Remove="..\..\neko-assets\**\*.bak-*" />
-  </ItemGroup>
 
   <!-- v0.1.42 修复：target 改挂到 Build+Publish，之前的 AfterTargets="Build" 让 `dotnet publish` 不会触发，
        导致 publish/plugins/ 一直空——真机 Release 跑其实没装任何插件。
@@ -199,4 +155,5 @@
           ContinueOnError="WarnAndContinue" />
   </Target>
 
+  <Import Project="..\..\build\RuntimeAssets.props" />
 </Project>

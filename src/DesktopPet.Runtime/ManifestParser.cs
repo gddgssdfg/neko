@@ -65,14 +65,17 @@ public static class ManifestParser
         t.TryGetValue(k, out var v) ? v?.ToString() : null;
 
     private static int? Int(TomlTable t, string k) =>
-        t.TryGetValue(k, out var v) && v is long l ? (int)l : null;
+        !t.TryGetValue(k, out var v) ? null : v is long l && l >= int.MinValue && l <= int.MaxValue
+            ? (int)l : throw new FormatException($"plugin.toml 字段 '{k}' 必须为 32 位整数");
 
     private static bool? Bool(TomlTable t, string k) =>
         t.TryGetValue(k, out var v) && v is bool b ? b : null;
 
     private static string[] Arr(TomlTable t, string k)
     {
-        if (!t.TryGetValue(k, out var v) || v is not TomlArray a) return [];
-        return a.OfType<string>().ToArray();
+        if (!t.TryGetValue(k, out var v)) return [];
+        if (v is not TomlArray a || a.Any(item => item is not string))
+            throw new FormatException($"plugin.toml 权限字段 '{k}' 必须为字符串数组");
+        return a.Cast<string>().ToArray();
     }
 }

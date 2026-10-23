@@ -320,6 +320,10 @@ public sealed partial class SettingsWindow : Window
                  + "|opacity=" + _config.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture)
                  + "|passthrough=" + (_pet.IsMousePassthrough ? '1' : '0'),
         "input" => "mode=" + (_config.AppMode ?? ""),
+        "plugin" => string.Join("|", _pet.PluginHost.GetInstalledPlugins().Select(p =>
+            $"{p.Manifest.Id}:{p.Manifest.Version}:{_pet.PluginHost.IsEnabled(p.Manifest.Id)}"))
+            + "|loaded=" + string.Join(",", _pet.PluginHost.Plugins.Select(p => p.Manifest.Id))
+            + "|errors=" + string.Join("|", _pet.PluginHost.Errors.Select(e => e.dir + ":" + e.error)),
         _ => "",
     };
 

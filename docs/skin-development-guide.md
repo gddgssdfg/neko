@@ -23,7 +23,7 @@
 7. [眼球层（眼神追踪）](#7-眼球层眼神追踪)
 8. [thumb.png（设置页缩略图）](#8-thumbpng设置页缩略图)
 9. [素材生成管线工具](#9-素材生成管线工具)
-10. [CSProj 白名单（必须做，否则皮肤不生效）](#10-csproj-白名单必须做)
+10. [构建与发布自动收集](#10-构建与发布自动收集v027)
 11. [AI 生图提示词要点](#11-ai-生图提示词要点)
 12. [常见错误速查表](#12-常见错误速查表)
 13. [附录 A：皮肤-实现一致性核对](#附录-a皮肤-实现一致性核对)
@@ -103,7 +103,7 @@
 **做完三件事，皮肤就能用：**
 
 1. 把 `mycat/` 放进 `neko-assets/`；
-2. 若这是**内置/发布**皮肤：在 `DesktopPet.App.csproj` 与 `UiProbe.csproj` 补白名单一行（见 §10）；
+2. 若这是**内置/发布**皮肤：放入源码 `neko-assets/<id>/`，由共用运行素材规则自动收集（见 §10）；
 3. `thumb.png` 用 `gen_skin_previews.py` 生成（见 §9）。
 
 > 用户自制皮肤放到**运行时**的 `<Neko程序根>/neko-assets/<id>/` 即可，无需改任何工程
@@ -338,16 +338,7 @@ neko_<state>_<index>.png        # 如 neko_idle_0.png … neko_idle_3.png
 - 用途：设置页「外观风格」列表每个皮肤一行显示该缩略图（`SettingsWindow.BuildSkinPicker` →
   `LoadSkinPreview`）；**缺失 → 显示占位文字，不影响选择**。
 
-> 🔴 **绝对不要命名成 `preview.png`**：`DesktopPet.App.csproj` 与 `UiProbe.csproj` 里有
->
-> ```xml
-> <None Remove="..\..\neko-assets\**\*preview*" />
-> ```
->
-> （早期排除临时预览图的规则）。**叫 `preview.png` 会被这条规则一并排除 → 打不进输出目录 → 设置页缩略图全空。**
-> **教训：往 `neko-assets` 放新素材前先看 csproj 的 `None Remove` 规则。**
->
-> 同理 `.bak-*` 也被 `<None Remove="..\..\neko-assets\**\*.bak-*" />` 排除。
+> 缩略图请使用 `thumb.png`。共用的 `build/RuntimeAssets.props` 只收集运行时命名的文件，并排除 preview 与 .bak-*；预览图和备份不会进入输出目录。
 
 ---
 
@@ -427,38 +418,17 @@ neko_<state>_<index>.png        # 如 neko_idle_0.png … neko_idle_3.png
 
 ---
 
-## 10. CSProj 白名单（必须做，否则皮肤不生效）
+## 10. 构建与发布自动收集（v0.2.7）
 
-内置 / 随包发布的皮肤，素材要**复制到输出目录**才会被 `SkinRegistry.Scan` 扫到。
-两个 csproj 都要加（**各一行**）：
+宿主、UiProbe 与 ReliabilityProbe 共用 `build/RuntimeAssets.props`，新增随包皮肤无需再逐个修改 csproj。将目录放在 `neko-assets/<id>/`，提供 `skin.json`、`neko_*.png` 和可选 `thumb.png` 后正常构建即可。
 
-**`src/DesktopPet.App/DesktopPet.App.csproj`** 和 **`tests/UiProbe/UiProbe.csproj`**：
-
-```xml
-<None Include="..\..\neko-assets\<id>\**\*"
-      CopyToOutputDirectory="PreserveNewest"
-      LinkBase="neko-assets\<id>" />
-```
-
-例如新增 `mycat`（在 App 工程里 `<id>` = `mycat`）：
-
-```xml
-<None Include="..\..\neko-assets\mycat\**\*" CopyToOutputDirectory="PreserveNewest" LinkBase="neko-assets\mycat" />
-```
-
-### 10.1 🔴 `LinkBase` 必须含子目录名
-
-- MSBuild 的 `LinkBase` 会自动拼接 `%(RecursiveDir)`，而 `%(RecursiveDir)` 是相对
-  **「通配符基准目录」**计算的。白名单把基准目录下移到 `mycat\`，若 `LinkBase` 仍只写
-  `neko-assets`，则 `neko-assets\mycat\neko_idle.png` 会被**摊平**成 `neko-assets\neko_idle.png`（丢一层目录）。
-- 运行时代码按 `neko-assets/<id>/` 定位 → **皮肤/图标/帧图全部丢失**。
-- **v0.1.79 真实翻车**：`pixel/neko_idle.png` → `neko-assets/neko_idle.png`，真机安装包同样塌陷。
-- **正确写法**：`LinkBase="neko-assets\<id>"`（把子目录名写进去），使 `RecursiveDir` 相对其后拼接，
-  还原目录结构。
-- **教训**：v0.1.79 当时的「UiProbe 全过」是**假绿**（bin 里残留上一版嵌套文件）。
-  **涉及素材/打包的改动，必须先清 `bin` 再测。**
-
-> 用户自制皮肤放**运行时** `neko-assets/`，**不受此白名单影响**（不需要改 csproj）。
+- 按资产根目录保留子目录路径；`skin.json` 的 id 必须等于目录名。
+- 只收集运行时命名的清单、帧图、眼层、阴影与缩略图；排除 reference、下划线临时目录、预览、备份与模型源文件。
+- 图标、键盘爪、UI 资源和托盘图标由同一规则单独收集；发布时保留为单文件 EXE 外的真实文件。
+- 验证目录结构应使用全新的 BaseOutputPath，避免旧产物掩盖漏复制。不要删除用户数据目录。
+- 用户接入运行时皮肤仍直接放在程序旁的 `neko-assets/<id>/`；设置页「刷新皮肤」可重新扫描并加载当前皮肤，无需重启。
+- 状态名、眼层名不能包含路径字符；状态不能重名，fps 必须为有限非负数，frames 上限 256。未知 layout 会明确记录错误。
+- 损坏的非待机状态会被跳过，损坏眼层/阴影会被忽略；待机 idle 不可用时回退默认 pixel，并把实际选择写入配置。缺省皮肤素材也不存在时仅能保活并写日志，不能凭空恢复缺失美术。
 
 ---
 
@@ -507,7 +477,7 @@ neko_<state>_<index>.png        # 如 neko_idle_0.png … neko_idle_3.png
 |---|---|---|
 | **设置页里看不到我的皮肤** | `skin.json` 字段非法 → 整张皮肤被跳过：`frameWidth/Height/frames <= 0`、某状态 `fps < 0` / NaN、`states` 为空 | 检查三项合法性；看日志 `[皮肤] 跳过非法皮肤目录` |
 | 同上（且 fps 写的是 0） | 误以为 `fps=0` 非法 | `fps=0` **合法**（静止）；只有 `<0` / NaN 才非法（见 §3） |
-| 同上（内置皮肤，源码正常） | 漏加 csproj 白名单 | 在 App 与 UiProbe 两个 csproj 各补一行（§10） |
+| 同上（内置皮肤，源码正常） | 未按运行时命名或尚未重新构建 | 检查共用运行素材规则与全新输出目录（§10） |
 | 同上（UGC，素材正常） | 目录里没有 `skin.json`，或放错位置 | 确认目录在 `neko-assets/<id>/` 且**确实有 `skin.json`** |
 | **动画闪烁/发闪** | 逐帧各自量化调色板（像素皮） | 调色板**全皮肤共享**（拼一张长图统一定调色板） |
 | **切换状态时猫跳一下** | 各状态未做统一画布 / 底边对齐 | 统一画布尺寸 + 底边对齐 + 保留帧间相对位移（§6.3） |
@@ -517,10 +487,10 @@ neko_<state>_<index>.png        # 如 neko_idle_0.png … neko_idle_3.png
 | **切到皮肤后缩放被改回** | 这是 v0.1.82 的**预期行为**（推荐缩放套用时机 = 切换 + 重复选择） | 若不想被改，去掉 `recommendedScale` |
 | **眼神追踪：瞳孔变成漂浮色斑** | 眼球层跨素材差分（不同批次画不一致） | 眼球层必须来自**同一张画的闭眼版**（§7.2） |
 | **眼神追踪：眼睛完全不动** | 静止皮肤（`fps=0`）+ 渲染未在瞳孔偏移时重绘 | 引擎侧已修（`SetEyeOffset` 变化时触发重绘）；确认你的 `eyeLayer` 有正确关联 |
-| **设置页缩略图空白** | `thumb.png` 缺失，或被命名成 `preview.png` 遭 csproj 排除 | 命名 `thumb.png`；用 `gen_skin_previews.py` 生成（§8/§9.4） |
+| **设置页缩略图空白** | `thumb.png` 缺失，或被命名成 `preview.png` 遭运行素材规则排除 | 命名 `thumb.png`；用 `gen_skin_previews.py` 生成（§8/§9.4） |
 | **换素材后缩略图还是旧的** | 没重跑 `gen_skin_previews.py` | 换素材后**必须**重跑（§9.4） |
-| **打包进安装包后缩略图/皮肤丢失** | `LinkBase` 丢了子目录名 → 素材被摊平 | `LinkBase="neko-assets\<id>"`（§10.1） |
-| **"UiProbe 全过"但其实素材没生效** | bin 里有上一版嵌套残留 → 假绿 | 涉及素材/打包的改动**先清 bin 再测**（§10.1） |
+| **打包进安装包后缩略图/皮肤丢失** | `LinkBase` 丢了子目录名 → 素材被摊平 | 检查共用规则与输出目录结构（§10） |
+| **"UiProbe 全过"但其实素材没生效** | bin 里有上一版嵌套残留 → 假绿 | 改用全新的 BaseOutputPath 验证，不依赖旧 bin 残留（§10） |
 
 ---
 
@@ -538,7 +508,7 @@ neko_<state>_<index>.png        # 如 neko_idle_0.png … neko_idle_3.png
 | `layout: sheet/files` 两种布局 | 一致 |
 | 绘制常量 `FrameW/FrameH = 32` 不随皮肤变化 | 一致（`SpriteAtlas` 注释明确） |
 | 眼球层命名 `neko_<key>.png` / 整帧尺寸 / `states[].eyeLayer` 关联 | 一致 |
-| `thumb.png` 96×96、`preview*` / `*.bak-*` 被 csproj 排除 | 一致（App 与 UiProbe 两个 csproj 都有 Remove 规则） |
+| `thumb.png` 96×96、`preview*` / `*.bak-*` 被排除 | 一致（宿主与测试共用 RuntimeAssets.props） |
 | 皮肤发现 = 扫目录 + `skin.json`；非法跳过 + `Log.Warn`；兜底 `pixel` | 与 `SkinRegistry.Scan` 一致 |
 
 ### 需注意 / 待确认项

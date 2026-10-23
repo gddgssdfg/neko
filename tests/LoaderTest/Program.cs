@@ -560,7 +560,8 @@ public static class Program
         try
         {
             // ---- 合成高危夹具：复用 SamplePlugin.dll，但配一份声明 process 的 manifest ----
-            const string fxId = "com.lantern.highrisk-fixture";
+            // Keep the reused entry class identity consistent; only permissions differ in this fixture.
+            const string fxId = "com.lantern.sample";
             var fxDir = Path.Combine(pluginsDir, fxId);
             Directory.CreateDirectory(fxDir);
 

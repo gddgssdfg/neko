@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Globalization;
 using System.Text.Json;
 using DesktopPet.Core;
 using DesktopPet.Sdk;
@@ -42,10 +43,14 @@ public sealed class WeatherPlugin : PluginBase
     /// 折中：实例级延迟创建 + <see cref="OnUnload"/> 里 Dispose —— 既复用连接池，又能让 ALC 回收。</para>
     /// </summary>
     private HttpClient? _http;
-    private HttpClient Http => _http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+    private volatile bool _unloaded;
+    private HttpClient Http => !_unloaded
+        ? _http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(8) }
+        : throw new ObjectDisposedException(nameof(WeatherPlugin));
 
     public override void OnUnload()
     {
+        _unloaded = true;
         // v0.1.82：释放共享 HttpClient（见字段注释），否则 ALC 无法回收
         try { _http?.Dispose(); } catch { /* Dispose 失败不影响卸载（铁律 7）；插件无宿主日志通道 */ }
         _http = null;
@@ -90,42 +95,40 @@ public sealed class WeatherPlugin : PluginBase
             var (lat, lon) = await ResolveCityAsync(city);
 
             var http = Http;
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code";
+            var url = string.Create(CultureInfo.InvariantCulture, $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code");
             var json = await http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
             var cur = doc.RootElement.GetProperty("current");
             var temp = cur.GetProperty("temperature_2m").GetDouble();
             var code = cur.GetProperty("weather_code").GetInt32();
-            Pet.Say($"{city} {temp:F0}°C {Describe(code)}", 4000);
+            if (!_unloaded) Pet.Say($"{city} {temp:F0}°C {Describe(code)}", 4000);
         }
+        catch (Exception) when (_unloaded) { }
+        catch (ArgumentException ex) { Pet.Say(ex.Message, 4000); }
         catch
         {
             Pet.Say("天气获取失败，检查网络", 3000);
         }
     }
 
-    /// <summary>城市名 → 坐标：先查内置表，未命中走 Open-Meteo 地理编码 API，失败回退佛山
+    /// <summary>城市名 → 坐标：先查内置表，未命中走 Open-Meteo 地理编码 API；未找到时明确报错。
     /// <para>v0.1.82：由 static 改为实例方法 —— 共享 HttpClient 是实例字段（见 <c>_http</c> 注释）。</para></summary>
     private async Task<(double Lat, double Lon)> ResolveCityAsync(string city)
     {
         if (KnownCities.TryGetValue(city.Trim(), out var known)) return known;
-        try
+        var http = Http;
+        var url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(city)}&count=1&language=zh";
+        var json = await http.GetStringAsync(url);
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
         {
-            var http = Http;
-            var url = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(city)}&count=1&language=zh";
-            var json = await http.GetStringAsync(url);
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
-            {
-                var r = results[0];
-                return (r.GetProperty("latitude").GetDouble(), r.GetProperty("longitude").GetDouble());
-            }
+            var r = results[0];
+            return (r.GetProperty("latitude").GetDouble(), r.GetProperty("longitude").GetDouble());
         }
-        catch (System.Exception ex) { Capability.System.Log(PluginLogLevel.Warn, $"城市坐标解析失败，回退默认城市「{city}」：{ex.Message}"); }
-        return KnownCities[DefaultCity];
+        throw new ArgumentException($"找不到城市「{city}」，请检查天气设置中的城市名称");
     }
 
-    /// <summary>未来 2 天预报（Open-Meteo daily API，forecast_days=3）</summary>
+    /// <summary>三日预报（Open-Meteo daily API，forecast_days=3）</summary>
     private async void ShowForecast()
     {
         try
@@ -134,7 +137,7 @@ public sealed class WeatherPlugin : PluginBase
             var (lat, lon) = await ResolveCityAsync(city);
 
             var http = Http;
-            var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}" +
+            var url = string.Create(CultureInfo.InvariantCulture, $"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}") +
                       $"&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=3&timezone=auto";
             var json = await http.GetStringAsync(url);
             using var doc = JsonDocument.Parse(json);
@@ -143,12 +146,14 @@ public sealed class WeatherPlugin : PluginBase
             var mins = daily.GetProperty("temperature_2m_min").EnumerateArray().Select(x => x.GetDouble()).ToArray();
             var codes = daily.GetProperty("weather_code").EnumerateArray().Select(x => x.GetInt32()).ToArray();
 
-            string[] names = { "今天", "明天" };
+            string[] names = { "今天", "明天", "后天" };
             var msg = $"{city} ";
-            for (int i = 0; i < Math.Min(2, names.Length); i++)
+            for (int i = 0; i < Math.Min(names.Length, Math.Min(codes.Length, Math.Min(maxs.Length, mins.Length))); i++)
                 msg += $"{names[i]} {maxs[i]:F0}/{mins[i]:F0}°C {ShortDesc(codes[i])}  ";
-            Pet.Say(msg, 6000);
+            if (!_unloaded) Pet.Say(msg, 6000);
         }
+        catch (Exception) when (_unloaded) { }
+        catch (ArgumentException ex) { Pet.Say(ex.Message, 4000); }
         catch
         {
             Pet.Say("天气预报获取失败，检查网络", 3000);

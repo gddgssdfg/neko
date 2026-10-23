@@ -1,0 +1,17 @@
+<Project>
+  <!-- Match runtime file names while preserving the directory below neko-assets.
+       New skins need no per-project allowlist. Source art and baking models stay out. -->
+  <PropertyGroup>
+    <_NekoAssetsRoot>$(MSBuildThisFileDirectory)..\neko-assets\</_NekoAssetsRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(_NekoAssetsRoot)**\neko_*.png;$(_NekoAssetsRoot)**\skin.json;$(_NekoAssetsRoot)**\thumb.png"
+          Exclude="$(_NekoAssetsRoot)reference\**;$(_NekoAssetsRoot)_*\**;$(_NekoAssetsRoot)**\*preview*;$(_NekoAssetsRoot)**\*.bak-*"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" LinkBase="neko-assets" />
+    <None Include="$(_NekoAssetsRoot)icons\**\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" LinkBase="neko-assets\icons" />
+    <None Include="$(_NekoAssetsRoot)mirror\**\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" LinkBase="neko-assets\mirror" />
+    <None Include="$(_NekoAssetsRoot)ui\**\*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" LinkBase="neko-assets\ui" />
+    <None Include="$(_NekoAssetsRoot)tray.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Link="neko-assets\tray.ico" />
+  </ItemGroup>
+</Project>

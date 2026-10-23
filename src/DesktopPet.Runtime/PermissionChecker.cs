@@ -43,6 +43,8 @@ public static class PermissionChecker
             var key = prefix + token.Trim();
             if (Map.TryGetValue(key, out var flag))
                 result |= flag;
+            else
+                throw new FormatException($"未知插件权限 '{key}'，请检查 plugin.toml 的 [permissions] 分组与拼写");
         }
         return result;
     }

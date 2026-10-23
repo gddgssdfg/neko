@@ -41,8 +41,8 @@ public sealed class SpriteAtlas
     public const int FrameW = 32;
     public const int FrameH = 32;
 
-    private readonly Dictionary<string, SpriteState> _states = new();
-    private readonly Dictionary<string, BitmapSource> _eyes = new();
+    private readonly Dictionary<string, SpriteState> _states = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, BitmapSource> _eyes = new(StringComparer.OrdinalIgnoreCase);
     public BitmapSource? Shadow { get; private set; }
     /// <summary>皮肤 id（来自 skin.json）。</summary>
     public string Skin { get; private set; } = SkinRegistry.DefaultSkinId;
@@ -100,7 +100,12 @@ public sealed class SpriteAtlas
         var dir = string.IsNullOrEmpty(info.Directory) && !string.IsNullOrEmpty(assetsRoot)
             ? Path.Combine(assetsRoot, info.Id)
             : info.Directory;
-        return LoadFromInfo(info, dir);
+        var atlas = LoadFromInfo(info, dir);
+        if (atlas.States.ContainsKey("idle")) return atlas;
+        Log.Warn($"[皮肤] {info.Id} 没有可用的 idle 状态，尝试回退默认皮肤。");
+        if (!string.Equals(info.Id, SkinRegistry.DefaultSkinId, StringComparison.OrdinalIgnoreCase))
+            return LoadSkin(assetsRoot, SkinRegistry.DefaultSkinId);
+        return atlas; // No default assets are available; keep the host alive and diagnostic visible.
     }
 
     /// <summary>
@@ -116,51 +121,68 @@ public sealed class SpriteAtlas
 
         foreach (var state in info.States)
         {
-            var frames = new SpriteFrame[info.Frames];
-            bool complete = true;
+            try
+            {
+                var frames = new SpriteFrame[info.Frames];
+                bool complete = true;
 
-            if (info.Layout == SkinLayout.Files)
-            {
-                for (int f = 0; f < info.Frames; f++)
+                if (info.Layout == SkinLayout.Files)
                 {
-                    var p = Path.Combine(skinDir, $"neko_{state.Name}_{f}.png");
-                    if (!File.Exists(p)) { complete = false; break; }
-                    frames[f] = new SpriteFrame { Bitmap = LoadPng(p) };
-                }
-            }
-            else
-            {
-                var p = Path.Combine(skinDir, $"neko_{state.Name}.png");
-                if (!File.Exists(p)) complete = false;
-                else
-                {
-                    var sheet = LoadPng(p);
                     for (int f = 0; f < info.Frames; f++)
                     {
-                        frames[f] = new SpriteFrame
-                        {
-                            Bitmap = Crop(sheet, f * info.FrameWidth, 0, info.FrameWidth, info.FrameHeight),
-                        };
+                        var p = Path.Combine(skinDir, $"neko_{state.Name}_{f}.png");
+                        if (!File.Exists(p)) { complete = false; break; }
+                        frames[f] = new SpriteFrame { Bitmap = LoadPng(p) };
+                        if (f > 0 && (frames[f].Bitmap.PixelWidth != frames[0].Bitmap.PixelWidth ||
+                                      frames[f].Bitmap.PixelHeight != frames[0].Bitmap.PixelHeight))
+                            throw new FormatException("独立帧的位图尺寸不一致");
                     }
                 }
+                else
+                {
+                    var p = Path.Combine(skinDir, $"neko_{state.Name}.png");
+                    if (!File.Exists(p)) complete = false;
+                    else
+                    {
+                        var sheet = LoadPng(p);
+                        if ((long)info.FrameWidth * info.Frames > sheet.PixelWidth || info.FrameHeight > sheet.PixelHeight)
+                            throw new FormatException($"雪碧图尺寸 {sheet.PixelWidth}×{sheet.PixelHeight} 小于清单要求的 {(long)info.FrameWidth * info.Frames}×{info.FrameHeight}");
+                        for (int f = 0; f < info.Frames; f++)
+                        {
+                            frames[f] = new SpriteFrame
+                            {
+                                Bitmap = Crop(sheet, f * info.FrameWidth, 0, info.FrameWidth, info.FrameHeight),
+                            };
+                        }
+                    }
+                }
+
+                if (!complete)
+                {
+                    Log.Warn($"[皮肤] {info.Id}/{state.Name} 缺少素材，跳过该状态。");
+                    continue;
+                }
+
+                atlas._states[state.Name] = new SpriteState
+                {
+                    Name = state.Name,
+                    Frames = frames,
+                    Fps = state.Fps,
+                    EyeLayer = state.EyeLayer,
+                };
             }
-
-            if (!complete) continue;   // 缺帧 → 跳过该状态（不崩，行为同旧版）
-
-            atlas._states[state.Name] = new SpriteState
+            catch (Exception ex)
             {
-                Name = state.Name,
-                Frames = frames,
-                Fps = state.Fps,
-                EyeLayer = state.EyeLayer,
-            };
+                Log.Warn($"[皮肤] {info.Id}/{state.Name} 加载失败：{ex.Message}");
+            }
         }
 
         // 眼球层（仅清单声明的 key；文件缺失则跳过）
         foreach (var eye in info.EyeLayers)
         {
             var p = Path.Combine(skinDir, $"neko_{eye}.png");
-            if (File.Exists(p)) atlas._eyes[eye] = LoadPng(p);
+            var image = TryLoadOptionalPng(p);
+            if (image is not null) atlas._eyes[eye] = image;
         }
 
         // v0.1.88：算各眼球层的「安全位移」（源像素）。
@@ -189,7 +211,7 @@ public sealed class SpriteAtlas
         if (info.HasShadow)
         {
             var shadowPath = Path.Combine(skinDir, "neko_shadow.png");
-            if (File.Exists(shadowPath)) atlas.Shadow = LoadPng(shadowPath);
+            atlas.Shadow = TryLoadOptionalPng(shadowPath);
         }
 
         return atlas;
@@ -329,6 +351,17 @@ public sealed class SpriteAtlas
         bi.EndInit();
         if (bi.CanFreeze) bi.Freeze();
         return bi;
+    }
+
+    private static BitmapSource? TryLoadOptionalPng(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try { return LoadPng(path); }
+        catch (Exception ex)
+        {
+            Log.Warn($"[皮肤] 可选素材 {path} 加载失败：{ex.Message}");
+            return null;
+        }
     }
 
     private static BitmapSource Crop(BitmapSource src, int x, int y, int w, int h)

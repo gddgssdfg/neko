@@ -179,6 +179,7 @@ public sealed partial class PetWindow : Window
         // 素材（v0.1.74：扫 neko-assets/<skinId>/skin.json 数据驱动加载；未注册的皮肤回退默认 pixel）
         if (!SkinRegistry.Exists(Paths.Assets, _config.Skin)) { _config.Skin = SkinRegistry.DefaultSkinId; }
         var atlas = SpriteAtlas.LoadSkin(Paths.Assets, _config.Skin);
+        _config.Skin = atlas.Skin;
 
         // 事件总线（宿主广播，插件订阅）
         _eventBus = new EventBusImpl();
@@ -338,6 +339,7 @@ public sealed partial class PetWindow : Window
     /// </summary>
     public void InitializeAfterFirstFrame()
     {
+        if (_isDisposed) return;
         // ---- P1：镜像窗（InputMirrorWindow ctor+Show 实测 ≈365ms，占冷启 30%）----
         if (_startupMirrorPending)
         {
@@ -345,7 +347,7 @@ public sealed partial class PetWindow : Window
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 // 延后期间用户可能已切到 slack（SetAppMode）→ 不再补显，避免"刚关又弹"
-                if (_config.AppMode == "work" || _config.KeyboardMirrorEnabled) ShowMirror();
+                if (!_isDisposed && (_config.AppMode == "work" || _config.KeyboardMirrorEnabled)) ShowMirror();
             }), DispatcherPriority.Background);
         }
 
@@ -356,7 +358,7 @@ public sealed partial class PetWindow : Window
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 // 若延后期间用户已在设置页动过开关（ApplyChatEnabled 已跑）→ 不重复建
-                if (_config.ChatEnabled && _chatScheduler is null) ApplyChatEnabled(true);
+                if (!_isDisposed && _config.ChatEnabled && _chatScheduler is null) ApplyChatEnabled(true);
             }), DispatcherPriority.Background);
         }
 
@@ -421,7 +423,10 @@ public sealed partial class PetWindow : Window
 
     public void Dispose()
     {
+        if (_isDisposed) return;
+        _isDisposed = true;
         _loopTimer.Stop();
+        _gameTimer.Stop();
         _chatScheduler?.Stop();    // v0.1.40
         _globalInput.Dispose();
         CloseRadialMenu();

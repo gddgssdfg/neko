@@ -70,6 +70,7 @@ public sealed class PetRenderer
     public void SetAtlas(SpriteAtlas atlas)
     {
         _atlas = atlas;
+        _socketBrushCache.Clear();
         _animator.SetState(null);
         RenderInvalidated?.Invoke();
     }

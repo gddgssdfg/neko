@@ -64,7 +64,7 @@ public sealed class SystemInfoPlugin : PluginBase
             var cpu = await GetCpuUsageAsync();
 
             var mem = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
-            GlobalMemoryStatusEx(ref mem);
+            if (!GlobalMemoryStatusEx(ref mem)) throw new InvalidOperationException("无法读取内存状态");
             var totalGb = mem.ullTotalPhys / 1024.0 / 1024 / 1024;
             var availGb = mem.ullAvailPhys / 1024.0 / 1024 / 1024;
             var usedGb = totalGb - availGb;
@@ -74,7 +74,7 @@ public sealed class SystemInfoPlugin : PluginBase
             if (c is not null && c.TotalSize > 0)
             {
                 var used = c.TotalSize - c.AvailableFreeSpace;
-                disk = $"C盘 {used / 1024.0 / 1024 / 1024:F0}/{c.TotalSize / 1024.0 / 1024 / 1024:F0}GB";
+                disk = $"{c.Name} {used / 1024.0 / 1024 / 1024:F0}/{c.TotalSize / 1024.0 / 1024 / 1024:F0}GB";
             }
 
             Pet.Say($"CPU {cpu:F0}% · 内存 {usedGb:F1}/{totalGb:F1}GB · {disk}", 5000);
@@ -88,14 +88,21 @@ public sealed class SystemInfoPlugin : PluginBase
     /// <summary>两次 GetSystemTimes 采样（间隔 300ms）计算 CPU 使用率</summary>
     private static async Task<double> GetCpuUsageAsync()
     {
-        GetSystemTimes(out var i1, out var k1, out var u1);
+        if (!GetSystemTimes(out var i1, out var k1, out var u1)) throw new InvalidOperationException("无法读取 CPU 状态");
         await Task.Delay(300);
-        GetSystemTimes(out var i2, out var k2, out var u2);
+        if (!GetSystemTimes(out var i2, out var k2, out var u2)) throw new InvalidOperationException("无法读取 CPU 状态");
 
         var idle = ToUlong(i2) - ToUlong(i1);
-        var busy = (ToUlong(k2) + ToUlong(u2)) - (ToUlong(k1) + ToUlong(u1));
-        var total = idle + busy;
-        return total == 0 ? 0 : (1.0 - (double)idle / total) * 100.0;
+        var kernel = ToUlong(k2) - ToUlong(k1);
+        var user = ToUlong(u2) - ToUlong(u1);
+        return CalculateCpuUsage(idle, kernel, user);
+    }
+
+    private static double CalculateCpuUsage(ulong idle, ulong kernel, ulong user)
+    {
+        // GetSystemTimes includes idle time in kernel time already.
+        double total = (double)kernel + user;
+        return total <= 0 ? 0 : Math.Clamp((1.0 - idle / total) * 100.0, 0, 100);
     }
 
     private static ulong ToUlong(FILETIME ft) => ((ulong)ft.High << 32) | ft.Low;

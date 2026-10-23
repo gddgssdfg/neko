@@ -105,12 +105,19 @@ public sealed partial class SettingsWindow : Window
         stack.Children.Add(BuildSkinPicker(skinList, curSkin, s =>
         {
             _pet.SetSkin(s);
-            _config.Skin = s;
+            if (!string.Equals(_config.Skin, s, StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("该皮肤缺少可用的待机素材，已回退默认皮肤。请检查 skin.json、PNG 尺寸和数据目录下的日志。", "皮肤加载失败");
+                RebuildSection("pet");
+            }
             Save();
             // v0.1.81：切换皮肤可能自动套用推荐缩放（改了 _config.Scale）——
             // 同步「缩放倍率」卡片显示，避免设置页显示值与真实值不一致。
             refreshScaleCard();
         }));
+        stack.Children.Add(BuildButtonCard(
+            "刷新皮肤", "新增或替换素材后重新扫描，并重新加载当前皮肤，无需重启。",
+            "刷新皮肤", () => { _pet.SetSkin(_config.Skin, forceReload: true); RebuildSection("pet"); }));
         stack.Children.Add(BuildButtonCard(
             "皮肤目录", "打开 neko-assets/，放入自制皮肤目录（skin.json + 帧 PNG）后重开本页即可选用",
             "打开皮肤目录",
@@ -385,7 +392,13 @@ public sealed partial class SettingsWindow : Window
     {
         var stack = new StackPanel();
 
-        var plugins = _pet.PluginHost.Plugins;
+        stack.Children.Add(BuildButtonCard("接入插件", "放入插件目录后刷新列表并启用；更新已有插件前先禁用，复制新文件后再启用。", "刷新插件列表", () => RebuildSection("plugin")));
+        stack.Children.Add(BuildButtonCard("插件目录", Paths.Plugins, "打开插件目录", () =>
+        {
+            try { System.IO.Directory.CreateDirectory(Paths.Plugins); Process.Start(new ProcessStartInfo { FileName = Paths.Plugins, UseShellExecute = true }); }
+            catch (Exception ex) { MessageBox.Show("打开插件目录失败：" + ex.Message); }
+        }));
+        var plugins = _pet.PluginHost.GetInstalledPlugins();
         if (plugins.Count == 0)
         {
             stack.Children.Add(new TextBlock
@@ -395,7 +408,6 @@ public sealed partial class SettingsWindow : Window
                 FontSize = 13,
                 Margin = new Thickness(0, 24, 0, 0),
             });
-            return WrapPage(stack, "插件");
         }
 
         foreach (var p in plugins)
@@ -426,7 +438,7 @@ public sealed partial class SettingsWindow : Window
 
             // v0.1.46：插件启用/禁用开关
             var idCap = p.Manifest.Id;
-            bool enabled = _pet.PluginHost.IsEnabled(idCap);
+            bool enabled = _pet.PluginHost.Plugins.Any(loaded => string.Equals(loaded.Manifest.Id, idCap, StringComparison.OrdinalIgnoreCase));
             var toggle = new ToggleSwitch(ToggleOff, Accent)   // v0.1.50：主题色 offColor
             {
                 IsOn = enabled,
@@ -440,10 +452,11 @@ public sealed partial class SettingsWindow : Window
                 {
                     // 加载失败回滚 UI 状态
                     toggle.IsOn = !on;
+                    MessageBox.Show(_pet.PluginHost.Errors.LastOrDefault(e => string.Equals(System.IO.Path.GetFileName(e.dir), idCap, StringComparison.OrdinalIgnoreCase)).error ?? "插件加载失败，请查看日志。", "插件加载失败");
                     return;
                 }
-                if (on) _config.DisabledPlugins.Remove(idCap);
-                else if (!_config.DisabledPlugins.Contains(idCap)) _config.DisabledPlugins.Add(idCap);
+                if (on) _config.DisabledPlugins.RemoveAll(id => string.Equals(id, idCap, StringComparison.OrdinalIgnoreCase));
+                else if (!_config.DisabledPlugins.Contains(idCap, StringComparer.OrdinalIgnoreCase)) _config.DisabledPlugins.Add(idCap);
                 Save();
                 // v0.1.88：启停插件可能增删其注册的设置页（内嵌在插件卡内）→ 插件页缓存作废，
                 // 下次进入 plugin 页重建以反映新的插件集合/设置页。
@@ -478,7 +491,7 @@ public sealed partial class SettingsWindow : Window
             // 加载错误（红色提示行）
             foreach (var (dir, err) in _pet.PluginHost.Errors)
             {
-                if (System.IO.Path.GetFileName(dir) == p.Manifest.Id || dir.EndsWith(p.Manifest.Id, System.StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(System.IO.Path.GetFileName(dir), p.Manifest.Id, StringComparison.OrdinalIgnoreCase))
                     sp.Children.Add(new TextBlock
                     {
                         Text = $"加载错误：{err}",
@@ -514,6 +527,12 @@ public sealed partial class SettingsWindow : Window
                 Child = sp,
             });
         }
+        foreach (var (dir, error) in _pet.PluginHost.Errors.Where(e => !plugins.Any(p => string.Equals(p.PluginDir, e.dir, StringComparison.OrdinalIgnoreCase))))
+            stack.Children.Add(new TextBlock
+            {
+                Text = $"{System.IO.Path.GetFileName(dir)}：{error}", TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xE7, 0x4C, 0x3C)), Margin = new Thickness(0, 0, 0, 12),
+            });
         return WrapPage(stack, "插件");
     }
 

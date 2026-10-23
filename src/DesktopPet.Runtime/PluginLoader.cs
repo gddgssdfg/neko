@@ -4,6 +4,9 @@ using DesktopPet.Core;
 
 namespace DesktopPet.Runtime;
 
+/// <summary>安装目录中的清单；发现清单不会执行插件代码。</summary>
+public sealed record InstalledPlugin(PluginManifest Manifest, string PluginDir);
+
 /// <summary>单个插件的装载上下文。负责创建 ALC、加载 dll、实例化插件、卸载。</summary>
 public sealed class PluginLoadContext : AssemblyLoadContext
 {
@@ -55,6 +58,7 @@ public sealed class LoadedPlugin : IDisposable
     public bool IsCollectible => Context.IsCollectible;
 
     private bool _unloaded;
+    private bool _disposed;
 
     /// <summary>
     /// v0.1.95（审计 P2-3）：**幂等卸载**——保证 <see cref="IPetPlugin.OnUnload"/> 恰好被调用一次。
@@ -72,6 +76,8 @@ public sealed class LoadedPlugin : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         Unload();   // v0.1.95：收口为幂等入口（改前此处直接 try { Instance.OnUnload(); }）
         try { Instance.Dispose(); } catch { /* 插件 Dispose 失败不影响 ALC 卸载（最后防线，Runtime 无宿主 Log 可用）*/ }
         Context.Unload();
@@ -90,79 +96,86 @@ public sealed class PluginLoader
     /// </summary>
     public PluginLoader(string pluginsRoot, PluginTrustSet? trust = null)
     {
-        _pluginsRoot = pluginsRoot;
+        _pluginsRoot = Path.GetFullPath(pluginsRoot);
         _trust = trust ?? PluginTrustSet.Empty;
     }
 
     /// <summary>v0.1.46：插件目录根（用于运行时按 id 定位 dir）</summary>
     public string PluginsRoot => _pluginsRoot;
 
+    public IReadOnlyList<InstalledPlugin> Discover(out IReadOnlyList<(string dir, string error)> errors)
+    {
+        var found = new List<InstalledPlugin>();
+        var failures = new List<(string, string)>();
+        errors = failures;
+        try
+        {
+            EnsurePluginsRoot();
+            foreach (var dir in Directory.GetDirectories(_pluginsRoot).OrderBy(d => d, StringComparer.OrdinalIgnoreCase))
+            {
+                if (Path.GetFileName(dir).StartsWith('_')) continue;
+                try
+                {
+                    var manifest = ManifestParser.Parse(Path.Combine(dir, "plugin.toml"));
+                    if (!string.Equals(manifest.Id, Path.GetFileName(dir), StringComparison.OrdinalIgnoreCase))
+                        throw new FormatException($"manifest id '{manifest.Id}' 与目录名不一致");
+                    found.Add(new InstalledPlugin(manifest, dir));
+                }
+                catch (Exception ex) { failures.Add((dir, ex.Message)); }
+            }
+        }
+        catch (Exception ex) { failures.Add((_pluginsRoot, $"扫描插件目录失败: {ex.Message}")); }
+        return found;
+    }
+
     /// <summary>v0.1.46：运行时加载单个插件（启用已禁用插件用；不读 disabled 集合——PluginHost 显式控制）</summary>
     public LoadedPlugin? LoadOne(string pluginDir, out string? error)
     {
-        if (TryLoadOne(pluginDir, new HashSet<string>(), out var lp, out error))
+        if (TryLoadOne(Path.GetFullPath(pluginDir), new HashSet<string>(), out var lp, out error))
             return lp;
         return null;
     }
 
-    /// <summary>扫描并加载所有有效插件（v0.1.34 起推荐改用 LoadCore + LoadDeferred 分批）</summary>
+    /// <summary>扫描并加载全部未禁用插件。</summary>
     public IReadOnlyList<LoadedPlugin> LoadAll(
         IReadOnlySet<string> disabledPlugins,
         out IReadOnlyList<(string dir, string error)> errors)
-    {
-        var loaded = new List<LoadedPlugin>();
-        var errs = new List<(string, string)>();
-        errors = errs;
-        EnsurePluginsRoot();
-        foreach (var dir in Directory.EnumerateDirectories(_pluginsRoot).OrderBy(d => d))
-        {
-            if (TryLoadOne(dir, disabledPlugins, out var lp, out var err))
-                loaded.Add(lp!);
-            else if (err is not null)
-                errs.Add((dir, err));
-        }
-        return loaded;
-    }
+        => LoadMatching(disabledPlugins, _ => true, out errors);
 
-    /// <summary>v0.1.34：只加载核心插件（不在 deferredIds 里的）——冷启动时立即加载，目标压冷启动 <1.5s</summary>
+    /// <summary>启动时加载非延迟插件。</summary>
     public IReadOnlyList<LoadedPlugin> LoadCore(
         IReadOnlySet<string> disabledPlugins,
         IReadOnlySet<string> deferredIds,
         out IReadOnlyList<(string dir, string error)> errors)
-    {
-        var loaded = new List<LoadedPlugin>();
-        var errs = new List<(string, string)>();
-        errors = errs;
-        EnsurePluginsRoot();
-        foreach (var dir in Directory.EnumerateDirectories(_pluginsRoot).OrderBy(d => d))
-        {
-            if (deferredIds.Contains(Path.GetFileName(dir))) continue;   // 跳过延迟
-            if (TryLoadOne(dir, disabledPlugins, out var lp, out var err))
-                loaded.Add(lp!);
-            else if (err is not null)
-                errs.Add((dir, err));
-        }
-        return loaded;
-    }
+        => LoadMatching(disabledPlugins, id => !deferredIds.Contains(id), out errors);
 
-    /// <summary>v0.1.34：只加载延迟插件（ID 在 deferredIds 里的）——主窗口显示后 Background 优先级异步加载</summary>
+    /// <summary>主窗口显示后加载延迟插件。</summary>
     public IReadOnlyList<LoadedPlugin> LoadDeferred(
         IReadOnlySet<string> disabledPlugins,
         IReadOnlySet<string> deferredIds,
+        out IReadOnlyList<(string dir, string error)> errors)
+        => LoadMatching(disabledPlugins, deferredIds.Contains, out errors);
+
+    private IReadOnlyList<LoadedPlugin> LoadMatching(
+        IReadOnlySet<string> disabledPlugins, Func<string, bool> include,
         out IReadOnlyList<(string dir, string error)> errors)
     {
         var loaded = new List<LoadedPlugin>();
         var errs = new List<(string, string)>();
         errors = errs;
-        EnsurePluginsRoot();
-        foreach (var dir in Directory.EnumerateDirectories(_pluginsRoot).OrderBy(d => d))
+        try
         {
-            if (!deferredIds.Contains(Path.GetFileName(dir))) continue;  // 只加载延迟列表
-            if (TryLoadOne(dir, disabledPlugins, out var lp, out var err))
-                loaded.Add(lp!);
-            else if (err is not null)
-                errs.Add((dir, err));
+            EnsurePluginsRoot();
+            // Materialize before loading any assemblies so a scan failure cannot leak instances.
+            var dirs = Directory.GetDirectories(_pluginsRoot).OrderBy(d => d, StringComparer.OrdinalIgnoreCase);
+            foreach (var dir in dirs)
+            {
+                if (!include(Path.GetFileName(dir))) continue;
+                if (TryLoadOne(dir, disabledPlugins, out var plugin, out var error)) loaded.Add(plugin!);
+                else if (error is not null) errs.Add((dir, error));
+            }
         }
+        catch (Exception ex) { errs.Add((_pluginsRoot, $"扫描插件目录失败: {ex.Message}")); }
         return loaded;
     }
 
@@ -181,6 +194,7 @@ public sealed class PluginLoader
     {
         plugin = null;
         error = null;
+        PluginLoadContext? alc = null;
         var name = Path.GetFileName(dir);
         if (name.StartsWith('_')) return false;                    // 临时目录跳过（不计错误）
         if (disabledPlugins.Contains(name)) return false;          // 禁用跳过（不计错误）
@@ -193,12 +207,19 @@ public sealed class PluginLoader
             var manifest = ManifestParser.Parse(manifestFile);
             if (!string.Equals(manifest.Id, name, StringComparison.OrdinalIgnoreCase))
             { error = $"manifest id '{manifest.Id}' 与目录名 '{name}' 不一致"; return false; }
+            if (manifest.Api != 1)
+            { error = $"不兼容的插件 API {manifest.Api}，当前宿主支持 API 1"; return false; }
 
             // 权限：manifest 声明 → 计算授予掩码
             var declared = PermissionChecker.FromManifest(manifest);
 
             // v0.1.80 T02：入口 dll 判定前置（信任通道要拿它做内容摘要绑定）
-            var entryDll = Path.Combine(dir, manifest.Entry);
+            var packageRoot = Path.GetFullPath(dir) + Path.DirectorySeparatorChar;
+            var entryDll = Path.GetFullPath(Path.Combine(dir, manifest.Entry));
+            if (Path.IsPathRooted(manifest.Entry) ||
+                !entryDll.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Path.GetExtension(entryDll), ".dll", StringComparison.OrdinalIgnoreCase))
+            { error = "入口 entry 必须是插件目录内的相对 DLL 路径"; return false; }
             if (!File.Exists(entryDll)) { error = $"入口 dll 不存在: {manifest.Entry}"; return false; }
 
             // 高风险权限：默认拒载；唯一豁免路径 = 命中内置信任清单（官方内置插件，可含内容摘要绑定）。
@@ -211,10 +232,22 @@ public sealed class PluginLoader
             }
 
             // ALC 隔离加载
-            var alc = new PluginLoadContext(dir, manifest.Entry);
+            alc = new PluginLoadContext(dir, manifest.Entry);
             var assembly = alc.LoadFromAssemblyPath(entryDll);
             var instance = Instantiate(assembly, dir, out var instErr);
-            if (instance is null) { alc.Unload(); error = instErr ?? "实例化失败"; return false; }
+            if (instance is null) { error = instErr ?? "实例化失败"; return false; }
+            try
+            {
+                if (!string.Equals(instance.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"入口类 Id '{instance.Id}' 与清单 id '{manifest.Id}' 不一致");
+                if (instance.ApiVersion.Major != 1)
+                    throw new InvalidOperationException($"入口类需要 API {instance.ApiVersion}，当前宿主支持 API 1");
+            }
+            catch
+            {
+                try { instance.Dispose(); } catch { }
+                throw;
+            }
 
             plugin = new LoadedPlugin
             {
@@ -224,12 +257,17 @@ public sealed class PluginLoader
                 Instance = instance,
                 GrantedPermissions = declared,
             };
+            alc = null; // Ownership transferred to LoadedPlugin.
             return true;
         }
         catch (Exception ex)
         {
             error = ex.Message;
             return false;
+        }
+        finally
+        {
+            alc?.Unload(); // Also release contexts when loading or reflection throws.
         }
     }
 

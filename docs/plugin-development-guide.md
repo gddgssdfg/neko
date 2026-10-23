@@ -473,7 +473,7 @@ Capability.System.Log(PluginLogLevel.Debug, $"tick 完成，缓存 {n} 条");
 
 > 🔴 **最常见错误**：把 `scheduler` / `notify` / `clipboard` / `network` / `media` / `file.own`
 > 写进了 `pet` 或 `ui` 段。它们**只认 `other` 段**（或 `other` 不加前缀的完整键）。
-> 例如 `notify` 写成 `pet = ["notify"]` 会拼成 `pet.notify` → 命中不了任何映射 → 被静默忽略。
+> 例如 `notify` 写成 `pet = ["notify"]` 会拼成 `pet.notify` → v0.2.7 起会明确报出未知权限并拒绝加载，请移到正确分组。
 
 ### 3.3 权限 token 全表 → 位 → Capability
 
@@ -1361,3 +1361,13 @@ private static double ReadDouble(object? payload, string name)
 
 *文档版本：v2.0（合并插件手册）｜ 基于宿主 v0.1.83 源码与 dev-log/CHANGELOG 撰写；踩坑 2 根因按实测二分结论修订。*
 
+
+
+## v0.2.7 接入与生命周期补充
+
+- 设置页按安装清单列出插件，禁用和加载失败的插件仍可见；放入新的插件目录后点击「刷新插件列表」，再启用即可，无需重启。也可直接打开插件目录。
+- 当前仅支持清单 `api = 1` 与入口类 `ApiVersion.Major == 1`；入口类 Id 必须与清单 id 一致，entry 必须指向本插件目录内的相对 DLL 路径。API 字段类型/整数范围、权限数组格式与未知权限会明确报错。
+- 刷新列表只读取清单，不会执行第三方插件；启用时仍走既有信任和权限声明检查。成功重试会清除该插件的旧错误。
+- 宿主为每个插件持有独立调度器及事件订阅作用域，正常禁用、退出及 OnLoad 中途失败都会释放；仍建议插件在 OnUnload 主动退订、取消自行创建的任务与网络请求。
+- 重复加载同一插件不再创建第二个实例；LoadedPlugin.Dispose 幂等。插件上下文中的存储目录遵循创建宿主时传入的数据根。
+- 这些检查是接入兼容性和资源管理约束，并非进程级沙箱；插件仍是在宿主进程中执行的托管代码。

@@ -9,7 +9,7 @@ using DesktopPet.App.Renderer;
 using DesktopPet.App.Services;
 using DesktopPet.App.Windows;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _failed;
 
@@ -20,6 +20,7 @@ internal static class Program
         Environment.SetEnvironmentVariable("NEKO_DATA_DIR", root);
         Paths.EnsureCreated();
         Log.Initialize("debug", Path.Combine(root, "logs"));
+        RunExtensionChecks(root);
         Check("scheduler does not run a task scheduled forty days in the future", () =>
         {
             using var scheduler = new SchedulerImpl();
