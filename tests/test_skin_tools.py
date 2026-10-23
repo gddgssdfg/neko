@@ -54,6 +54,34 @@ class PreviewTests(unittest.TestCase):
 
 
 class PixelAssetTests(unittest.TestCase):
+    def test_native_pixel_has_safe_frames_and_aligned_independent_eyes(self):
+        root = Path(__file__).resolve().parents[1] / "neko-assets" / "pixel"
+        meta = json.loads((root / "skin.json").read_text(encoding="utf-8"))
+        self.assertEqual((meta["frameWidth"], meta["frameHeight"], meta["frames"]), (32, 32, 4))
+        colors = set()
+        for state in meta["states"]:
+            with self.subTest(state=state["name"]), Image.open(root / f"neko_{state['name']}.png") as source:
+                sheet = source.convert("RGBA")
+                self.assertEqual(sheet.size, (128, 32))
+                frames = [sheet.crop((i * 32, 0, (i + 1) * 32, 32)) for i in range(4)]
+                if state["fps"] > 0:
+                    self.assertGreater(len({frame.tobytes() for frame in frames}), 1)
+                for frame in frames:
+                    bounds = frame.getchannel("A").getbbox()
+                    self.assertIsNotNone(bounds)
+                    self.assertGreaterEqual(min(bounds[:2]), 1)
+                    self.assertLessEqual(max(bounds[2:]), 31)
+                    data = frame.tobytes()
+                    pixels = [tuple(data[i:i + 4]) for i in range(0, len(data), 4)]
+                    self.assertLessEqual({p[3] for p in pixels}, {0, 255})
+                    colors.update(p[:3] for p in pixels if p[3])
+                    if state.get("eyeLayer"):
+                        with Image.open(root / f"neko_{state['eyeLayer']}.png") as eyes:
+                            self.assertEqual(eyes.size, (32, 32))
+                            self.assertTrue(all(not eye or body for eye, body in
+                                                zip(eyes.convert("RGBA").tobytes()[3::4], data[3::4])))
+        self.assertLessEqual(len(colors), 12)
+
     def test_invisible_colors_do_not_consume_the_palette(self):
         image = Image.new("RGBA", (64, 64), (0, 0, 255, 0))
         image.putpixel((32, 32), (255, 128, 0, 255))

@@ -9,7 +9,7 @@ Neko 像素猫雪碧图生成器
   - 画布 32x32，放大 3 倍 = 96x96 显示
   - 每状态 4 帧，横向排列成 128x32 雪碧图
   - 眼球独立分层，坐标与身体层严格对齐
-  - 头部中心统一固定在 (17, 11)，保证眼球层零偏移对齐
+  - 头部中心统一固定在 (13, 11)，保证眼球层零偏移对齐
   - sleep 状态自带闭眼，不叠加眼球层
   - 纯硬边像素，无抗锯齿
 
@@ -39,19 +39,19 @@ from PIL import Image, ImageDraw, ImageFilter, ImageChops
 SIZE = 32
 NF = 4
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PREVIEW_OUT = os.path.join(ROOT, "_eval", "pixel-native-redraw")
+PREVIEW_OUT = os.path.join(ROOT, "_eval", "pixel-b01-redraw")
 OUT = os.path.join(ROOT, "neko-assets", "pixel")   # v0.1.74：像素皮肤迁入 neko-assets/pixel/（与 skin.json 同目录）
 
 # 头部锚点：所有需要叠加眼球层的状态都必须用这个坐标
-HEAD_CX, HEAD_CY = 17, 11
+HEAD_CX, HEAD_CY = 13, 11
 
 # ---------------- 调色板（严格 12 色）----------------
 C_OUTLINE = (0x3A, 0x2A, 0x20, 255)
-C_FUR_L   = (0xF7, 0xB8, 0x72, 255)
-C_FUR_M   = (0xEF, 0xA0, 0x55, 255)
-C_FUR_D   = (0xC9, 0x7A, 0x38, 255)
+C_FUR_L   = (0xFF, 0xC5, 0x74, 255)
+C_FUR_M   = (0xF7, 0xA3, 0x3F, 255)
+C_FUR_D   = (0xD4, 0x7A, 0x28, 255)
 C_FUR_DP  = (0xA8, 0x5F, 0x26, 255)
-C_WHITE   = (0xFF, 0xF8, 0xF0, 255)
+C_WHITE   = (0xFF, 0xF0, 0xD4, 255)
 C_WSH     = (0xE8, 0xDC, 0xCB, 255)
 C_PUPIL   = (0x2A, 0x1E, 0x18, 255)
 C_HI      = (0xFF, 0xFF, 0xFF, 255)
@@ -102,91 +102,90 @@ class Cv:
 
 
 # ---------------- 部件 ----------------
-def cat_head(c, expression="open", cx=17, cy=11):
-    # Wide cheeks and outward triangular ears, drawn directly on the 32px grid.
+def cat_head(c, expression="open", cx=HEAD_CX, cy=HEAD_CY):
+    """B01: round cheeks, short ears, small dark eyes and cream muzzle."""
     def points(ps):
-        return [(cx + x, cy + y) for x, y in ps]
-    c.poly(points([(-9,-3),(-9,-8),(-7,-8),(-3,-5),(3,-5),(7,-8),(9,-8),(9,-2)]), C_FUR_M)
-    c.poly(points([(-8,-6),(-7,-6),(-5,-4),(-8,-3)]), C_PAW)
-    c.poly(points([(8,-6),(7,-6),(5,-4),(8,-3)]), C_PAW)
-    c.poly(points([(-7,-5),(7,-5),(9,-2),(9,2),(7,5),(4,7),(-4,7),(-7,5),(-9,2),(-9,-2)]), C_FUR_M)
-    c.rect(cx-5,cy-4,cx-3,cy-4,C_FUR_L)
+        return [(cx+x,cy+y) for x,y in ps]
+    c.poly(points([(-8,-4),(-8,-8),(-6,-8),(-3,-5),(3,-5),(6,-8),(8,-8),(8,-4)]), C_FUR_M)
+    c.poly(points([(-7,-6),(-6,-6),(-4,-4),(-7,-4)]), C_PAW)
+    c.poly(points([(7,-6),(6,-6),(4,-4),(7,-4)]), C_PAW)
+    c.poly(points([(-5,-5),(5,-5),(8,-3),(10,0),(10,3),(8,6),(4,8),(-4,8),(-8,6),(-10,3),(-10,0),(-8,-3)]), C_FUR_M)
     for x in (-3,0,3):
-        c.rect(cx+x,cy-4,cx+x,cy-3+(x==0),C_FUR_D)
-    c.poly(points([(-3,3),(-1,2),(0,3),(1,2),(3,3),(3,5),(1,6),(-1,6),(-3,5)]), C_WHITE)
-    c.rect(cx-1,cy+3,cx+1,cy+3,C_NOSE)
-    c.rect(cx,cy+4,cx,cy+5,C_OUTLINE)
-    c.rect(cx-2,cy+5,cx-1,cy+5,C_OUTLINE)
-    c.rect(cx+1,cy+5,cx+2,cy+5,C_OUTLINE)
+        c.rect(cx+x,cy-5,cx+x,cy-3+(x==0),C_FUR_D)
     for side in (-1,1):
-        c.rect(cx+side*6,cy+2,cx+side*7,cy+2,C_FUR_DP)
-        c.rect(cx+side*6,cy+4,cx+side*7,cy+4,C_FUR_DP)
-    if expression in ("open", "scared"):
+        c.rect(cx+side*7,cy+1,cx+side*9,cy+1,C_FUR_D)
+        c.rect(cx+side*6,cy+3,cx+side*8,cy+3,C_FUR_D)
+        c.rect(cx+side*6,cy+5,cx+side*7,cy+5,C_FUR_D)
+    c.poly(points([(0,1),(2,3),(4,3),(6,5),(4,7),(1,8),(-1,8),(-4,7),(-6,5),(-4,3),(-2,3)]), C_WHITE)
+    c.rect(cx,cy+3,cx+1,cy+3,C_NOSE)
+    c.rect(cx,cy+4,cx,cy+5,C_OUTLINE)
+    c.rect(cx-1,cy+6,cx-1,cy+6,C_OUTLINE)
+    c.rect(cx+1,cy+6,cx+1,cy+6,C_OUTLINE)
+    if expression=="sleep":
         for x in (-5,3):
-            c.rect(cx+x,cy-1,cx+x+3,cy+2,C_WHITE)
-    elif expression == "sleep":
-        for x in (-5,3):
-            c.rect(cx+x,cy+1,cx+x+3,cy+1,C_OUTLINE)
-            c.rect(cx+x,cy,cx+x,cy,C_OUTLINE)
-    if expression == "scared":
-        c.rect(cx,cy+5,cx+1,cy+6,C_PUPIL)
+            c.rect(cx+x,cy, cx+x+2,cy,C_PUPIL)
+    elif expression=="scared":
+        c.rect(cx,cy+6,cx+1,cy+7,C_PUPIL)
 
 
-def curled_tail(c, f, y=23):
-    tip = [0,-1,0,1][f]
-    c.pline([(10,y),(6,y),(3,y-3),(3,y-7),(5,y-9+tip),(7,y-9+tip)],3,C_FUR_M)
-    c.rect(3,y-5,4,y-4,C_FUR_D)
-    c.rect(6,y-10+tip,7,y-8+tip,C_WHITE)
+def curled_tail(c, f, y=26):
+    tip=[0,-1,0,1][f]
+    c.pline([(21,y+2),(26,y+2),(28,y),(28,y-3),(26,y-5+tip),(24,y-5+tip)],3,C_FUR_M)
+    c.rect(25,y+1,26,y+3,C_FUR_D)
+    c.rect(27,y-2,29,y-1,C_FUR_D)
+    c.rect(23,y-6+tip,25,y-4+tip,C_WHITE)
 
 
-def torso(c, y=22):
-    c.ell(17,y,8,5,C_FUR_M)
-    c.ell(18,y+1,4,4,C_WHITE)
-    c.rect(10,y-1,12,y,C_FUR_D)
-    c.rect(24,y,24,y+2,C_FUR_D)
+def torso(c, y=23):
+    c.ell(13,y,8,5,C_FUR_M)
+    c.poly([(9,y-5),(17,y-5),(17,y-2),(15,y+1),(13,y+3),(11,y+1),(9,y-2)],C_WHITE)
+    c.rect(6,y-1,8,y,C_FUR_D)
+    c.rect(18,y+1,20,y+2,C_FUR_D)
+    c.rect(6,y+2,7,y+3,C_FUR_D)
 
 
 def paw(c,x,y):
-    c.rect(x,y-2,x+3,y,C_FUR_M)
-    c.rect(x,y,x+3,y+1,C_WHITE)
+    c.rect(x,y-3,x+3,y,C_FUR_M)
+    c.rect(x,y-1,x+3,y,C_WHITE)
+    c.rect(x+1,y,x+1,y,C_WSH)
 
 
 def pose(f, state):
     c=Cv()
     bob=[0,-1,0,1][f]
-    curled_tail(c,f,23 if state != "sit" else 24)
-    torso(c,22 + (bob if state in ("idle","pet") else 0))
-    if state == "walk":
-        swing=[-2,0,2,0][f]
-        paw(c,11+swing,27-(f==1))
-        paw(c,21-swing,27-(f==3))
+    curled_tail(c,f,26)
+    torso(c,23+(bob if state in ("idle","pet") else 0))
+    if state=="walk":
+        swing=[-1,0,1,0][f]
+        paw(c,8+swing,28-(f==1)*2)
+        paw(c,16-swing,28-(f==3)*2)
     elif state in ("drag","fall"):
         spread=[0,1,0,-1][f]
-        paw(c,9-spread,25)
-        paw(c,23+spread,25)
-        c.rect(10,24,12,24,C_PAW)
-        c.rect(24,24,26,24,C_PAW)
-    elif state == "climb":
-        paw(c,7,16+[0,2,4,2][f])
-        paw(c,26,20-[0,2,4,2][f])
-        paw(c,13,28-(f%2))
-        paw(c,21,27+(f%2))
-    elif state == "work":
-        paw(c,10,27-(f%2)*3)
-        paw(c,22,24+(f%2)*3)
+        paw(c,5-spread,25)
+        paw(c,19+spread,25)
+        c.rect(6-spread,24,7-spread,24,C_PAW)
+        c.rect(20+spread,24,21+spread,24,C_PAW)
+    elif state=="climb":
+        paw(c,3,17+[0,2,4,2][f])
+        paw(c,23,21-[0,2,4,2][f])
+        paw(c,9,28-(f%2))
+        paw(c,16,27+(f%2))
+    elif state=="work":
+        paw(c,7,28-(f%2)*3)
+        paw(c,17,25+(f%2)*3)
     else:
-        paw(c,12,28 if state=="sit" else 27)
-        paw(c,21,28 if state=="sit" else 27)
+        paw(c,8,28)
+        paw(c,15,28)
     cat_head(c,"pet" if state=="pet" else "scared" if state in ("drag","fall") else "open")
     if state=="pet":
-        c.rect(9,14,10,14,C_PAW)
-        c.rect(24,14,25,14,C_PAW)
+        c.rect(6,14,7,14,C_PAW)
+        c.rect(19,14,20,14,C_PAW)
     return c.out()
 
 
 def st_idle(f): return pose(f,"idle")
 def st_walk(f): return pose(f,"walk")
-def st_sit(f): return pose(f,"sit")
+def st_sit(f): return pose((f+1)%4,"sit")
 def st_pet(f): return pose(f,"pet")
 def st_drag(f): return pose(f,"drag")
 def st_fall(f): return pose((f+1)%4,"fall")
@@ -196,54 +195,53 @@ def st_work(f): return pose(f,"work")
 
 def st_sleep(f):
     c=Cv()
-    c.ell(19,24,10,5,C_FUR_M)
+    c.ell(18,24,10,5,C_FUR_M)
     c.rect(22,20,23,22,C_FUR_D)
     c.rect(26,23,28,24,C_FUR_D)
-    cat_head(c,"sleep",12,21)
-    c.pline([(24,28),(28,27),(28,24),(27,22)],3,C_FUR_M)
-    c.rect(26,21,28,22,C_WHITE)
+    cat_head(c,"sleep",12,20)
+    c.pline([(23,28),(27,27),(28,24),(26,23)],3,C_FUR_M)
+    c.rect(25,22,27,23,C_WHITE)
     return c.out()
 
 
 def eyes_open():
     c=Cv()
-    for x in (12,20):
-        c.rect(x,10,x+1,13,C_PUPIL)
-        c.rect(x,10,x,10,C_HI)
+    for x in (8,16):
+        c.rect(x,10,x+2,12,C_PUPIL)
+        c.rect(x+1,9,x+1,13,C_PUPIL)
+        c.rect(x+1,10,x+1,10,C_HI)
     return c.im
 
 
 def eyes_pet():
     c=Cv()
-    for x in (12,20):
-        c.rect(x-1,11,x+2,11,C_PUPIL)
-        c.rect(x,10,x+1,10,C_PUPIL)
-        c.rect(x-1,12,x-1,12,C_PUPIL)
+    for x in (8,16):
+        c.rect(x,11,x+2,11,C_PUPIL)
+        c.rect(x+1,10,x+1,10,C_PUPIL)
+        c.rect(x,12,x,12,C_PUPIL)
         c.rect(x+2,12,x+2,12,C_PUPIL)
     return c.im
 
 
 def eyes_blink():
     c=Cv()
-    for x in (12,20):
-        c.rect(x,10,x+3,13,C_FUR_M)
-        c.rect(x,12,x+3,12,C_PUPIL)
+    for x in (8,16):
+        c.rect(x,11,x+2,11,C_PUPIL)
     return c.im
 
 
 def eyes_half():
     c=Cv()
-    for x in (12,20):
-        c.rect(x,10,x+3,11,C_FUR_M)
-        c.rect(x,12,x+3,12,C_PUPIL)
-        c.rect(x+1,13,x+2,13,C_PUPIL)
+    for x in (8,16):
+        c.rect(x,11,x+2,12,C_PUPIL)
     return c.im
 
 
 def eyes_scared():
     c=Cv()
-    for x in (12,20):
-        c.rect(x,10,x+1,13,C_PUPIL)
+    for x in (8,16):
+        c.rect(x,9,x+2,13,C_PUPIL)
+        c.rect(x+1,9,x+1,10,C_HI)
     return c.im
 
 
