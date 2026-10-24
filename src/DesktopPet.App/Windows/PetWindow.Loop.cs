@@ -165,25 +165,28 @@ public sealed partial class PetWindow : Window
     private void UpdateEyeTracking()
     {
         var cursor = GlobalInput.GetCursorPosition();
-        // v0.1.59(P3)：鼠标位置未变且无瞬时视觉（眨眼/打字晃动等）时，眼球偏移必然不变 → 跳过计算。
-        // 眼神追踪本身依赖鼠标移动，鼠标不动时结果必然相同，行为等价。
-        if (_lastCursorPos == cursor && !_renderer.HasTransientVisual) return;
-        _lastCursorPos = cursor;
-
-        // 宠物头部参考点：窗口中心（眼球层锚点在头部 17,11 附近，取窗口中心近似）
-        var head = new Point(Left + Width / 2, Top + Height / 2);
+        // Cat movement also changes the gaze direction, even when the cursor stays still.
+        var head = new Point(Left + Width / 2, Top + Height * 0.35);
 
         var dx = cursor.X - head.X;
         var dy = cursor.Y - head.Y;
         var len = Math.Sqrt(dx * dx + dy * dy);
-        if (len < 1) return;
 
         // ---- v0.1.59(⑩) 鼠标路过张望：鼠标进入猫附近半径内 → 眼球偏移增益放大（好奇）----
         UpdatePeek(dx, dy, len);
 
         // 归一化方向（限幅 ±1），渲染器内部再 ×2px（张望时再 ×增益）
-        var norm = new Vector(dx / len, dy / len);
+        var norm = ComputeGazeDirection(new Vector(dx, dy), Width);
         _renderer.SetEyeOffset(norm, _peekActive ? PeekEyeGain : 1.0);
+    }
+
+    private static Vector ComputeGazeDirection(Vector delta, double referenceWidth)
+    {
+        double distance = delta.Length;
+        double deadZone = Math.Max(1, referenceWidth * 0.08);
+        if (distance <= deadZone) return default;
+        double strength = Math.Clamp((distance-deadZone) / Math.Max(1, referenceWidth*1.5), 0, 1);
+        return delta / distance * strength;
     }
 
     /// <summary>v0.1.59(⑩)：鼠标进入/离开猫附近半径时做一次边界响应（好奇张望）。

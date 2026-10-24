@@ -69,7 +69,6 @@ public sealed partial class PetWindow : Window
     private Vector _dragVelocity;
 
     // ---- v0.1.59(P3)：闲置态系统调用按需化缓存（行为等价，只是少做无谓调用）----
-    private Point? _lastCursorPos;          // UpdateEyeTracking：鼠标位置未变则跳过 GetCursorPosition
     private Point? _lastEmitCursorPos;      // EmitMouseMoved：位置未变则不 Emit（省插件回调）
     private DesktopPet.Core.Rect2? _cachedWorkArea; // SyncMirrorToCat/GetWorkArea：工作区缓存
     private double _lastWorkAreaLeft = double.NaN;  // 猫位置快照：未变则复用 _cachedWorkArea

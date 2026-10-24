@@ -83,7 +83,7 @@ public sealed class SpriteAtlas
     /// <summary>取某眼球层非透明像素包围盒（源位图像素）。返回 false 表示无数据（调用方不做裁剪）。</summary>
     public bool TryGetEyeBBox(string key, out Int32Rect bbox) => _eyeBBox.TryGetValue(key, out bbox);
 
-    /// <summary>该层允许的最大位移（源像素）。返回 (0,0) 表示**无数据、调用方不要限制**（保持旧皮肤行为）。</summary>
+    /// <summary>该层的素材位移上限（源像素）。返回 (0,0) 表示无数据，由渲染器采用保守限幅。</summary>
     public Vector GetEyeSafeShift(string key) => _eyeSafeShift.GetValueOrDefault(key);
 
     public IReadOnlyDictionary<string, SpriteState> States => _states;

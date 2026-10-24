@@ -389,33 +389,32 @@ public sealed class PetRenderer
         return null;
     }
 
-    /// <summary>
-    /// v0.1.88：把逻辑眼球偏移换算成屏幕像素，并按该层的「眼眶」限制幅度。
-    /// <para><b>为什么需要限制</b>：偏移量原本锚在**画幅**上（±2 逻辑px × Scale）。但皮肤源位图尺寸差异极大
-    /// （`pixel` 32 宽 / `cat_hd` 256 宽），同一个逻辑偏移落到源图上会被放大 <c>frameWidth/32</c> 倍 ——
-    /// 高清皮相当于 ±16 源px，而眼白只有 ~35px 宽 → 瞳孔一半甩出眼眶（灯灯实机反馈「看着太恐怖」）。</para>
-    /// <para>改以**源像素**为口径限制位移；上限由皮肤 `{layer}_closed`（覆盖整只眼，可当眼眶）与瞳孔的
-    /// bbox 差算出。皮肤没提供闭合层时 <see cref="SpriteAtlas.GetEyeSafeShift"/> 返回 (0,0)
-    /// → **不做限制，完全保持旧行为**（内置像素皮因此零变化）。</para>
-    /// </summary>
+    /// <summary>Bound gaze relative to the head. Missing socket data must never mean unlimited movement.</summary>
     private Vector ScreenEyeOffset(string eyeKey, double eyeDownLogical)
     {
-        double k = _atlas.SourcePixelsPerLogical;          // 源像素 / 逻辑像素
-        double srcX = _eyeOffset.X * k;
-        double srcY = _eyeOffset.Y * k + eyeDownLogical * k;
+        // Eyelids and smiling eyes are facial expressions, not sliding pupils.
+        if (eyeKey is "eyes_blink" or "eyes_pet" || eyeKey.EndsWith("_closed", StringComparison.OrdinalIgnoreCase)
+            || eyeKey.EndsWith("_half", StringComparison.OrdinalIgnoreCase) || _animator.State?.Name == "pet")
+            return default;
+        double k = _atlas.SourcePixelsPerLogical;
         var safe = _atlas.GetEyeSafeShift(eyeKey);
-        if (safe.X > 0 || safe.Y > 0)
-        {
-            srcX = Math.Clamp(srcX, -safe.X, safe.X);
-            srcY = Math.Clamp(srcY, -safe.Y, safe.Y);
-        }
-        return new Vector(srcX * Scale / k, srcY * Scale / k);   // 源像素 → 屏幕像素
+        double maxX = 0.65 * k, maxY = 0.35 * k;
+        if (safe.X > 0 || safe.Y > 0) { maxX = Math.Min(maxX, safe.X); maxY = Math.Min(maxY, safe.Y); }
+        double x = Math.Clamp(_eyeOffset.X*k, -maxX, maxX);
+        double y = Math.Clamp((_eyeOffset.Y+eyeDownLogical)*k, -maxY, maxY);
+        // Elliptical travel avoids exaggerated corner/diagonal looks.
+        double radius = Math.Sqrt((maxX > 0 ? x*x/(maxX*maxX) : 0) + (maxY > 0 ? y*y/(maxY*maxY) : 0));
+        if (radius > 1) { x /= radius; y /= radius; }
+        return new Vector(x*Scale/k, y*Scale/k);
     }
 
     /// <summary>眼神追踪：设置眼球偏移（由宿主每帧从鼠标位置计算）。
     /// v0.1.59(⑩)：新增 gain 参数——鼠标路过张望时放大偏移（增益 > 1），默认 1.0 行为不变。</summary>
     public void SetEyeOffset(Vector normalizedDirection, double gain = 1.0)
     {
+        if (!double.IsFinite(normalizedDirection.X) || !double.IsFinite(normalizedDirection.Y)) normalizedDirection = default;
+        if (normalizedDirection.LengthSquared > 1) normalizedDirection.Normalize();
+        gain = double.IsFinite(gain) ? Math.Clamp(gain, 0, 2) : 1;
         var next = normalizedDirection * 2 * gain; // 基础限幅 ±2px，按 gain 缩放
         // v0.1.82：**偏移真的变了才重绘**。
         // 坑：eye offset 只在 Draw 里被读，而重绘原先只由「动画帧推进 / 眨眼相位切换」触发。
