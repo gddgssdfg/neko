@@ -97,6 +97,8 @@ public sealed class GlobalInput : IDisposable
     public event Action<int, bool>? RawMouseButtonEvent;
     /// <summary>滚轮滚动（任意方向）</summary>
     public event Action? RawMouseWheelEvent;
+    /// <summary>Physical screen coordinates; consumers coalesce visual updates outside the hook.</summary>
+    public event Action<Point>? RawMouseMoveEvent;
 
     private readonly LowLevelKeyboardProc _proc;
     private readonly LowLevelMouseProc _mouseProc;
@@ -236,6 +238,10 @@ public sealed class GlobalInput : IDisposable
             // v0.1.28 键鼠映射：按下/松开/滚轮先发原始事件（无节流）
             switch (wParam.ToInt64())
             {
+                case 0x0200:
+                    var move = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                    RawMouseMoveEvent?.Invoke(new Point(move.pt.X, move.pt.Y));
+                    break;
                 case WM_LBUTTONDOWN: RawMouseButtonEvent?.Invoke(0, true); break;
                 case WM_LBUTTONUP: RawMouseButtonEvent?.Invoke(0, false); break;
                 case WM_RBUTTONDOWN: RawMouseButtonEvent?.Invoke(1, true); break;
@@ -279,6 +285,7 @@ public sealed class GlobalInput : IDisposable
         RawKeyEvent = null;
         RawMouseButtonEvent = null;
         RawMouseWheelEvent = null;
+        RawMouseMoveEvent = null;
     }
 }
 

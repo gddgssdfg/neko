@@ -27,6 +27,7 @@ public sealed partial class PetWindow : Window
     /// <summary>显示映射窗（懒创建）。v0.1.39：创建后立刻摆到猫下方，避免开局在旧位置闪一帧再跳过去。</summary>
     private void ShowMirror()
     {
+        if (_mirrorHiddenForMenu && _radialMenu is { IsVisible: true }) return;
         if (_mirrorWindow is null)
         {
             _mirrorWindow = new InputMirrorWindow(_globalInput, _config, SaveConfigFile, OnMirrorRelocated);
@@ -48,7 +49,7 @@ public sealed partial class PetWindow : Window
     {
         _config.KeyboardScale = AppConfig.NormalizeKeyboardScale(scale);
         _mirrorWindow?.ApplyScale(_config.KeyboardScale);
-        SyncMirrorToCat();
+        SyncFollowers();
         SaveConfigFile();
     }
 

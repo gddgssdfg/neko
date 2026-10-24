@@ -17,6 +17,7 @@ namespace DesktopPet.App.Windows;
 public sealed partial class PetWindow : Window
 {
     private bool _pluginsStarted;
+    private bool _mirrorHiddenForMenu;
     private bool _isDisposed;
     /// <summary>切换径向菜单开关（全局热键调用）</summary>
     public void ToggleRadialMenu()
@@ -36,19 +37,49 @@ public sealed partial class PetWindow : Window
     {
         // 单例复用 + Hide() 关闭：反复 Show/Hide 不会触发"窗口关闭期间 Show"异常
         var menu = EnsureRadialMenu();
-        // v0.1.25：撤销 v0.1.9 的「旁边定位」（用户要求改回围绕猫一圈）。
-        // 菜单圆心 = 猫中心，中心挖空（洞半径 = 猫半宽 + 余量）透出猫，
-        // 猫可见、可直接抚摸/拖拽，槽位在猫外围一圈不再盖猫。
-        // v0.1.32：洞半径 4→10（猫不再贴洞边，视觉更舒适）
-        var holeR = Width / 2 + 10;
-        menu.ShowAt(Left + Width / 2, Top + Height / 2, holeR);
+        _bubble?.Dismiss();
+        menu.Placement = PlaceCompanionMenu;
+        menu.ShowAt(Left + Width / 2, Top + Height / 2, 32);
+    }
+
+    private Point PlaceCompanionMenu(Size size)
+    {
+        var obstacles = new List<Rect> { new Rect(Left, Top, Width, Height) };
+        if (_mirrorWindow is { IsVisible: true } mirror)
+            obstacles.Add(new Rect(mirror.Left, mirror.Top, mirror.Width, mirror.Height));
+        if (_hearts is { IsVisible: true } hearts)
+            obstacles.Add(new Rect(hearts.Left, hearts.Top, hearts.Width, hearts.Height));
+        var work = GetWorkArea();
+        var area = new Rect(work.X, work.Y, work.Width, work.Height);
+        var position = CompanionLayout.Place(size, area, obstacles);
+        // On very small screens there may be no simultaneous layout. Temporarily
+        // clear the keyboard rather than cover its keys with menu commands.
+        if (_mirrorWindow is { IsVisible: true } keyboard &&
+            new Rect(position, size).IntersectsWith(new Rect(keyboard.Left, keyboard.Top, keyboard.Width, keyboard.Height)))
+        {
+            _mirrorHiddenForMenu = true;
+            keyboard.Hide();
+            obstacles.RemoveAt(1);
+            position = CompanionLayout.Place(size, area, obstacles);
+        }
+        return position;
     }
 
     /// <summary>径向菜单单例（懒创建）。抽出供 <see cref="OpenRadialMenu"/> 与 <see cref="PrewarmRadialMenu"/> 共用，
     /// 避免两处重复构造表达式导致回调/参数漂移。</summary>
-    private RadialMenu EnsureRadialMenu() =>
-        _radialMenu ??= new RadialMenu(_uiApi, _globalInput, _config,
+    private RadialMenu EnsureRadialMenu()
+    {
+        if (_radialMenu is not null) return _radialMenu;
+        _radialMenu = new RadialMenu(_uiApi, _globalInput, _config,
             onToggleMirror: () => SetKeyboardMirror(!_config.KeyboardMirrorEnabled));
+        _radialMenu.IsVisibleChanged += (_, _) =>
+        {
+            if (_radialMenu.IsVisible || !_mirrorHiddenForMenu) return;
+            _mirrorHiddenForMenu = false;
+            if (!_isDisposed && IsVisible && _config.KeyboardMirrorEnabled) ShowMirror();
+        };
+        return _radialMenu;
+    }
 
     /// <summary>
     /// v0.1.91 R1：预热径向菜单单例——首次右键的一次性成本（实测 ≈80ms：ctor 扫 neko-assets/icons/

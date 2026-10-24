@@ -14,19 +14,11 @@ using DesktopPet.App.Core;
 namespace DesktopPet.App.Windows;
 
 /// <summary>
-/// 径向菜单：鼠标右键 / 全局热键呼出的圆形快捷菜单。
-/// v0.1.25 定稿（推翻 v0.1.9 旁边定位，回归 v0.1.2 的"围绕猫一圈"）：
-///   1. 菜单圆心 = 猫中心，中心挖空（洞半径 = 猫半宽 + 余量，由 PetWindow 传入），
-///      洞区不放任何可命中元素 → 鼠标事件穿透到宠物窗口，猫可见、可抚摸/拖拽。
-///   2. 每页最多 8 个槽位（用户要求），超出的按 Order 分页，滚轮/点顶部胶囊翻页。
-///      8 槽位角距 45°，相邻弦长 ≈ 59px > 槽位 38px，不再重叠。
-///   3. 底盘为 95% 不透明白色圆环 + 深色描边，任何壁纸上都看得清。
-/// 槽位来自插件通过 IUIApi.RegisterRadialSlot 注册；生命周期：单例复用，Hide() 而非 Close()。
-/// 点击穿透原理：窗口与根画布 Background 均为 null（WPF 中 null 不参与命中测试），
-/// 只有圆环 Path / 槽位 / 翻页胶囊接收输入，中心空洞天然穿透，无需 SetWindowRgn（顺带规避 DPI 换算）。
+/// Compact plugin wheel; the host supplies collision-aware placement.
 /// </summary>
 public sealed class RadialMenu : Window
 {
+    public Func<Size, Point>? Placement { get; set; }
     private NekoPalette Palette => _config.Theme == "light" ? NekoPalette.Light : NekoPalette.Dark;
     private readonly UIApiImpl _uiApi;
     private readonly GlobalInput _input;
@@ -52,7 +44,7 @@ public sealed class RadialMenu : Window
     private Color SlotBorder => Palette.Line;       // 槽位常态描边
     private Color SlotHoverFill => Palette.Selected;
     private Color SlotHoverBorder => Palette.Accent;
-    private Color SlotNormalFill => Palette.Raised;  // 槽位常态背景（半透明白）
+    private Color SlotNormalFill => Colors.Transparent;  // 槽位常态背景（半透明白）
     private Color TextColor => Palette.Text;
     private static readonly QuadraticEase AniEase = new() { EasingMode = EasingMode.EaseOut };
 
@@ -179,8 +171,9 @@ public sealed class RadialMenu : Window
         _holeR = Math.Max(24, holeRadius);
         _page = 0; // 每次打开回到第一页
         RebuildSlots(); // 先构建（内部确定窗口尺寸），再定位
-        Left = centerX - Width / 2;
-        Top = centerY - Height / 2;
+        var position = Placement?.Invoke(new Size(Width, Height)) ?? new Point(centerX - Width / 2, centerY - Height / 2);
+        Left = position.X;
+        Top = position.Y;
 
         // v0.1.30 动画：opacity 0→1 + scale 0.9→1（RenderTransformOrigin 中心）
         _canvas.RenderTransformOrigin = new Point(0.5, 0.5);
@@ -272,11 +265,11 @@ public sealed class RadialMenu : Window
         bool multi = _pageCount > 1;
         double ring = 2 * (OuterRadius + 2);
         Width = ring;
-        Height = ring + (multi ? HeaderH : 0);
+        Height = ring + HeaderH;
         _canvas.Width = Width;
         _canvas.Height = Height;
         double cx = ring / 2;
-        double cy = (multi ? HeaderH : 0) + ring / 2;
+        double cy = HeaderH + ring / 2;
 
         // 底盘：外圆 − 中心洞（EvenOdd）；无槽位时不挖洞，画完整圆盘 + 居中提示
         // 注意：System.IO 也在 using 里，Shapes.Path 必须全限定，否则解析成文件 Path 类
@@ -291,6 +284,16 @@ public sealed class RadialMenu : Window
             Stroke = new SolidColorBrush(PlateStroke),
             StrokeThickness = 1.5,
         });
+
+        if (Placement is not null && all.Count > 0)
+        {
+            var title = new TextBlock { Text = "快捷", FontSize = 11,
+                Foreground = new SolidColorBrush(Palette.Text), Opacity = .6, IsHitTestVisible = false };
+            title.Measure(new Size(100, 30));
+            Canvas.SetLeft(title, cx - title.DesiredSize.Width / 2);
+            Canvas.SetTop(title, cy - title.DesiredSize.Height / 2);
+            _canvas.Children.Add(title);
+        }
 
         if (all.Count == 0)
         {
@@ -396,7 +399,8 @@ public sealed class RadialMenu : Window
         if (!IsVisible) return;
         // v0.1.82：同值短路。WPF 的 Window.Left/Top setter 不做同值判断，赋值即 SetWindowPos；
         // 菜单跟随是 20Hz 主循环驱动的，猫不动时没必要每秒重设 20 次窗口位置。
-        double l = centerX - Width / 2, t = centerY - Height / 2;
+        var position = Placement?.Invoke(new Size(Width, Height)) ?? new Point(centerX - Width / 2, centerY - Height / 2);
+        double l = position.X, t = position.Y;
         if (Math.Abs(Left - l) < 0.01 && Math.Abs(Top - t) < 0.01) return;
         Left = l;
         Top = t;
@@ -420,7 +424,7 @@ public sealed class RadialMenu : Window
             Height = SlotSize;
             CornerRadius = new CornerRadius(7);
             Background = new SolidColorBrush(SlotNormalFill);
-            BorderThickness = new Thickness(1.5);
+            BorderThickness = new Thickness(0);
             BorderBrush = new SolidColorBrush(SlotBorder);
             Cursor = Cursors.Hand;
 

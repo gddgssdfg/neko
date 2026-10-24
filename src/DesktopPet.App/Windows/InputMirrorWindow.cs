@@ -69,7 +69,7 @@ public sealed class InputMirrorWindow : Window
     private const double PawSize = 30.0;       // v0.1.44：爪子 36→30，配合缩小
     private const double KeyboardPawTop = -2;   // 拍键时的落点（爪尖探出键面上沿）
     private const double KeyboardPawLeft = KbW / 2 - PawSize / 2;
-    private const double MousePawTop = -2;
+    private const double MousePawTop = (KbH - MouseH) / 2 - 2;
     private const double MousePawLeft = KbW + MouseGap + MouseW / 2 - PawSize / 2;
     // v0.1.72：猫坐在对面——爪子从"窗体底边之外"伸上来。
     // v0.1.44 的"不挡键"原则保留——只是从"顶"挪到"底"。
@@ -103,7 +103,7 @@ public sealed class InputMirrorWindow : Window
     // 注意：不能是 readonly（BuildContent 是普通方法不是 ctor，readonly 会报 CS0191）
     private Grid _rootGrid = null!;
     private Border _plate = null!;
-    private const double BaseWidth = KbW + MouseW + MouseGap + PlatePad * 2 + 4;
+    private const double BaseWidth = KbW + MouseW + MouseGap + 16 + PlatePad * 2 + 4;
     private const double BaseHeight = KbH + PawSize + PlatePad * 2 + 4 + PawRaisedExtra;
 
     [DllImport("user32.dll")]
@@ -142,6 +142,9 @@ public sealed class InputMirrorWindow : Window
         _input.RawKeyEvent += OnRawKey;
         _input.RawMouseButtonEvent += OnRawMouseButton;
         _input.RawMouseWheelEvent += OnRawMouseWheel;
+        _input.RawMouseMoveEvent += OnRawMouseMove;
+        IsVisibleChanged += (_, _) => { _lastMousePosition = null; _motionTimer?.Stop(); };
+
 
         // 拖动（DragMove 托管，松手即落盘）
         MouseLeftButtonDown += OnDragDown;
@@ -321,7 +324,7 @@ public sealed class InputMirrorWindow : Window
     public void RefreshTheme()
     {
         _litKeys.Clear(); _keyByVk.Clear(); _mouseKeys.Clear();
-        _kbdPawTimer?.Stop(); _wheelPawTimer?.Stop(); _wheelTimer?.Stop();
+        _kbdPawTimer?.Stop(); _wheelPawTimer?.Stop(); _wheelTimer?.Stop(); _motionTimer?.Stop();
         BuildContent(); RefreshLeds();
     }
 
@@ -433,7 +436,7 @@ public sealed class InputMirrorWindow : Window
             },
             BorderBrush = new SolidColorBrush(KeyEdgeC),
             BorderThickness = new Thickness(1.5),
-            CornerRadius = new CornerRadius(12, 12, MouseW / 2, MouseW / 2),
+            CornerRadius = new CornerRadius(MouseW / 2, MouseW / 2, 16, 16),
         };
         Canvas.SetLeft(body, 0);
         Canvas.SetTop(body, 0);
@@ -478,8 +481,9 @@ public sealed class InputMirrorWindow : Window
         // 中键（2）命中层 + 滚轮（v0.1.86：带描边的凹槽 + 中缝高光，更像真滚轮）
         var mid = MakeMouseKey(2);
         var midW = MouseW - 6;
-        Canvas.SetLeft(mid, 3);
-        Canvas.SetTop(mid, lh + 1);
+        mid.Width = 11; mid.Height = 22;
+        Canvas.SetLeft(mid, (MouseW - mid.Width) / 2);
+        Canvas.SetTop(mid, 8);
         canvas.Children.Add(mid);
 
         var wheel = new Border
@@ -494,7 +498,7 @@ public sealed class InputMirrorWindow : Window
         _wheelFlash = wheel;
         double wheelLeft = 3 + (midW - 7) / 2;
         Canvas.SetLeft(wheel, wheelLeft);
-        Canvas.SetTop(wheel, lh + 2);
+        Canvas.SetTop(wheel, 10);
         canvas.Children.Add(wheel);
 
         var wheelLine = new Border
@@ -506,10 +510,55 @@ public sealed class InputMirrorWindow : Window
             IsHitTestVisible = false,
         };
         Canvas.SetLeft(wheelLine, wheelLeft + 3);
-        Canvas.SetTop(wheelLine, lh + 6);
+        Canvas.SetTop(wheelLine, 14);
         canvas.Children.Add(wheelLine);
 
-        return canvas;
+        _mouseMotion = new TranslateTransform();
+        canvas.RenderTransform = _mouseMotion;
+        var pad = new Canvas { Width = MouseW + MouseGap + 16, Height = KbH, ClipToBounds = true };
+        pad.Children.Add(new Border {
+            Width = pad.Width - 4, Height = KbH - 8, CornerRadius = new CornerRadius(14),
+            Background = new SolidColorBrush(Palette.Raised),
+            BorderBrush = new SolidColorBrush(Palette.Line), BorderThickness = new Thickness(1)
+        });
+        Canvas.SetLeft(canvas, MouseGap);
+        Canvas.SetTop(canvas, (KbH - MouseH) / 2);
+        pad.Children.Add(canvas);
+        _motionX = _motionY = 0; _lastMousePosition = null;
+        return pad;
+    }
+
+    private TranslateTransform _mouseMotion = new();
+    private System.Windows.Threading.DispatcherTimer? _motionTimer;
+    private Point? _lastMousePosition;
+    private double _motionX, _motionY;
+
+    private void OnRawMouseMove(Point position)
+    {
+        if (!IsVisible) { _lastMousePosition = null; return; }
+        if (_lastMousePosition is { } previous)
+        {
+            _motionX = Math.Clamp(_motionX + (position.X - previous.X) * .045, -6, 6);
+            _motionY = Math.Clamp(_motionY + (position.Y - previous.Y) * .045, -22, 22);
+            if (_motionTimer is null)
+            {
+                _motionTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+                _motionTimer.Tick += OnMouseMotionTick;
+            }
+            _motionTimer.Start();
+        }
+        _lastMousePosition = position;
+    }
+
+    private void OnMouseMotionTick(object? sender, EventArgs e)
+    {
+        if (!IsVisible) { _motionTimer?.Stop(); return; }
+        _mouseMotion.X += (_motionX - _mouseMotion.X) * .35;
+        _mouseMotion.Y += (_motionY - _mouseMotion.Y) * .35;
+        if (_mousePaw is not null)
+            _mousePaw.RenderTransform = new TranslateTransform(_mouseMotion.X, _mousePawDownBtn >= 0 ? _mouseMotion.Y : 0);
+        if (Math.Abs(_motionX - _mouseMotion.X) + Math.Abs(_motionY - _mouseMotion.Y) < .02)
+            _motionTimer?.Stop();
     }
 
     private Border MakeMouseKey(int btn)
@@ -746,6 +795,7 @@ public sealed class InputMirrorWindow : Window
             _ => KbW + MouseGap + MouseW / 2,              // 中键/滚轮中心
         };
         _mousePawTargetLeft = btnCenter - PawSize / 2;
+        _mousePaw.RenderTransform = new TranslateTransform(_mouseMotion.X, _mouseMotion.Y);
         _mousePaw.Source = _pawDown;
         AnimateCanvasPos(_mousePaw, MousePawTop + 2, _mousePawTargetLeft);   // 落键面 + 压下
         _mousePawDownBtn = btn;
@@ -754,6 +804,7 @@ public sealed class InputMirrorWindow : Window
     private void LiftMousePaw()
     {
         if (_mousePaw is null) return;
+        _mousePaw.RenderTransform = new TranslateTransform(_mouseMotion.X, 0);
         _mousePaw.Source = _pawUp;
         // v0.1.44：举回（鼠标上方之外，不挡鼠标）
         AnimateCanvasPos(_mousePaw, PawRaisedTop, _mousePawTargetLeft);
@@ -940,6 +991,8 @@ public sealed class InputMirrorWindow : Window
         _input.RawKeyEvent -= OnRawKey;
         _input.RawMouseButtonEvent -= OnRawMouseButton;
         _input.RawMouseWheelEvent -= OnRawMouseWheel;
+        _input.RawMouseMoveEvent -= OnRawMouseMove;
+        _motionTimer?.Stop();
         _wheelTimer?.Stop();
         _kbdPawTimer?.Stop();
         _wheelPawTimer?.Stop();

@@ -24,6 +24,7 @@ internal static partial class Program
         RunAnimationChecks();
         RunEyeTrackingChecks();
         RunUiDesignChecks();
+        RunCompanionChecks();
         Check("scheduler does not run a task scheduled forty days in the future", () =>
         {
             using var scheduler = new SchedulerImpl();

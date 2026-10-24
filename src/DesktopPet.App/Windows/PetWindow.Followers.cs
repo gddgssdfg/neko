@@ -22,9 +22,9 @@ public sealed partial class PetWindow : Window
     /// </summary>
     private void SyncFollowers()
     {
+        SyncMirrorToCat();
         if (_radialMenu is { IsVisible: true })
             _radialMenu.MoveTo(Left + Width / 2, Top + Height / 2);
-        SyncMirrorToCat();
         SyncBubblePosition();
         SyncHeartPosition();   // v0.1.59(⑧)：爱心浮层随猫（头部锚点）
     }
@@ -71,7 +71,7 @@ public sealed partial class PetWindow : Window
     /// <summary>v0.1.40：插件 Say → 像素云朵气泡（所有插件通知统一走这里；开关关闭则静默）</summary>
     private void ShowBubble(string text, int durationMs)
     {
-        if (!_config.ChatEnabled) return;
+        if (!_config.ChatEnabled || _radialMenu is { IsVisible: true }) return;
         _bubble ??= new BubbleWindow();
         _bubble.ShowBubble(text, durationMs);
         SyncBubblePosition();   // 立即定位（不等主循环下一帧）
