@@ -102,6 +102,9 @@ public sealed class InputMirrorWindow : Window
     // v0.1.39：内容根（镜像开关作用于它）——键帽层 + 爪子层一起翻转，不能只翻键帽
     // 注意：不能是 readonly（BuildContent 是普通方法不是 ctor，readonly 会报 CS0191）
     private Grid _rootGrid = null!;
+    private Border _plate = null!;
+    private const double BaseWidth = KbW + MouseW + MouseGap + PlatePad * 2 + 4;
+    private const double BaseHeight = KbH + PawSize + PlatePad * 2 + 4 + PawRaisedExtra;
 
     [DllImport("user32.dll")]
     private static extern short GetKeyState(uint nVirtKey);
@@ -166,6 +169,7 @@ public sealed class InputMirrorWindow : Window
             Left = wa.Right - Width - 20;
             Top = wa.Bottom - Height - 160;  // 猫高 ~102 + 间隙
         }
+        ApplyScale(_config.KeyboardScale);
         // clamp 进工作区（换分辨率防出屏，同 PetWindow 范式）
         var work = GetWorkArea();
         Left = Math.Max(work.X, Math.Min(Left, work.X + work.Width - Width));
@@ -290,9 +294,22 @@ public sealed class InputMirrorWindow : Window
         LoadPaws(pawLayer);
         SetMirrored(_config.KeyboardMirrorFlipped);   // v0.1.39：应用持久化的朝向设置
 
-        Width = KbW + MouseW + MouseGap + PlatePad * 2 + 4;
-        Height = KbH + LedH + PlatePad * 2 + 4 + PawRaisedExtra;  // 底部预留 PawRaisedExtra 容纳举起的爪（v0.1.86：36→18，收窄底部留白）
+        _plate = plate;
+        plate.Width = BaseWidth; plate.Height = BaseHeight;
         Content = plate;
+        ApplyScale(_config.KeyboardScale);
+    }
+
+    /// <summary>Scale the entire keyboard/mouse/paw layout together, preserving native key coordinates.</summary>
+    public void ApplyScale(double scale)
+    {
+        _config.KeyboardScale = AppConfig.NormalizeKeyboardScale(scale);
+        var work = GetWorkArea();
+        double effective = Math.Min(_config.KeyboardScale, Math.Min(work.Width / BaseWidth, work.Height / BaseHeight));
+        _plate.LayoutTransform = new ScaleTransform(effective, effective);
+        Width = BaseWidth * effective; Height = BaseHeight * effective;
+        if (double.IsFinite(Left)) Left = Math.Clamp(Left, work.Left, Math.Max(work.Left, work.Right - Width));
+        if (double.IsFinite(Top)) Top = Math.Clamp(Top, work.Top, Math.Max(work.Top, work.Bottom - Height));
     }
 
     /// <summary>

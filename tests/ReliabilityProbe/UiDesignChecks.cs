@@ -30,6 +30,52 @@ internal static partial class Program
 
     private static void RunUiDesignChecks()
     {
+        Check("keyboard scaling preserves key geometry, mirroring and theme refresh", () =>
+        {
+            var config = new AppConfig();
+            var mirror = new InputMirrorWindow(new GlobalInput(), config, () => { });
+            try
+            {
+                mirror.Show(); mirror.UpdateLayout(); double width = mirror.Width, height = mirror.Height;
+                mirror.SetMirrored(true); config.KeyboardMirrorFlipped = true;
+                mirror.ApplyScale(1.5); mirror.UpdateLayout();
+                // Native window bounds round to physical pixels (e.g. at 125% DPI).
+                Require(Math.Abs(mirror.Width-width*1.5) < 1.1 && Math.Abs(mirror.Height-height*1.5) < 1.1,
+                    $"window did not resize with its content: {width}x{height} → {mirror.Width}x{mirror.Height}");
+                Require(mirror.RegisteredKeys == 74 && !mirror.LayoutHasOverlaps(), "scaling lost keys or overlapped native key geometry");
+                mirror.RefreshTheme(); mirror.UpdateLayout();
+                Require(Math.Abs(mirror.Width-width*1.5) < 1.1, "theme refresh lost the chosen scale");
+                var content = (Border)mirror.Content;
+                Require(content.LayoutTransform is ScaleTransform { ScaleX: 1.5 }, "mouse and paw layers were not scaled together");
+                Require(((Grid)content.Child).RenderTransform is ScaleTransform { ScaleX: -1 }, "scale change lost mirroring");
+            }
+            finally { mirror.Close(); }
+        });
+        Check("cat and keyboard size settings are independent and survive config reload", () =>
+        {
+            var pet = new PetWindow(new AppConfig { Scale = 3.2, AppMode = "work", PosX = 400, PosY = 200 });
+            var settings = new SettingsWindow(pet);
+            try
+            {
+                pet.Show(); pet.SetAppMode("work"); settings.Show(); settings.ShowSection("pet"); settings.UpdateLayout();
+                var mirror = (InputMirrorWindow)typeof(PetWindow).GetField("_mirrorWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(pet)!;
+                double keyboardWidth = mirror.Width, catWidth = pet.Width;
+                var keyboard = UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "键盘大小");
+                keyboard.Value = 1.4;
+                Require(Math.Abs(mirror.Width-keyboardWidth*1.4) < 0.1 && pet.Width == catWidth, "keyboard setting resized the cat");
+                var cat = UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "猫咪大小"); cat.Value = 4;
+                Require(pet.Width == 128 && Math.Abs(mirror.Width-keyboardWidth*1.4) < 0.1, "cat setting resized the keyboard");
+                settings.ShowSection("input");
+                Require(UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "键盘大小").Value == 1.4, "the other settings page retained a stale size");
+                var loaded = ConfigManager.Load(Paths.ConfigFile);
+                Require(loaded.Scale == 4 && loaded.KeyboardScale == 1.4, "sizes were not persisted");
+                var legacy = Path.Combine(Paths.Data, "keyboard-legacy.json"); File.WriteAllText(legacy, "{}");
+                Require(ConfigManager.Load(legacy).KeyboardScale == 1, "old config did not retain default keyboard size");
+                File.WriteAllText(legacy, "{\"KeyboardScale\":-2}");
+                Require(ConfigManager.Load(legacy).KeyboardScale == 0.5, "invalid stored keyboard scale not sanitized");
+            }
+            finally { settings.Close(); pet.Dispose(); pet.Close(); }
+        });
         Check("heart bursts stay visibly spread even with clustered random samples", () =>
         {
             var hearts = new HeartParticleWindow { Left = 100, Top = 100 };

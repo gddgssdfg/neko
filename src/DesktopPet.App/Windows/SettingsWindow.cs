@@ -312,8 +312,9 @@ public sealed partial class SettingsWindow : Window
         "pet" => ComputeSkinSignature()
                  + "|scale=" + _config.Scale.ToString(System.Globalization.CultureInfo.InvariantCulture)
                  + "|opacity=" + _config.Opacity.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                 + "|passthrough=" + (_pet.IsMousePassthrough ? '1' : '0'),
-        "input" => "mode=" + (_config.AppMode ?? ""),
+                 + "|passthrough=" + (_pet.IsMousePassthrough ? '1' : '0')
+                 + "|keyboardScale=" + _config.KeyboardScale.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        "input" => "mode=" + (_config.AppMode ?? "") + "|keyboardScale=" + _config.KeyboardScale.ToString(System.Globalization.CultureInfo.InvariantCulture),
         "plugin" => string.Join("|", _pet.PluginHost.GetInstalledPlugins().Select(p =>
             $"{p.Manifest.Id}:{p.Manifest.Version}:{_pet.PluginHost.IsEnabled(p.Manifest.Id)}"))
             + "|loaded=" + string.Join(",", _pet.PluginHost.Plugins.Select(p => p.Manifest.Id))

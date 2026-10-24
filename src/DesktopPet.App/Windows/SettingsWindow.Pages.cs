@@ -69,17 +69,10 @@ public sealed partial class SettingsWindow : Window
 
         // 外观组（v0.1.38）
         stack.Children.Add(MakeSectionHeader("外观"));
-        // 缩放（+ - 步进 0.2）
-        stack.Children.Add(BuildStepperCard(
-            "缩放倍率", "调整猫的显示大小",
-            _config.Scale, 1.0, 8.0, 0.2,
-            v =>
-            {
-                _pet.SetScale(v);
-                Save();
-            },
-            val => $"{val:F1}x  ({32 * val:F0}px)",
-            () => _config.Scale, out var refreshScaleCard));
+        stack.Children.Add(BuildSizeCard(T("猫咪大小", "Cat size"), T("拖动滑块或使用加减按钮，立即调整猫咪大小。", "Drag or use the buttons to resize your companion."),
+            1, 8, 0.2, () => _config.Scale, _pet.SetScale, 3.2,
+            value => $"{32 * value:F0}px · {value:F1}×", out var refreshScaleCard));
+        stack.Children.Add(BuildKeyboardSizeCard());
 
         // 透明度（+ - 步进 0.1）
         stack.Children.Add(BuildStepperCard(
@@ -166,6 +159,8 @@ public sealed partial class SettingsWindow : Window
     private UIElement BuildInputPage()
     {
         var stack = new StackPanel();
+
+        stack.Children.Add(BuildKeyboardSizeCard());
 
         // 双模态：互斥按钮组（v0.1.38：分组标题）
         stack.Children.Add(MakeSectionHeader("应用模式"));

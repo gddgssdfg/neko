@@ -29,6 +29,8 @@ public sealed class AppConfig
 
     // ---- v0.1.28（BongoCat 键盘映射核心视觉）----
     public bool KeyboardMirrorEnabled { get; set; } = true;   // 键鼠映射窗（桌面显示键盘+鼠标，实时高亮）
+    public double KeyboardScale { get; set; } = 1.0;
+    public static double NormalizeKeyboardScale(double value) => double.IsFinite(value) ? Math.Clamp(value, 0.5, 2.0) : 1.0;
     public double? MirrorPosX { get; set; }                    // 映射窗位置记忆（DIP，null=默认右下角）
     public double? MirrorPosY { get; set; }
 
@@ -236,6 +238,7 @@ public static class ConfigManager
         config.RadialMenu.Visible ??= new();
         config.RadialMenu.MaxVisible = Math.Max(0, config.RadialMenu.MaxVisible);
         config.Scale = double.IsFinite(config.Scale) ? Math.Clamp(config.Scale, 1, 8) : defaults.Scale;
+        config.KeyboardScale = AppConfig.NormalizeKeyboardScale(config.KeyboardScale);
         config.Opacity = double.IsFinite(config.Opacity) ? Math.Clamp(config.Opacity, 0.2, 1) : defaults.Opacity;
         config.CatName ??= defaults.CatName;
         config.OwnerTitle ??= defaults.OwnerTitle;

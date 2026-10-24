@@ -44,6 +44,14 @@ public sealed partial class PetWindow : Window
     /// <summary>映射窗总开关：v0.1.30 联动 AppMode（开=work 模式，关=slack）</summary>
     public void SetKeyboardMirror(bool enabled) => SetAppMode(enabled ? "work" : "slack");
 
+    public void SetKeyboardScale(double scale)
+    {
+        _config.KeyboardScale = AppConfig.NormalizeKeyboardScale(scale);
+        _mirrorWindow?.ApplyScale(_config.KeyboardScale);
+        SyncMirrorToCat();
+        SaveConfigFile();
+    }
+
     /// <summary>
     /// v0.1.39 双模态：切换要真正改变猫的行为（此前只控制映射窗显隐，猫纹丝不动——灯灯点名的 bug）。
     ///   work  = 猫留在原地，键鼠映射窗贴到猫正下方（键盘以猫视角为主，猫趴键盘后）

@@ -124,6 +124,21 @@ public static class NekoDesign
    </ControlTemplate.Triggers>
   </ControlTemplate></Setter.Value></Setter>
  </Style>
+ <Style TargetType="Slider">
+  <Setter Property="MinHeight" Value="24"/><Setter Property="Focusable" Value="True"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Slider">
+   <Grid Background="Transparent">
+    <Border Height="4" Background="{DynamicResource Neko.Line}" CornerRadius="2" VerticalAlignment="Center"/>
+    <Track x:Name="PART_Track" Orientation="{TemplateBinding Orientation}">
+     <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+     <Track.Thumb><Thumb Width="16" Height="16"><Thumb.Template><ControlTemplate TargetType="Thumb">
+      <Ellipse Fill="{DynamicResource Neko.Accent}" Stroke="{DynamicResource Neko.Surface}" StrokeThickness="2"/>
+     </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+     <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+    </Track>
+   </Grid><ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
  <Style TargetType="CheckBox">
   <Setter Property="Foreground" Value="{DynamicResource Neko.Text}"/><Setter Property="Margin" Value="0,6"/>
   <Setter Property="VerticalContentAlignment" Value="Center"/>

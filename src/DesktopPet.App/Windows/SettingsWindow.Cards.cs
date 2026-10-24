@@ -17,6 +17,40 @@ public sealed partial class SettingsWindow : Window
 {
     // ============================ 卡片构建器 ============================
 
+    private Border BuildKeyboardSizeCard() => BuildSizeCard(T("键盘大小", "Keyboard size"),
+        T("键盘、鼠标和猫爪一起缩放；屏幕较小时自动适配。", "Scales keys, mouse and paws together; fits smaller screens."),
+        0.5, 2.0, 0.1, () => _config.KeyboardScale, _pet.SetKeyboardScale, 1.0,
+        value => $"{value * 100:F0}%", out _);
+
+    private Border BuildSizeCard(string title, string description, double min, double max, double step,
+        Func<double> readCurrent, Action<double> apply, double defaultValue, Func<double,string> format, out Action refresh)
+    {
+        var panel = new StackPanel();
+        var slider = new Slider { Minimum = min, Maximum = max, TickFrequency = step, SmallChange = step, LargeChange = step*5,
+            IsSnapToTickEnabled = true, IsMoveToPointEnabled = true,
+            Value = Math.Clamp(readCurrent(), min, max), Margin = new Thickness(0,4,0,14), MinHeight = 24 };
+        System.Windows.Automation.AutomationProperties.SetName(slider, title);
+        var label = new TextBlock { Foreground = new SolidColorBrush(AccentText), FontWeight = FontWeights.SemiBold,
+            MinWidth = 112, VerticalAlignment = VerticalAlignment.Center };
+        var actions = new WrapPanel(); actions.Children.Add(label);
+        bool refreshing = false;
+        void Refresh()
+        {
+            refreshing = true;
+            try { var value = Math.Clamp(readCurrent(), min, max); slider.Value = value; label.Text = format(value); }
+            finally { refreshing = false; }
+        }
+        void Set(double value) { apply(Math.Clamp(Math.Round(value, 2), min, max)); Refresh(); }
+        actions.Children.Add(MakeStepperButton("−", () => Set(readCurrent()-step)));
+        actions.Children.Add(MakeStepperButton("+", () => Set(readCurrent()+step)));
+        var reset = new Button { Content = T("恢复默认", "Reset"), Margin = new Thickness(12,0,0,0) };
+        reset.Click += (_,_) => Set(defaultValue); actions.Children.Add(reset);
+        slider.ValueChanged += (_,_) => { if (!refreshing) Set(slider.Value); };
+        panel.Children.Add(slider); panel.Children.Add(actions);
+        refresh = Refresh; Refresh();
+        return BuildWideCard(title, description, panel);
+    }
+
     private Border BuildToggleCard(string title, string? desc, bool initial, Action<bool> onChange)
     {
         var sw = new ToggleSwitch(ToggleOff, Accent) { IsOn = initial };   // v0.1.50：主题色
