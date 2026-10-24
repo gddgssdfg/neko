@@ -20,14 +20,12 @@ from pathlib import Path
 
 from PIL import Image
 
-RAW = Path(r"G:\lantetn-li\neko\neko-assets\_airaw")
+RAW = Path(__file__).resolve().parents[1] / "neko-assets" / "_airaw"
 
 # 期望布局：文件名 → (列, 行, 说明)
 LAYOUT: dict[str, tuple[int, int, str]] = {
     "cat_base_3x3.png":     (3, 3, "橘猫基准九宫格"),
     "cat_closed_3x3.png":   (3, 3, "橘猫闭眼版（做眼球层）"),
-    "phoebe_base_3x3.png":  (3, 3, "菲比基准九宫格"),
-    "phoebe_closed_3x3.png":(3, 3, "菲比闭眼版"),
     "ui_icons_5x4.png":     (5, 4, "UI 图标 20 个（径向菜单）"),
     "ui_settings_icons.png":(2, 4, "设置页图标 8 个"),
     "bubble_cloud.png":     (1, 1, "气泡云（单个）"),
@@ -35,7 +33,7 @@ LAYOUT: dict[str, tuple[int, int, str]] = {
     "keycap_down.png":      (1, 1, "键帽按下态（单个）"),
 }
 for _s in ("idle","walk","sit","sleep","pet","drag","fall","climb","work"):
-    for _p, _t in (("cat", "橘猫"), ("phoebe", "菲比")):
+    for _p, _t in (("cat", "橘猫"),):
         LAYOUT[f"{_p}_seq_{_s}.png"] = (6, 1, f"{_t} 动画序列条（{_s}）")
 
 

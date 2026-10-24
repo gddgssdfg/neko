@@ -98,10 +98,10 @@ internal static class Program
         {
             File.WriteAllText(cfgPath, JsonSerializer.Serialize(new AppConfig { Skin = "pixel" }));
             var before = File.ReadAllText(cfgPath);
-            ConfigManager.Save(cfgPath, new AppConfig { Skin = "phoebe_hd", Scale = 3.0 });
+            ConfigManager.Save(cfgPath, new AppConfig { Skin = "cat_hd", Scale = 3.0 });
             var after = File.ReadAllText(cfgPath);
             if (after == before) throw new Exception("内容未变化，保存没生效");
-            if (!after.Contains("phoebe_hd")) throw new Exception("内容不是新值");
+            if (!after.Contains("cat_hd")) throw new Exception("内容不是新值");
             if (File.Exists(cfgPath + ".tmp")) throw new Exception("残留 tmp");
 
             var logs = string.Join("\n", Directory.GetFiles(logDir, "*.log").Select(File.ReadAllText));

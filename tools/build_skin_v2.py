@@ -22,8 +22,6 @@
 用法：
     python tools/build_skin_v2.py --prefix cat    --mode pixel --id cat_pixel    --name "像素猫（动态）"
     python tools/build_skin_v2.py --prefix cat    --mode hd    --id cat_hd       --name "高清猫（动态）"
-    python tools/build_skin_v2.py --prefix phoebe --mode pixel --id phoebe_pixel --name "菲比（像素）"
-    python tools/build_skin_v2.py --prefix phoebe --mode hd    --id phoebe_hd    --name "菲比（高清）"
 """
 
 from __future__ import annotations
@@ -36,7 +34,7 @@ from statistics import median
 
 from PIL import Image, ImageChops, ImageFilter
 
-ROOT = Path(r"G:\lantetn-li\neko")
+ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "neko-assets" / "_airaw"
 
 # 状态顺序与引擎一致；前 3 个走静态图，后 6 个走序列条

@@ -35,7 +35,7 @@ public sealed class SystemImpl : ISystem
         // 托盘气泡通知（v0.1.62：接入 TrayManager.ShowBalloon；sink 未绑定时退化为日志）
         // v0.1.74 隐私收紧：不落通知正文（body 可能含用户内容，如待办标题），且降为 Debug 级
         // （默认 warn 级别本就不落盘；此改动保证用户主动开 debug 时也不会把内容写进日志）。
-        HostLog.Debug($"[通知] {title}");
+        HostLog.Debug("[通知] 已派发本地通知");
         NotifySink?.Invoke(title, body);
     }
 

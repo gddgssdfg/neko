@@ -22,7 +22,7 @@ from pathlib import Path
 
 from PIL import Image
 
-RAW = Path(r"G:\lantetn-li\neko\neko-assets\_airaw")
+RAW = Path(__file__).resolve().parents[1] / "neko-assets" / "_airaw"
 
 
 def islands(flags: list[bool], min_gap: int = 1) -> list[tuple[int, int]]:
@@ -91,13 +91,13 @@ NAMES = ["idle","walk","sit","sleep","pet","drag","fall","climb","work"]
 def main() -> int:
     if "--all" in sys.argv:
         print("扫描所有序列条（期望 6×1）")
-        for p in ("cat", "phoebe"):
+        for p in ("cat",):
             for n in NAMES:
                 f = RAW / f"{p}_seq_{n}.png"
                 if f.is_file():
                     analyze(f, 6, 1)
         print(f"\n{'#'*70}\n扫描九宫格（期望 3×3）")
-        for f in ("cat_base_3x3.png", "cat_closed_3x3.png", "phoebe_base_3x3.png", "phoebe_closed_3x3.png"):
+        for f in ("cat_base_3x3.png", "cat_closed_3x3.png"):
             p = RAW / f
             if p.is_file():
                 analyze(p, 3, 3)

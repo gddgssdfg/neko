@@ -1,96 +1,40 @@
-# Neko 安全说明（Security Policy）
+# Neko 安全说明
 
-> 适用版本：Neko 桌宠（C# + WPF + .NET 8，Windows 10/11）
-> 最后更新：2026-09-12
+最后更新：2026-10-24。适用于当前主程序与内置插件。
 
-本文件说明 Neko 的输入监听边界、日志隐私边界，以及安全问题上报方式。
+## 输入与运行权限
 
----
+全局键鼠钩子用于热键、实时输入示意与动画。原始按键码和鼠标坐标不写入文件或上传；活跃时长提醒只保存日期及累计分钟，详见 [隐私说明](PRIVACY.md)。退出时卸载钩子。程序以当前用户权限运行，不请求管理员权限，不安装驱动，不向其他进程注入代码。
 
-## 一、全局键盘 / 鼠标监听的用途与边界
+## 数据、凭据和日志
 
-Neko 通过 Windows 低级钩子实现全局输入感知：
+- 数据默认保存在 `%AppData%\Neko`，支持便携模式及 `NEKO_DATA_DIR`。实际路径可在「设置 → 关于」查看。
+- 剪贴板历史默认在插件加载后监听并保存最近 20 条文本。它可能包含敏感内容，禁用插件不会自动删除旧数据。
+- 普通插件数据（包括备忘录、出生资料和对话）并非统一加密。保存的 DeepSeek API Key 使用 Windows 当前用户 DPAPI 加密；加密失败拒绝保存，不回落到明文。
+- 主程序不记录原始输入；通知日志只含固定状态，不含通知标题/正文。日志仍可能含错误堆栈、本机路径或插件标识，不自动上传；提交问题前应检查和脱敏。
+- 不要公开 `data/`、用户数据根、密钥、签名证书或未经审查的日志。忽略规则不能移除历史里已提交的文件。
 
-- 键盘：`SetWindowsHookEx(WH_KEYBOARD_LL, ...)`
-- 鼠标：`SetWindowsHookEx(WH_MOUSE_LL, ...)`
-- 实现位置：`src/DesktopPet.App/Services/GlobalInput.cs`
+## 网络边界
 
-### 用途
+默认自动版本检查访问 Gitee（可关闭）；天气查询访问 Open-Meteo；用户主动发送 AI 咨询时访问 DeepSeek；搜索由默认浏览器打开百度。各功能的触发条件及发送内容见 [PRIVACY.md](PRIVACY.md)。程序不静默安装更新。
 
-1. **全局热键**：径向菜单、显隐老板键、透明度/缩放/重置位置等（命中热键时会吞掉该次按键，避免传递给前台程序）
-2. **键鼠映射窗**：把按键/鼠标事件转发给映射窗做实时高亮
-3. **反应动画**：打字/点击时触发猫的小动作（内部已做 300ms 节流）
+## 第三方插件
 
-### 边界（Neko 明确做什么、不做什么）
+插件 DLL 在宿主进程内以当前用户权限执行。清单权限、能力 API 和可回收的 AssemblyLoadContext 不构成操作系统安全沙箱；恶意插件仍可能直接调用 .NET 或原生系统 API。仅安装可信插件，审查源码及分发来源。内置信任清单用于校验内置组件，不代表任意第三方插件已通过安全审查。
 
-| Neko 会做 | Neko 不会做 |
-|---|---|
-| 在内存中即时转发按键/鼠标**事件**（按键码、按下/松开） | 记录按键内容、保存文本、做键盘记录 |
-| 用按键码驱动 UI 高亮与动画 | 把输入写入文件或发送到网络 |
-| 命中热键时吞掉该次按键 | 向其他进程注入代码 |
-| 读取修饰键状态（`GetAsyncKeyState`） | 模拟/伪造键盘鼠标输入 |
-| 轮询全局鼠标坐标（`GetCursorPos`） | 读取或修改其他进程内存 |
-| — | 安装任何驱动、请求管理员权限 |
+## 报告安全问题
 
-钩子回调**只做轻量转发**（不做耗时逻辑），`Dispose` 时通过 `UnhookWindowsHookEx` 卸载。
+当前没有专用安全邮箱。请先通过仓库维护者的个人主页确认可用的私下联系方式；若 GitHub 仓库已启用 Private vulnerability reporting，可使用 Security → Report a vulnerability。
 
-Neko 以 `asInvoker`（当前用户权限）运行，**不请求管理员权限**。
+不要在公开 Issue、评论或附件中直接发布 API Key、个人数据或尚未修复漏洞的利用细节。无法建立私下联系时，可先提交不含敏感细节的联系请求，等待维护者回复。请提供受影响版本、复现条件和影响范围，并对示例数据脱敏。
 
----
+- [GitHub 仓库](https://github.com/gddgssdfg/neko)
+- [Gitee 仓库](https://gitee.com/gddgssdfg/neko)
 
-## 二、日志隐私边界
+## English summary
 
-Neko 的日志实现位于 `src/DesktopPet.App/Core/Log.cs`，写入 `data/logs/neko-YYYYMMDD.log`（本地，按天滚动，保留 7 天，**从不上传**）。
+Neko processes raw keyboard/mouse events in memory, without recording or uploading them. Aggregate active minutes and enabled clipboard history are local data. User data defaults to `%AppData%\Neko`; see the privacy policy for alternate locations and deletion.
 
-### 核查结论（2026-09-12 逐点核查全部 `Log.*` 调用点）
+Saved DeepSeek keys use current-user DPAPI, but ordinary plugin data is not uniformly encrypted. Review logs before sharing. Automatic update checks use Gitee; weather, AI chat and browser search have the documented network behavior.
 
-- ✅ **`GlobalInput.cs` 中没有任何 `Log.*` 调用**——键鼠事件、按键码、鼠标坐标均**不会进入日志**。
-- ✅ **未发现任何落明文按键名、窗口标题、进程路径、设备 ID 的日志调用**。
-- ✅ 剪贴板读取/写入失败时只记录**异常消息**，不记录剪贴板内容。
-- ✅ 异常日志记录的是异常堆栈与消息，不含键鼠内容。
-
-日志调用点清单（共 11 处，均为异常/状态类信息）：
-
-| 位置 | 记录内容 |
-|---|---|
-| `App.xaml.cs:31/42/48` | 未处理异常（堆栈） |
-| `App.xaml.cs:78` | 开机自启同步失败信息 |
-| `Core/Config.cs:114/128` | 配置解析/保存失败信息 |
-| `Services/TrayManager.cs:55/136` | 托盘气泡失败、暂停状态 |
-| `Services/SystemImpl.cs:23` | **通知的标题与正文**（见下方说明） |
-| `Services/SystemImpl.cs:30/36/42` | 剪贴板/打开链接的失败信息 |
-| `Services/SchedulerImpl.cs:52/56` | 定时任务失败信息 |
-| `Services/PluginHost.cs:89` | 已加载的插件名称 |
-| `Services/PluginContextImpl.cs:64` | 插件事件处理异常（含**事件名**，如 `pet:petted`） |
-
-> **待产品决策项（如实上报，未自行修改）**：`Services/SystemImpl.cs:23`
-> `Log.Info($"[通知] {title}: {body}")` 会把**通知的标题与正文**写入日志。
-> 通知内容由插件自身产生（例如"该喝水了"），**不是键鼠输入**；但若某个插件把用户输入（如待办标题、备忘录内容）当作通知正文，则可能**间接**进入本地日志。
-> 当前日志仅在本机、不上传，风险有限。是否改为不落通知正文（或降为 Debug 级），属产品决策，留待团队确认。
-
----
-
-## 三、数据与网络
-
-- 所有用户数据保存在程序目录 `data/` 下，详见 [PRIVACY.md](PRIVACY.md)。
-- 网络访问仅有：命理 AI（`api.deepseek.com`）、天气（`api.open-meteo.com`）、主动搜索（由浏览器打开百度）。**主程序与其余插件不联网**。
-- API Key（DeepSeek）由用户自行填写并保存在本机 `data/plugins/com.lantern.bazi/`，**不会被上传给 Neko 作者**。
-
----
-
-## 四、漏洞上报（Reporting a Vulnerability）
-
-我们重视安全问题。若你发现潜在安全漏洞，请**负责任地**通过以下方式私下联系，不要在公开 Issue 中披露细节：
-
-- **邮箱**：`security@example.com`（占位邮箱，发布前请替换为实际联系方式）
-
-请在报告中尽量包含：受影响版本、复现步骤、影响范围、可能的修复建议。我们会在确认后尽快回复并处理。
-
----
-
-## English Summary
-
-- Neko installs Windows low-level keyboard/mouse hooks (`WH_KEYBOARD_LL` / `WH_MOUSE_LL`) **only** for global hotkeys, the on-screen input mirror, and small reaction animations. It never records keystroke content, never persists or uploads input, never injects into or simulates input for other processes, and never requests administrator privileges.
-- `Log.*` call sites were audited: **`GlobalInput.cs` contains no logging at all**; no keystroke names, window titles, process paths, or device IDs are written to logs. Clipboard content is not logged.
-- The only network calls are the Weather plugin (`api.open-meteo.com`), the Bazi AI plugin (`api.deepseek.com`), and opening a search URL in the user's own browser.
-- Report vulnerabilities privately to `security@example.com` (placeholder).
+Third-party DLL plugins run in-process with user privileges and are not sandboxed. Install only trusted plugins. There is no dedicated security mailbox at present; establish a private channel with the maintainer or use GitHub private vulnerability reporting if enabled. Do not post sensitive data or exploit details in public issues.

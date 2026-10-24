@@ -1,137 +1,84 @@
-# Neko 隐私说明（Privacy Policy）
+# Neko 隐私说明
 
-> 适用版本：Neko 桌宠（C# + WPF + .NET 8，Windows 10/11）
-> 最后更新：2026-10-22
+最后更新：2026-10-24。适用于本仓库主程序及内置插件（Windows 10/11）。自行安装的第三方插件可能有不同的数据行为，见下文。
 
-Neko 是一只**完全本地运行**的桌面宠物。本文件说明 Neko 会做什么、不会做什么，以及你的数据存放在哪里、是否会联网。
+Neko 的动画和本地工具可离线运行。数据默认保存在本机；自动更新检查、天气、AI 咨询和网页搜索会按各自触发条件联网。没有 Neko 用户账号、广告或向作者发送的使用分析/遥测。
 
----
+## 键盘与鼠标
 
-## 一、键盘与鼠标输入
+程序运行时安装 Windows 低级键鼠钩子，用于全局热键、键帽/鼠标实时反馈、打字点击动画和本地活跃时长提醒。鼠标坐标还用于眼神跟随等交互。按键码、鼠标坐标及逐次输入事件在内存中即时处理，不保存原始输入、不还原输入文本，也不上传到服务器。
 
-Neko 使用 Windows 低级钩子（`WH_KEYBOARD_LL` / `WH_MOUSE_LL`）监听全局键盘与鼠标事件，用途仅有三项：
+设置中的键鼠映射、反应动画、眼神跟随可分别关闭；关闭这些效果并不卸载全局热键所需的钩子。退出程序会卸载钩子。主程序和内置插件不向其他进程注入代码或读取其内存，不伪造键盘/鼠标输入。
 
-| 用途 | 说明 | 是否可关闭 |
-|---|---|---|
-| 全局热键 | 呼出径向菜单（默认 `Ctrl+Alt+N`）、显隐老板键、调节透明度/缩放/重置位置等 | 热键为产品核心交互，随程序运行 |
-| 键鼠映射窗 | 屏幕上显示键盘/鼠标示意图，实时高亮你正在按的键 | 设置页「输入」栏可关闭（`KeyboardMirrorEnabled`） |
-| 打字 / 点击反应 | 打字或点击时猫做个小的瞪眼、挥手动作 | 设置页「猫咪」栏可关闭（`KeyboardReactionsEnabled`） |
+开启气泡提醒时，`host/activity.json` 会保存日期与当天累计活跃分钟，用于本地休息提醒；不包含按键、文字或逐次鼠标轨迹。它与原始输入记录是不同的数据。
 
-**Neko 明确不做以下事情：**
+## 本地数据与保存位置
 
-- ❌ **不记录按键内容**——不保存你按了哪些键、不记录文本、不做键盘记录（keylogger）
-- ❌ **不上传键鼠数据**——所有键鼠事件只在内存中即时处理，不写入文件、不发送到任何服务器
-- ❌ **不注入其他进程**——不向任何程序注入代码
-- ❌ **不模拟/伪造输入**——不代替你发送按键或鼠标操作
-- ❌ **不读取其他程序的内存**——不挂钩、不读写游戏或其他进程
+数据根目录按以下顺序选择：
 
-> 技术细节见 [SECURITY.md](SECURITY.md)。
+1. 设置了 `NEKO_DATA_DIR`：使用指定目录。
+2. 程序目录有 `portable.flag`：使用程序目录下的 `data/`。
+3. 默认使用 `%AppData%\Neko`；无法取得该目录时才回退到程序目录。
 
----
+在「设置 → 关于 → 数据目录」查看实际路径。旧版程序目录的 `data/` 可能留有迁移前副本。
 
-## 二、本地数据存放位置
-
-用户数据默认保存在 `%AppData%\Neko`。程序目录放置 `portable.flag` 时使用程序目录的 `data/`；也可用 `NEKO_DATA_DIR` 指定目录。以下用户数据路径相对于该数据根；`neko-assets/` 与插件程序目录仍位于程序目录。可从「设置 → 关于 → 数据目录」打开数据根。
-
-| 路径 | 内容 |
+| 数据根下的位置 | 内容与保存方式 |
 |---|---|
-| `config.json` | 你的设置（缩放、透明度、热键、主题、语言、皮肤、插件开关等） |
-| `plugins/<插件ID>/` | 各插件的私有数据（例如：备忘录文本、待办列表、番茄钟统计、**命理插件的 DeepSeek API Key**） |
-| `logs/` | 运行日志（按天滚动 `neko-YYYYMMDD.log`，单文件超 5MB 滚动，自动清理 7 天前旧日志） |
-| `neko-assets/` | 内置像素素材（随程序分发） |
-| `plugins/` | 插件程序文件（随程序分发，可自行增删） |
+| `config.json` | 主题、热键、皮肤、大小、插件启用状态等配置 |
+| `host/activity.json` | 日期与累计活跃分钟，不含输入内容 |
+| `plugins/<插件ID>/` | 备忘录、待办、剪贴板历史、出生资料、AI 对话等插件数据；普通插件数据为本地 JSON，并非统一加密 |
+| `plugins/com.lantern.bazi/` | 用户填写的 DeepSeek API Key 使用 Windows 当前用户 DPAPI 加密；加密失败时拒绝保存。该保护不代表同用户下恶意程序无法访问数据 |
+| `logs/` | 本地诊断日志，默认 warn 级，按天/大小滚动，自动清理过期日志；不自动上传 |
 
-**Neko 不含**：用户账号、唯一标识符、跟踪器（tracker）、使用统计、遥测（telemetry）、分析（analytics）或广告代码。
+`neko-assets/` 与插件 DLL 所在的 `plugins/` 是程序目录中的运行文件，区别于数据根下的插件数据。
 
----
+日志可能包含错误消息、堆栈、本机路径及插件标识。内置通知只记录固定状态，不记录通知标题或正文。分享日志、截图或配置前，请自行检查个人信息；第三方插件可自行产生日志。
 
-## 三、网络访问（逐条列明）
+## 剪贴板历史
 
-桌宠动画与本地工具不依赖网络。开启自动检查更新时，主程序会在启动后后台查询版本；以下功能也可能访问网络。
+**剪贴板插件默认随内置插件加载，加载后即持续监听系统剪贴板变化，不以打开历史窗口为前提。** 它会把文本保存到本地插件数据中，最多保留最近 20 条去重记录；重启后可继续读取。密码、验证码、令牌和其他敏感文字也可能被记录，当前没有自动识别敏感内容的过滤机制。
 
-### 1. 命理助手 · AI 咨询（八字）→ `api.deepseek.com`
+在「设置 → 插件」禁用剪贴板历史可停止监听，但不会自动删除已有历史。要删除历史，先禁用插件并退出程序，再删除数据根下该插件目录（`plugins/com.lantern.clipboard/`；以插件清单 ID 为准）。不要把用户数据目录提交到公开仓库。
 
-- **目标地址**：`https://api.deepseek.com/chat/completions`
-- **上传内容**：
-  - 在**本机计算**好的命盘信息（生辰对应的四柱干支等结构化信息）
-  - 你在对话框里输入的提问
-  - 本次会话的对话历史（用于让 AI 保持上下文）
-- **凭据**：需要你**自行填写 DeepSeek API Key**（在「命理助手」设置页填写，以 Windows 当前用户 DPAPI 加密保存在数据根的 `plugins/com.lantern.bazi/` 下；加密失败时拒绝保存，不会上传给 Neko 作者）
-- **触发时机**：仅当你**主动**在命理助手设置页点击「AI 咨询」并发送消息时
-- **可关闭**：不发送咨询消息便不会触发 DeepSeek 请求；命理插件可整插件禁用
-- **第三方约束**：你与 DeepSeek 之间的数据受 [DeepSeek 隐私政策](https://www.deepseek.com/) 约束，Neko 无法控制
+## 网络访问
 
-### 2. 天气 → `api.open-meteo.com` / `geocoding-api.open-meteo.com`
+所有网络服务都可能收到正常请求所需的 IP 地址等连接信息。Neko 不控制第三方服务如何处理数据。
 
-- **目标地址**：
-  - `https://geocoding-api.open-meteo.com/v1/search`（把你输入的城市名转成经纬度）
-  - `https://api.open-meteo.com/v1/forecast`（按经纬度取天气）
-- **上传内容**：你输入的城市名；随后是经纬度坐标
-- **凭据**：无需账号、无需 API Key（Open-Meteo 为免费开放接口）
-- **触发时机**：点击径向菜单「天气」或「3日预报」时；当前版本没有定时自动查询
-- **可关闭**：禁用天气插件即可
-
-### 3. 快速搜索 → 由你的浏览器打开 `www.baidu.com`
-
-- **行为**：Neko 调用系统「打开链接」，由你的**默认浏览器**访问 `https://www.baidu.com/s?wd=<关键词>`
-- **说明**：Neko **自身不请求**该网站；请求由你的浏览器发起，受浏览器与百度的隐私政策约束
-- **触发时机**：仅当你主动使用搜索功能时
-
-### 4. 版本检查 → `gitee.com`
-
-- **目标地址**：`https://gitee.com/api/v5/repos/gddgssdfg/neko/releases/latest`，失败时回落到该仓库的 `/tags?per_page=100`。
-- **触发时机**：自动检查更新默认开启，每天首次启动后延迟检查；「设置 → 关于 → 检查更新」可手动触发。
-- **请求内容**：公开版本查询，不上传配置、按键、剪贴板、出生资料或 API Key。
-- **可关闭**：「设置 → 关于 → 自动检查更新」。关闭后仍可手动查询。
-
-### 5. 其他
-
-除上述功能外，Neko 主程序与其余内置插件不发起网络请求。Neko 不含远程图片、广告网络或分析服务。
-
-> 校验方式：网络调用位于 `src/DesktopPet.App/Services/UpdateService.cs`、`builtins/DesktopPet.Builtin.Weather`、`builtins/DesktopPet.Builtin.Bazi`；QuickSearch 通过默认浏览器打开链接。
-
----
-
-## 四、权限与用途对应
-
-| 系统能力 | 用途 | 何时启用 |
+| 功能 | 目标与发送内容 | 触发与关闭方式 |
 |---|---|---|
-| 全局键盘监听 | 全局热键、键鼠映射窗、打字反应 | 随程序运行（反应类可在设置页关闭） |
-| 全局鼠标监听 | 键鼠映射窗、点击反应、眼神追踪/边缘吸附 | 随程序运行（反应类可在设置页关闭） |
-| 文件读写 | 读写数据根下的配置、插件数据、日志 | 随程序运行 |
-| 开机自启（注册表 `HKCU\...\Run`） | 开机自动启动 Neko | 你在设置页开启时 |
-| 剪贴板读写 | 剪贴板插件（查看/复制历史） | 你在插件中主动使用时 |
-| 网络访问 | 版本检查 / 天气 / 命理 AI / 打开搜索页 | 见第三节；自动版本检查可在设置中关闭 |
-| 屏幕截图 | 截图插件 | 你主动截图时 |
-| 系统托盘 | 显示托盘图标与菜单 | 随程序运行 |
+| 版本检查 | `gitee.com` 仓库公开 Releases API，失败时回落 Tags API；不发送用户配置、剪贴板或输入内容 | 自动检查默认开启，每天首次启动后延迟检查；「设置 → 关于」可关闭自动检查或手动查询。下载页由浏览器打开，不静默安装 |
+| 天气 | `geocoding-api.open-meteo.com` 接收输入的城市名，`api.open-meteo.com` 接收对应经纬度 | 主动查询天气/预报时访问；禁用天气插件可关闭 |
+| 命理 AI 咨询 | `api.deepseek.com/chat/completions` 接收命盘、问题和用于上下文的历史；用户 API Key 作为鉴权凭据发给 DeepSeek | 主动发送咨询消息时访问；禁用插件或不发送消息即可避免请求。API Key 不发送给 Neko 作者 |
+| 快速搜索 | 默认浏览器打开 `https://www.baidu.com/s?wd=<关键词>`；搜索词进入地址及浏览器历史 | 主动搜索时触发；禁用搜索插件可关闭 |
 
-Neko 以**当前用户权限**运行，**不请求管理员权限**，不安装驱动。
+AI 对话历史还会保存在本机（最近 10 轮）。涉及出生资料或其他个人信息时，请先确认愿意发送给 AI 服务提供方。
 
----
+本表针对当前主程序和内置插件，不涵盖你另外安装的插件或系统/浏览器自身的联网行为。仓库在 GitHub 和 Gitee 同步，并不表示程序同时向两处发送版本查询；当前内置更新源仍为 Gitee。
 
-## 五、数据的删除
+## 其他系统能力与第三方插件
 
-- 删除程序目录下的 **`data/`** 文件夹，即可清除**全部用户数据**（设置、插件数据、API Key、日志）。
-- 卸载程序不会自动删除 `data/`（避免误删你的备忘录/待办），请按需手动删除。
-- 卸载后若曾有开机自启，请在「任务管理器 → 启动」中确认无残留项（正常卸载会移除）。
+- 开机自启：在设置中主动开启时写入当前用户启动项；可在设置中关闭。
+- 截图：主动调用截图功能时读取屏幕，并按操作复制或保存图像。
+- 托盘、媒体控制等：用于对应的本地工具功能；以当前用户权限运行，不安装驱动。
+- 插件 DLL 在宿主进程中执行。权限声明、API 校验与加载上下文有助于管理插件，但**不是操作系统安全沙箱**。只安装可信来源的插件；禁用会停止后续加载/执行，不自动清除已保存数据。
 
----
+## 删除数据
 
-## 六、本说明的变更
+1. 如不再使用，先在设置中关闭开机自启，再退出 Neko。
+2. 打开之前在「设置 → 关于 → 数据目录」确认的数据根，按需删除单个插件目录或整个数据根；删除整个数据根会清除设置、插件数据、API Key、对话和日志。
+3. 如曾使用便携模式、`NEKO_DATA_DIR`、旧版迁移或手工备份，还需分别检查那些目录；卸载或删除程序文件不保证清除这些副本。
+4. 本机删除不会撤回已发送给第三方服务的数据，也不会自动清除浏览器历史、系统剪贴板或用户另存的截图/导出文件。
 
-若本说明发生实质性变更，将在项目仓库中更新本文件并注明「最后更新」日期。
+## English summary
 
----
+Neko's animation and local tools work offline. Data defaults to `%AppData%\Neko`; `NEKO_DATA_DIR` overrides it, and `portable.flag` selects the program's `data/` directory. The actual directory is shown in Settings → About.
 
-## English Summary
+- Raw keystrokes and mouse trajectories are not persisted or uploaded. Local activity reminders can save a date and aggregate active minutes.
+- The clipboard-history plugin starts listening when loaded (enabled by default), and persists up to 20 recent text entries locally. Sensitive copied text is not automatically filtered. Disabling stops collection but does not erase existing history.
+- Notes, profiles and AI chat history are ordinary local plugin data, not all encrypted. The saved DeepSeek key is protected with Windows current-user DPAPI.
+- Automatic update checks contact Gitee by default and can be disabled. Explicit weather requests contact Open-Meteo; sending AI chat contacts DeepSeek with chart data, conversation context and the user's API key for authentication; web search opens Baidu in the default browser.
+- Logs remain local but may contain exception messages and paths. Review them before sharing.
+- Third-party DLL plugins run in-process with user privileges; the plugin API is not a security sandbox.
+- Exit Neko before deleting the actual data root. Also check portable/legacy/custom locations and backups. Local deletion does not erase data already sent to third parties.
 
-Neko is a **fully local** Windows desktop pet.
-
-- **Keyboard/mouse**: global low-level hooks are used **only** for global hotkeys, the on-screen keyboard/mouse mirror, and small typing/click reaction animations. Neko **never records keystroke content, never uploads input, never injects into or simulates input for other processes**. Reaction features can be disabled in Settings.
-- **Local data**: everything lives under the program's `data/` folder (`config.json`, `data/plugins/<id>/`, `data/logs/`). No accounts, trackers, telemetry, analytics, or ads.
-- **Network (only when you actively use a feature)**:
-  - Bazi AI chat → `api.deepseek.com` (sends locally-computed chart data + your question + chat history; requires your own DeepSeek API key, stored locally).
-  - Weather → `api.open-meteo.com` / `geocoding-api.open-meteo.com` (sends the city name you type, then its coordinates; no account required).
-  - Quick search → opens `www.baidu.com` in **your** browser (Neko itself does not call that site).
-  - No other network calls exist in the app or its other plugins.
-- **Deleting data**: remove the `data/` folder to erase all user data.
+本说明随功能变更更新。安全问题的报告方式见 [SECURITY.md](SECURITY.md)。

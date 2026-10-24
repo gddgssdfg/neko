@@ -102,3 +102,11 @@ Desktop.ini
 # 插件 dll 属非确定性构建（源码不变、重建也会内容微变）→ 入库会持续刷 diff 噪音。
 # 手写内容（plugins/README.md、plugins/_template/）仍入库。
 /plugins/com.lantern.*/
+
+# Local credentials and signing material
+.env.*
+!.env.example
+*.pem
+*.pfx
+*.p12
+*.credentials.json

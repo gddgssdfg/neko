@@ -1998,7 +1998,7 @@ internal static class Program
             //   `v0.2.1：全部皮肤…` 项，覆盖 sheet 与 files 两种 layout）。本项仍只管新管线的 8 帧契约。
             //   缺口本身（pixel.sleep / soft.sleep 标 fps=1 却 4 帧全同）已按"诚实声明"修掉：两个状态
             //   改为 fps=0（静态态），**视觉零变化**（4 帧本来全同），顺带省掉睡眠时的每秒无谓重绘。
-            var animated = new[] { "cat_pixel", "cat_hd", "phoebe_pixel", "phoebe_hd", "bead" };
+            var animated = new[] { "cat_pixel", "cat_hd", "bead" };
             var skins = SkinRegistry.Scan(Paths.Assets);
             var staticStates = new[] { "idle", "sit", "sleep" };
 

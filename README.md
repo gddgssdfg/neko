@@ -1,13 +1,13 @@
 # Neko 桌宠程序
 
 > Windows 10 轻量像素桌宠，C# + WPF + .NET 8，VS 2022 开发。
-> **程序根目录：`G:\lantetn-li\neko`**（整个程序都在 G 盘，不占 C 盘）。
+> 仓库：[GitHub](https://github.com/gddgssdfg/neko) · [Gitee](https://gitee.com/gddgssdfg/neko)
 > 当前版本：见 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件不硬编码版本号，避免漂移；一致性由 `tools/check_version.py` 守护）。
 
 ## 目录结构
 
 ```
-G:\lantetn-li\neko\
+neko/
 ├── src/                      # 主解决方案（VS 2022 打开 src/DesktopPet.sln）
 │   ├── DesktopPet.sln
 │   ├── DesktopPet.Core/      # 接口契约（net8.0，插件唯一可依赖的层）
@@ -190,7 +190,7 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 - 素材许可、署名要求与商用授权 → [`LICENSE-ASSETS`](LICENSE-ASSETS)
 
 > ⚠️ **要商用请注意**：代码部分（MIT）可直接商用；
-> 但**猫 / 菲比的形象素材不能商用**——请替换为自绘素材，或联系作者取得授权。
+> 但**随附的美术素材不能商用**——请替换为自绘素材，或联系作者取得授权。
 
 ### 第三方依赖
 
@@ -205,3 +205,17 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 
 「Neko」是**个人学习项目**，与任何公司或组织无关，按「原样」提供、不附带任何担保。
 隐私说明见 [`PRIVACY.md`](PRIVACY.md)，安全问题反馈见 [`SECURITY.md`](SECURITY.md)。
+
+
+## GitHub / Gitee 同步维护
+
+两个仓库使用同一个 `master` 分支和版本标签。`origin` 指向 Gitee，`github` 指向 GitHub：
+
+```powershell
+git remote add github https://github.com/gddgssdfg/neko.git
+python tools/sync_remotes.py
+```
+
+只需首次添加尚不存在的远端。同步脚本先检查两个远端的推送条件，再依次推送当前提交及标签，不强推、不保存令牌；网络中断时可能只有一端成功，排除问题后重新运行即可。建议固定一个本地工作副本提交，避免两端分别修改同一分支。两端 Release、下载附件、Issue、权限设置不随 Git 推送自动同步。
+
+2026-10-24 公开准备时，历史中的已撤回角色皮肤已清理；旧克隆请重新克隆或在备份本地改动后按维护者说明同步，不要把旧历史再次推回。更新检查当前仍使用 Gitee。

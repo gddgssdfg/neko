@@ -68,7 +68,7 @@ from statistics import median
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-ROOT = Path(r"G:\lantetn-li\neko")
+ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "neko-assets" / "_airaw"
 
 # ---------------------------------------------------------------- 常量（易调）

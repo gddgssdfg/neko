@@ -39,7 +39,6 @@
 用法：
     python tools/build_skin_anim.py --prefix cat   --mode hd    --id cat_hd    --name "AI 高清橘猫"
     python tools/build_skin_anim.py --prefix cat   --mode pixel --id cat_pixel --name "AI 像素橘猫"
-    python tools/build_skin_anim.py --prefix phoebe --mode hd   --id phoebe_hd --name "AI 高清菲比"
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ from ai_sheet_to_skin import (  # noqa: E402
     FRAMES as _UNUSED, pixelize, has_alpha_cutout, remove_bg,
 )
 
-ROOT = Path(r"G:\lantetn-li\neko")
+ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "neko-assets" / "_airaw"
 
 STATES = ["idle", "walk", "sit", "sleep", "pet", "drag", "fall", "climb", "work"]
