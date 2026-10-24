@@ -54,7 +54,7 @@ public sealed class PomodoroSettingsPage : ISettingsPage
             {
                 var minutes = int.Parse(txt.Split(' ')[0]);
                 _storage.Set(WorkKey, minutes);
-                MessageBox.Show($"已保存：{minutes} 分钟", "番茄钟设置", MessageBoxButton.OK, MessageBoxImage.Information);
+                PluginUi.ShowStatus(stack, $"已保存：{minutes} 分钟");
             }
         };
 

@@ -30,7 +30,7 @@ public sealed class CountdownSettingsPage : ISettingsPage
         {
             Text = "自定义倒计时时长（分钟）",
             FontSize = 12,
-            Foreground = PluginUi.TextSub,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Muted),
             Margin = new Thickness(0, 0, 0, 8),
         });
 
@@ -39,7 +39,7 @@ public sealed class CountdownSettingsPage : ISettingsPage
         var valueText = new TextBlock
         {
             Text = current.ToString(),
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             Width = 40,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
@@ -58,7 +58,7 @@ public sealed class CountdownSettingsPage : ISettingsPage
         {
             Text = "5/10 分快捷槽位不变；这里改的是第三个「倒计时 N分」槽位",
             FontSize = 11,
-            Foreground = PluginUi.TextSub,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Muted),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
@@ -68,7 +68,7 @@ public sealed class CountdownSettingsPage : ISettingsPage
         saveBtn.Click += (_, _) =>
         {
             _storage.Set(CustomKey, value);
-            MessageBox.Show($"已保存：自定义倒计时 {value} 分钟", "倒计时设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            PluginUi.ShowStatus(stack, $"已保存：自定义倒计时 {value} 分钟");
         };
 
         stack.Children.Add(row);

@@ -1,3 +1,4 @@
+using DesktopPet.Sdk;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,6 +27,7 @@ namespace DesktopPet.App.Windows;
 /// </summary>
 public sealed class RadialMenu : Window
 {
+    private NekoPalette Palette => _config.Theme == "light" ? NekoPalette.Light : NekoPalette.Dark;
     private readonly UIApiImpl _uiApi;
     private readonly GlobalInput _input;
     private readonly AppConfig _config;          // v0.1.71：径向菜单配置（顺序/显隐/数量上限）
@@ -45,13 +47,13 @@ public sealed class RadialMenu : Window
     private const string IconFallback = "default"; // 槽位未匹配图标 key 时回退到 default.png
 
     // 主题色（暖白纸感 + 深棕描边，与橘猫协调且对比清晰）
-    private static readonly Color PlateFill = Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF); // 底盘 95% 白
-    private static readonly Color PlateStroke = Color.FromRgb(0x6B, 0x53, 0x34);      // 深棕描边
-    private static readonly Color SlotBorder = Color.FromRgb(0xC8, 0xB2, 0x8C);       // 槽位常态描边
-    private static readonly Color SlotHoverFill = Color.FromArgb(0xCC, 0xFF, 0xB3, 0x47);
-    private static readonly Color SlotHoverBorder = Color.FromRgb(0xE8, 0x94, 0x0C);
-    private static readonly Color SlotNormalFill = Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF);  // 槽位常态背景（半透明白）
-    private static readonly Color TextColor = Color.FromRgb(0x4A, 0x37, 0x28);
+    private Color PlateFill => Palette.Surface; // 底盘 95% 白
+    private Color PlateStroke => Palette.Line;      // 深棕描边
+    private Color SlotBorder => Palette.Line;       // 槽位常态描边
+    private Color SlotHoverFill => Palette.Selected;
+    private Color SlotHoverBorder => Palette.Accent;
+    private Color SlotNormalFill => Palette.Raised;  // 槽位常态背景（半透明白）
+    private Color TextColor => Palette.Text;
     private static readonly QuadraticEase AniEase = new() { EasingMode = EasingMode.EaseOut };
 
     /// <summary>v0.1.32：槽位/胶囊背景色平滑过渡（hover 不再瞬变）</summary>
@@ -62,7 +64,7 @@ public sealed class RadialMenu : Window
 
     /// <summary>v0.1.39：测量文本渲染宽度（判断槽位标签是否会被截断 → 决定是否挂 Tooltip）。
     /// 用 FormattedText 实测而非按字数猜：中英文宽度差一倍，"时钟"和"clipboard"同样是两个/九个字形。</summary>
-    private static double MeasureTextWidth(string text, double fontSize)
+    private double MeasureTextWidth(string text, double fontSize)
     {
         var ft = new FormattedText(
             text ?? "",
@@ -372,7 +374,7 @@ public sealed class RadialMenu : Window
             double x = cx + SlotRadius * Math.Cos(angle);
             double y = cy + SlotRadius * Math.Sin(angle);
 
-            var view = new SlotView(slot, _iconCache.GetValueOrDefault(slot.Icon ?? IconFallback))
+            var view = new SlotView(this, slot, _iconCache.GetValueOrDefault(slot.Icon ?? IconFallback))
             {
                 RenderTransformOrigin = new Point(0.5, 0.5),
                 RenderTransform = new ScaleTransform(0.4, 0.4),
@@ -408,13 +410,16 @@ public sealed class RadialMenu : Window
     private sealed class SlotView : Border
     {
         public RadialSlot Slot { get; }
-        public SlotView(RadialSlot slot, BitmapImage? icon)
+        public SlotView(RadialMenu owner, RadialSlot slot, BitmapImage? icon)
         {
+            var SlotBorder = owner.SlotBorder; var TextColor = owner.TextColor;
+            var SlotHoverFill = owner.SlotHoverFill; var SlotHoverBorder = owner.SlotHoverBorder;
+            var SlotNormalFill = owner.SlotNormalFill;
             Slot = slot;
             Width = SlotSize;
             Height = SlotSize;
             CornerRadius = new CornerRadius(7);
-            Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+            Background = new SolidColorBrush(SlotNormalFill);
             BorderThickness = new Thickness(1.5);
             BorderBrush = new SolidColorBrush(SlotBorder);
             Cursor = Cursors.Hand;
@@ -437,7 +442,7 @@ public sealed class RadialMenu : Window
             Child = stack;
 
             // v0.1.39：实测文本宽度，超出槽位显示宽度才挂 Tooltip（短名字不弹，免得悬浮一下就冒个泡）
-            if (MeasureTextWidth(slot.Label, 9) > SlotSize - 4)
+            if (owner.MeasureTextWidth(slot.Label, 9) > SlotSize - 4)
             {
                 ToolTip = slot.Label;
                 ToolTipService.SetInitialShowDelay(this, 250);

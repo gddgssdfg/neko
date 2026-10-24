@@ -1,112 +1,60 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Media.Animation;
+using System.Windows.Input;
 using DesktopPet.Core;
+using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.ClipboardHistory;
 
-/// <summary>剪贴板历史窗口：ListBox 展示最近条目，双击复制回剪贴板。</summary>
+/// <summary>Searchable clipboard library. Selection alone never writes to the clipboard.</summary>
 public sealed class ClipboardWindow : Window
 {
-    /// <summary>v0.1.82：冻结画刷 —— 冻结后可跨线程共享、省渲染开销；未冻结的 Freezable 在跨线程或高频渲染时是纯损耗。</summary>
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
-
-    private static readonly Brush Bg = Frozen(0x1E, 0x26, 0x2F);
-    private static readonly Brush TextMain = Frozen(0xE5, 0xE7, 0xEB);
-    private static readonly Brush TextSub = Frozen(0x9C, 0xA3, 0xAF);
-    private static readonly Brush CardBg = Frozen(0x2B, 0x36, 0x47);
-    private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
-    private static readonly Brush SelBg = Frozen(0x33, 0x44, 0x5C);
-
-    private readonly ISystem _sys;
-
     public ClipboardWindow(List<string> history, Action<string> pick, ISystem system)
     {
-        _sys = system;
         Title = "Neko 剪贴板历史";
-        Width = 380;
-        Height = 420;
+        Width = 480; Height = 540; MinWidth = 360; MinHeight = 300;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Bg;
-        Opacity = 0;
-
-        var root = new DockPanel { Margin = new Thickness(8) };
-        var hint = new TextBlock
+        NekoDesign.Apply(this);
+        var root = new DockPanel { Margin = new Thickness(24) };
+        var header = NekoDesign.ToolHeader("刚刚复制过", "搜索历史，双击或按回车复制选中内容。");
+        DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
+        var search = PluginUi.Input();
+        search.ToolTip = "搜索剪贴板内容";
+        System.Windows.Automation.AutomationProperties.SetName(search, "搜索剪贴板");
+        search.Margin = new Thickness(0, 0, 0, 14);
+        DockPanel.SetDock(search, Dock.Top); root.Children.Add(search);
+        var footer = new DockPanel { Margin = new Thickness(0, 14, 0, 0) };
+        var copy = PluginUi.Button("复制选中");
+        DockPanel.SetDock(copy, Dock.Right); footer.Children.Add(copy);
+        var status = PluginUi.Text("", sub: true); footer.Children.Add(status);
+        DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
+        var list = new ListBox();
+        root.Children.Add(list); Content = root;
+        void Refresh()
         {
-            Text = "双击条目复制回剪贴板",
-            FontSize = 11,
-            Foreground = TextSub,
-        };
-        DockPanel.SetDock(hint, Dock.Top);
-
-        var listBox = new ListBox
-        {
-            FontSize = 12,
-            Margin = new Thickness(0, 6, 0, 0),
-            Foreground = TextMain,
-            Background = CardBg,
-            BorderBrush = CardBorder,
-            BorderThickness = new Thickness(1),
-        };
-        listBox.ItemContainerStyle = MakeItemStyle();
-        if (history.Count == 0)
-        {
-            listBox.Items.Add(new ListBoxItem { Content = "（暂无历史，复制点文本会自动记录）", IsEnabled = false });
+            list.Items.Clear();
+            var matches = history.Where(text => text.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var text in matches)
+                list.Items.Add(new ListBoxItem { Tag = text, ToolTip = text,
+                    Content = new TextBlock { Text = text.Replace('\r', ' ').Replace('\n', ' '),
+                        TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 44, TextWrapping = TextWrapping.Wrap } });
+            status.Text = $"{matches.Count} 条记录";
+            if (matches.Count == 0)
+                list.Items.Add(new ListBoxItem { IsEnabled = false, Content = history.Count == 0 ? "还没有记录，复制一段文字试试。" : "没有匹配的内容。" });
+            copy.IsEnabled = false;
         }
-        else
+        void CopySelection()
         {
-            foreach (var item in history)
-            {
-                listBox.Items.Add(new ListBoxItem
-                {
-                    Content = Truncate(item, 50),
-                    Tag = item,
-                    ToolTip = item,
-                    Foreground = TextMain,
-                });
-            }
+            if (list.SelectedItem is not ListBoxItem { Tag: string text }) return;
+            try { pick(text); Close(); }
+            catch (Exception ex) { status.Text = "复制失败，请重试"; system.Log(PluginLogLevel.Warn, $"写回剪贴板失败：{ex.Message}"); }
         }
-        listBox.MouseDoubleClick += (_, _) =>
-        {
-            if (listBox.SelectedItem is ListBoxItem { Tag: string s } && !string.IsNullOrEmpty(s))
-            {
-                try { pick(s); } catch (Exception ex) { _sys.Log(PluginLogLevel.Warn, $"写回剪贴板失败（用户看不到「已选中」效果）：{ex.Message}"); }
-                Close();
-            }
-        };
-
-        root.Children.Add(hint);
-        root.Children.Add(listBox);
-        Content = root;
-
-        Loaded += (_, _) => BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(150)));
-    }
-
-    private static string Truncate(string s, int max)
-    {
-        s = s.Replace("\r", " ").Replace("\n", " ");
-        return s.Length <= max ? s : s[..max] + "…";
-    }
-
-    private static Style MakeItemStyle()
-    {
-        var style = new Style(typeof(ListBoxItem));
-        style.Setters.Add(new Setter(ForegroundProperty, TextMain));
-        style.Setters.Add(new Setter(PaddingProperty, new Thickness(6, 3, 6, 3)));
-        var trigger = new Trigger
-        {
-            Property = ListBoxItem.IsSelectedProperty,
-            Value = true,
-        };
-        trigger.Setters.Add(new Setter(BackgroundProperty, SelBg));
-        trigger.Setters.Add(new Setter(ForegroundProperty, TextMain));
-        style.Triggers.Add(trigger);
-        return style;
+        search.TextChanged += (_, _) => Refresh();
+        list.SelectionChanged += (_, _) => copy.IsEnabled = list.SelectedItem is ListBoxItem { Tag: string };
+        list.MouseDoubleClick += (_, _) => CopySelection();
+        list.KeyDown += (_, e) => { if (e.Key == Key.Enter) { CopySelection(); e.Handled = true; } };
+        copy.Click += (_, _) => CopySelection();
+        Refresh();
+        Loaded += (_, _) => search.Focus();
     }
 }

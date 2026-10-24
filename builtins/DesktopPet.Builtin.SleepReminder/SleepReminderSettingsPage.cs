@@ -55,7 +55,7 @@ public sealed class SleepReminderSettingsPage : ISettingsPage
             _storage.Set(MinuteKey, minute);
             RefreshLabel();
             _onSaved?.Invoke();   // v0.1.84：通知插件刷新径向槽位文案（同 Id upsert，即时生效）
-            MessageBox.Show("已保存，径向菜单文案已同步", "睡眠提醒设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            PluginUi.ShowStatus(stack, "已保存，径向菜单文案已同步");
         };
 
         stack.Children.Add(label);

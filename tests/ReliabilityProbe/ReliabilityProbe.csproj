@@ -11,6 +11,10 @@
     <ProjectReference Include="../PluginLifecycleFixture/PluginLifecycleFixture.csproj" />
     <ProjectReference Include="../../builtins/DesktopPet.Builtin.SystemInfo/DesktopPet.Builtin.SystemInfo.csproj" />
     <ProjectReference Include="../../builtins/DesktopPet.Builtin.Weather/DesktopPet.Builtin.Weather.csproj" />
+    <ProjectReference Include="../../builtins/DesktopPet.Builtin.Notes/DesktopPet.Builtin.Notes.csproj" />
+    <ProjectReference Include="../../builtins/DesktopPet.Builtin.TodoList/DesktopPet.Builtin.TodoList.csproj" />
+    <ProjectReference Include="../../builtins/DesktopPet.Builtin.ClipboardHistory/DesktopPet.Builtin.ClipboardHistory.csproj" />
+    <ProjectReference Include="../../builtins/DesktopPet.Builtin.Bazi/DesktopPet.Builtin.Bazi.csproj" />
 
     <ProjectReference Include="../../src/DesktopPet.App/DesktopPet.App.csproj" />
     <None Include="../../plugins/**/*" CopyToOutputDirectory="PreserveNewest" LinkBase="plugins" />

@@ -16,6 +16,12 @@ namespace DesktopPet.App.Windows;
 
 public sealed partial class PetWindow : Window
 {
+    public void RefreshCompanionTheme()
+    {
+        _mirrorWindow?.RefreshTheme();
+        _radialMenu?.HideMenu();
+        _bubble?.Dismiss();
+    }
     // ---- v0.1.28：键鼠映射窗开关（托盘/设置页调用）----
 
     /// <summary>显示映射窗（懒创建）。v0.1.39：创建后立刻摆到猫下方，避免开局在旧位置闪一帧再跳过去。</summary>

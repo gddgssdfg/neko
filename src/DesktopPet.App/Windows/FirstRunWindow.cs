@@ -1,3 +1,4 @@
+using DesktopPet.Sdk;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -15,13 +16,13 @@ namespace DesktopPet.App.Windows;
 public sealed class FirstRunWindow : Window
 {
     // 主题色（与 SettingsWindow 保持一致——保持自家身份，深色 + 蓝 accent）
-    private static readonly Color BgRoot = Color.FromRgb(0x1E, 0x26, 0x2F);
-    private static readonly Color BgCard = Color.FromRgb(0x2B, 0x36, 0x47);
-    private static readonly Color BgInput = Color.FromRgb(0x21, 0x2A, 0x36);
-    private static readonly Color BorderC = Color.FromRgb(0x38, 0x44, 0x5A);
-    private static readonly Color Accent = Color.FromRgb(0x4C, 0x9F, 0xFF);
-    private static readonly Color TextMain = Color.FromRgb(0xE5, 0xE7, 0xEB);
-    private static readonly Color TextSub = Color.FromRgb(0x9C, 0xA3, 0xAF);
+    private static Color BgRoot => NekoDesign.Current.Background;
+    private static Color BgCard => NekoDesign.Current.Surface;
+    private static Color BgInput => NekoDesign.Current.Surface;
+    private static Color BorderC => NekoDesign.Current.Line;
+    private static Color Accent => NekoDesign.Current.Accent;
+    private static Color TextMain => NekoDesign.Current.Text;
+    private static Color TextSub => NekoDesign.Current.Muted;
     private static readonly Color TextErr = Color.FromRgb(0xE7, 0x4C, 0x3C);
 
     private readonly AppConfig _config;
@@ -33,18 +34,19 @@ public sealed class FirstRunWindow : Window
     {
         _config = config;
         Title = "欢迎养 Neko";
-        Width = 460;
-        Height = 460;
+        Width = 500;
+        Height = Math.Min(540, SystemParameters.WorkArea.Height);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        WindowStyle = WindowStyle.None;
+        WindowStyle = WindowStyle.SingleBorderWindow;
         ResizeMode = ResizeMode.NoResize;
-        AllowsTransparency = true;
+        AllowsTransparency = false;
+        NekoDesign.Apply(this, config.Theme == "light");
         Background = new SolidColorBrush(BgRoot);
         ShowInTaskbar = true;        // 引导期间显示在任务栏（首次必须找到窗口）
         Topmost = true;              // 置顶（首启别被猫挡住——猫其实还没出现）
 
         var root = new Grid { Margin = new Thickness(28) };
-        Content = root;
+        Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         var stack = new StackPanel();
         root.Children.Add(stack);
@@ -63,7 +65,7 @@ public sealed class FirstRunWindow : Window
         // 标题
         stack.Children.Add(new TextBlock
         {
-            Text = "欢迎养 Neko !",
+            Text = "你好，我是你的桌面小伙伴。",
             FontSize = 24,
             FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(TextMain),
@@ -72,7 +74,7 @@ public sealed class FirstRunWindow : Window
         // 副标题
         stack.Children.Add(new TextBlock
         {
-            Text = "告诉我两件事，我们就开始：",
+            Text = "先互相认识一下，再一起开始今天的生活。",
             FontSize = 13,
             Foreground = new SolidColorBrush(TextSub),
             Margin = new Thickness(0, 0, 0, 24),
@@ -120,7 +122,9 @@ public sealed class FirstRunWindow : Window
         Opacity = 0;
         Loaded += (_, _) => BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)));
         // 拖动（无标题栏要给个能拖的手感）
-        MouseLeftButtonDown += (_, e) => { if (e.ChangedButton == MouseButton.Left) DragMove(); };
+        System.Windows.Automation.AutomationProperties.SetName(_txtName, "猫咪的名字");
+        System.Windows.Automation.AutomationProperties.SetName(_txtTitle, "对你的称呼");
+        Loaded += (_, _) => _txtName.Focus();
 
         // 引导窗口按 Esc 视为取消（退出程序）
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { DialogResult = false; Close(); } };

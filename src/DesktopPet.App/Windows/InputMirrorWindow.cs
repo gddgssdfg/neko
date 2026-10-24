@@ -1,3 +1,4 @@
+using DesktopPet.Sdk;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
@@ -24,23 +25,25 @@ namespace DesktopPet.App.Windows;
 public sealed class InputMirrorWindow : Window
 {
     // ---- 视觉常量（v0.1.30：整体缩小约 35%；v0.1.44：再缩小 20% 并更紧凑，参考 BongoCat 键盘不抢戏）----
-    private const double KeyW = 18.0;          // 1u 键宽（34→22→18）
-    private const double KeyH = 18.0;          // 键高
-    private const double KeyGap = 1.5;         // 键间距
+    private const double KeyW = 22.0;
+    private const double KeyH = 22.0;
+    private const double KeyGap = 2.0;
     private const double KeyDepth = 3.0;       // v0.1.86：键帽立体“前脸”厚度——键帽面比底座矮 3px，露出暗色下缘（键程层次）
     private const double PlatePad = 6.0;       // 底盘内边距（8→6，更紧凑贴合）
     private const double MouseW = 46.0;        // 鼠标区宽（74→56→46）
     private const double MouseH = 68.0;        // 鼠标区高（185→82→68，保持 1:1.4 真实比例）
     private const double MouseGap = 8.0;       // 键盘↔鼠标间距（10→8）
 
-    private static readonly Color PlateFillC = Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF);   // 95% 白
-    private static readonly Color PlateStrokeC = Color.FromRgb(0x6B, 0x53, 0x34);       // 深棕
-    private static readonly Color KeyFillC = Color.FromRgb(0xFF, 0xFF, 0xFF);           // 键帽面（松开还原/动画目标色）
-    private static readonly Color KeyEdgeC = Color.FromRgb(0xC8, 0xB2, 0x8C);           // 浅棕描边
-    private static readonly Color KeyBaseC = Color.FromRgb(0xD9, 0xC3, 0x9C);           // v0.1.86：键帽底座/前脸（暗米棕，露在键帽下缘 = 立体感）
-    private static readonly Color KeyShadeC = Color.FromRgb(0xEC, 0xE0, 0xC7);          // v0.1.86：键帽面底部柔和阴影（渐变下端，模拟受光）
-    private static readonly Color KeyTextC = Color.FromRgb(0x33, 0x24, 0x1A);           // v0.1.86：深棕文字（#4A3728→#33241A，提对比）
-    private static readonly Color KeyActiveC = Color.FromRgb(0xFF, 0xB3, 0x47);         // 高亮橙（悬停同款）
+    private Color PlateFillC => Palette.Surface;   // 95% 白
+    private Color PlateStrokeC => Palette.Line;       // 深棕
+    private Color KeyFillC => Palette.Surface;           // 键帽面（松开还原/动画目标色）
+    private Color KeyEdgeC => Palette.Line;           // 浅棕描边
+    private Color KeyBaseC => Palette.Line;           // v0.1.86：键帽底座/前脸（暗米棕，露在键帽下缘 = 立体感）
+    private Color KeyShadeC => Palette.Raised;          // v0.1.86：键帽面底部柔和阴影（渐变下端，模拟受光）
+    private Color KeyTextC => Palette.Text;           // v0.1.86：深棕文字（#4A3728→#33241A，提对比）
+    private Color KeyActiveC => Palette.Accent;         // 高亮橙（悬停同款）
+
+    private NekoPalette Palette => _config.Theme == "light" ? NekoPalette.Light : NekoPalette.Dark;
 
     private readonly GlobalInput _input;
     private readonly AppConfig _config;
@@ -65,9 +68,9 @@ public sealed class InputMirrorWindow : Window
     private System.Windows.Threading.DispatcherTimer? _wheelPawTimer;
     private const double PawSize = 30.0;       // v0.1.44：爪子 36→30，配合缩小
     private const double KeyboardPawTop = -2;   // 拍键时的落点（爪尖探出键面上沿）
-    private const double KeyboardPawLeft = 140; // 初始悬停 x（键盘 291 中段偏左，G/H 区）
+    private const double KeyboardPawLeft = KbW / 2 - PawSize / 2;
     private const double MousePawTop = -2;
-    private const double MousePawLeft = 322;    // 键盘 291 + 间距 8 + 鼠标居中 23
+    private const double MousePawLeft = KbW + MouseGap + MouseW / 2 - PawSize / 2;
     // v0.1.72：猫坐在对面——爪子从"窗体底边之外"伸上来。
     // v0.1.44 的"不挡键"原则保留——只是从"顶"挪到"底"。
     // ⚠️ 必须是 const（保持编译期常量）。之前改成实例字段导致 UiProbe 回归 NRE（layout pass 触发 null 访问）。
@@ -89,8 +92,8 @@ public sealed class InputMirrorWindow : Window
     private const uint VK_CAPITAL = 0x14;
     private const uint VK_NUMLOCK = 0x90;
     private const uint VK_SCROLL  = 0x91;
-    private static readonly Color LedOnC = Color.FromRgb(0xFF, 0xB3, 0x47);   // 锁键开=橙
-    private static readonly Color LedOffC = Color.FromRgb(0xB0, 0xA8, 0x95);  // 锁键关=暗灰
+    private Color LedOnC => Palette.Accent;   // 锁键开=橙
+    private Color LedOffC => Palette.Line;  // 锁键关=暗灰
     private Ellipse _ledCaps = null!;
     private Ellipse _ledNum = null!;
     private Ellipse _ledScrLk = null!;   // ctor 末 BuildContent 初始化
@@ -173,7 +176,7 @@ public sealed class InputMirrorWindow : Window
 
     private const double Unit = KeyW + KeyGap;                       // 1u 步进（24）
     private const double KbW = 15 * Unit - KeyGap;                   // 键盘画布宽（15u 行 = 358）
-    private const double KbH = 5 * (KeyH + KeyGap) - KeyGap;         // 键盘画布高（5 行 = 118）
+    private const double KbH = 6 * (KeyH + KeyGap) - KeyGap;         // 键盘画布高（5 行 = 118）
     private const double LedH = 15;                                  // LED 排高
 
     /// <summary>v0.1.36 修复：键盘改用 Canvas 绝对定位——旧 Grid 列+Margin 方案里 1.5u/2.25u 宽键
@@ -195,7 +198,7 @@ public sealed class InputMirrorWindow : Window
         // ---- Row 1：` 1..0 - = Back ----
         double r1 = 0;
         AddKey(kb, 1, ref r1, "`", 0xC0, 1.0);
-        for (uint i = 0; i < 10; i++) AddKey(kb, 1, ref r1, ((char)('1' + i)).ToString(), 0x30 + i, 1.0);
+        for (uint i = 0; i < 10; i++) { uint digit = (i + 1) % 10; AddKey(kb, 1, ref r1, digit.ToString(), 0x30 + digit, 1.0); }
         AddKey(kb, 1, ref r1, "-", 0xBD, 1.0); AddKey(kb, 1, ref r1, "=", 0xBB, 1.0);
         AddKey(kb, 1, ref r1, "Back", 0x08, 2.0);
 
@@ -224,6 +227,17 @@ public sealed class InputMirrorWindow : Window
         AddKey(kb, 4, ref r4, "B", 0x42, 1.0); AddKey(kb, 4, ref r4, "N", 0x4E, 1.0); AddKey(kb, 4, ref r4, "M", 0x4D, 1.0);
         AddKey(kb, 4, ref r4, ",", 0xBC, 1.0); AddKey(kb, 4, ref r4, ".", 0xBE, 1.0); AddKey(kb, 4, ref r4, "/", 0xBF, 1.0);
         AddKey(kb, 4, ref r4, "Shift", 0xA1, 2.75);        // R Shift
+
+        // Full modifier/space row; left and right modifiers retain distinct virtual keys.
+        double r5 = 0;
+        AddKey(kb, 5, ref r5, "Ctrl", 0xA2, 1.25);
+        AddKey(kb, 5, ref r5, "Win", 0x5B, 1.25);
+        AddKey(kb, 5, ref r5, "Alt", 0xA4, 1.25);
+        AddKey(kb, 5, ref r5, "Space", 0x20, 6.25);
+        AddKey(kb, 5, ref r5, "Alt", 0xA5, 1.25);
+        AddKey(kb, 5, ref r5, "Win", 0x5C, 1.25);
+        AddKey(kb, 5, ref r5, "Menu", 0x5D, 1.25);
+        AddKey(kb, 5, ref r5, "Ctrl", 0xA3, 1.25);
 
         // ---- 鼠标（右侧，垂直居中于键盘）----
         var mouse = BuildMouse();
@@ -267,11 +281,10 @@ public sealed class InputMirrorWindow : Window
         {
             Background = new SolidColorBrush(PlateFillC),
             BorderBrush = new SolidColorBrush(PlateStrokeC),
-            BorderThickness = new Thickness(2),
+            BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(PlatePad),
             Child = _rootGrid,
-            Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.25 },
         };
 
         LoadPaws(pawLayer);
@@ -288,6 +301,13 @@ public sealed class InputMirrorWindow : Window
     /// 用 RenderTransform 而非 LayoutTransform——只翻渲染不影响测量，窗口尺寸不变，
     /// 键盘区和鼠标区整体左右对调；键帽层 + 爪子层都挂在 _rootGrid 下，会一并翻转。
     /// </summary>
+    public void RefreshTheme()
+    {
+        _litKeys.Clear(); _keyByVk.Clear(); _mouseKeys.Clear();
+        _kbdPawTimer?.Stop(); _wheelPawTimer?.Stop(); _wheelTimer?.Stop();
+        BuildContent(); RefreshLeds();
+    }
+
     public void SetMirrored(bool flipped)
     {
         _rootGrid.RenderTransformOrigin = new Point(0.5, 0.5);
@@ -339,7 +359,7 @@ public sealed class InputMirrorWindow : Window
         capContent.Children.Add(new TextBlock
         {
             Text = label,
-            FontSize = label.Length > 2 ? 8 : 9,   // v0.1.44：18px 键配 8/9px 字
+            FontSize = label.Length > 2 ? 9 : 11,
             FontWeight = FontWeights.SemiBold,     // v0.1.86：Medium→SemiBold，小字更清晰
             Foreground = new SolidColorBrush(KeyTextC),
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -389,8 +409,8 @@ public sealed class InputMirrorWindow : Window
                 EndPoint = new Point(0, 1),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromRgb(0xFF, 0xFF, 0xFF), 0.00),
-                    new GradientStop(Color.FromRgb(0xFF, 0xFF, 0xFF), 0.45),
+                    new GradientStop(KeyFillC, 0.00),
+                    new GradientStop(KeyFillC, 0.45),
                     new GradientStop(KeyShadeC, 1.00),
                 },
             },

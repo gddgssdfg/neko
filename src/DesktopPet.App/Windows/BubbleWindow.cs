@@ -98,55 +98,32 @@ public sealed class BubbleWindow : Window
     {
         _canvas.Children.Clear();
 
-        var ft = new FormattedText(
-            text ?? "",
-            System.Globalization.CultureInfo.CurrentUICulture,
-            FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"),
-            13,
-            new SolidColorBrush(TextC),
-            1.0);
-        double textW = Math.Min(ft.Width, MaxTextWidth);
-        int lines = Math.Max(1, (int)Math.Ceiling(ft.Width / MaxTextWidth));
-        double textH = lines * 18 + 6;
-
-        // 云朵几何（单位 DIP，圆心对齐文字区）
-        double bodyW = textW + 44;                       // 主身宽 = 文字宽 + 左右留白
-        double bodyH = Math.Max(34, textH + 14);         // 主身高（≥34 保证云形比例）
-        double leftPad = 12;                             // 左右凸起探出的空间
-        double topPad = 14;                              // 上凸探出空间
-        double tailH = 10;                               // 尾巴高度
-        double W = bodyW + leftPad * 2;
-        double H = bodyH + topPad + 6 + tailH;           // 凸起在上方，尾巴在下方
-
-        // 三个圆角矩形 + 尾巴 = 合并成一个云形
-        var main = new RectangleGeometry(new Rect(leftPad, topPad, bodyW, bodyH), 18, 18);
-        var left = new RectangleGeometry(new Rect(leftPad - 7, topPad - 6, 34, 30), 15, 15);   // 左上凸
-        var right = new RectangleGeometry(new Rect(W - leftPad - 27, topPad - 12, 42, 34), 17, 17); // 右上凸（略大更自然）
-        // 尾巴：底部中央圆角矩形（指向下方猫）
-        double tailX = W / 2 - 9;
-        var tail = new RectangleGeometry(new Rect(tailX, H - tailH - 2, 18, tailH + 2), 5, 5);
-
-        var cloud = Geometry.Combine(Geometry.Combine(Geometry.Combine(main, left, GeometryCombineMode.Union, null),
-            right, GeometryCombineMode.Union, null), tail, GeometryCombineMode.Union, null);
-
-        _canvas.Children.Add(new System.Windows.Shapes.Path
-        {
-            Data = cloud,
-            Fill = new SolidColorBrush(CloudFill),
-            Stroke = new SolidColorBrush(CloudStroke),
-            StrokeThickness = 1.5,
-        });
-
-        // 文字：水平居中于主身
         _text.Text = text;
-        double textX = leftPad + (bodyW - Math.Min(ft.Width, MaxTextWidth)) / 2;
-        Canvas.SetLeft(_text, Math.Max(2, textX));
-        Canvas.SetTop(_text, topPad + (bodyH - textH) / 2);
+        _text.Measure(new Size(MaxTextWidth, double.PositiveInfinity));
+        double textW = Math.Ceiling(_text.DesiredSize.Width);
+        double textH = Math.Ceiling(_text.DesiredSize.Height);
+        double bodyW = Math.Max(68, textW + 32);
+        double bodyH = Math.Max(38, textH + 22);
+        const double inset = 3, step = 6, tail = 8;
+        // Stepped silhouette: crisp corners echo the cat's native pixel artwork.
+        var points = new[] { new Point(inset+step,inset), new Point(inset+bodyW-step,inset),
+            new Point(inset+bodyW-step,inset+step), new Point(inset+bodyW,inset+step),
+            new Point(inset+bodyW,inset+bodyH-step), new Point(inset+bodyW-step,inset+bodyH-step),
+            new Point(inset+bodyW-step,inset+bodyH), new Point(inset+bodyW/2+6,inset+bodyH),
+            new Point(inset+bodyW/2+6,inset+bodyH+tail), new Point(inset+bodyW/2-2,inset+bodyH+tail),
+            new Point(inset+bodyW/2-2,inset+bodyH), new Point(inset+step,inset+bodyH),
+            new Point(inset+step,inset+bodyH-step), new Point(inset,inset+bodyH-step),
+            new Point(inset,inset+step), new Point(inset+step,inset+step) };
+        var outline = new StreamGeometry();
+        using (var ctx = outline.Open()) { ctx.BeginFigure(points[0], true, true); ctx.PolyLineTo(points.Skip(1).ToArray(), true, false); }
+        outline.Freeze();
+        _canvas.Children.Add(new System.Windows.Shapes.Path { Data = outline, Fill = new SolidColorBrush(CloudFill),
+            Stroke = new SolidColorBrush(CloudStroke), StrokeThickness = 1 });
+        Canvas.SetLeft(_text, inset + (bodyW-textW)/2);
+        Canvas.SetTop(_text, inset + (bodyH-textH)/2);
         _canvas.Children.Add(_text);
-
-        Width = W + 2;
-        Height = H + 2;
+        Width = bodyW + inset*2;
+        Height = bodyH + tail + inset*2;
         _canvas.Width = Width;
         _canvas.Height = Height;
     }

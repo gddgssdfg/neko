@@ -1,3 +1,4 @@
+using DesktopPet.Sdk;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -9,19 +10,11 @@ namespace DesktopPet.Builtin.TodoList;
 /// <summary>待办清单窗口：添加（输入 + 回车/按钮）、勾选完成、删除。任何变化实时保存。</summary>
 public sealed class TodoWindow : Window
 {
-    /// <summary>v0.1.82：冻结画刷 —— 冻结后可跨线程共享、省渲染开销；未冻结的 Freezable 在跨线程或高频渲染时是纯损耗。</summary>
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
-
-    private static readonly Brush Bg = Frozen(0x1E, 0x26, 0x2F);
-    private static readonly Brush TextMain = Frozen(0xE5, 0xE7, 0xEB);
-    private static readonly Brush TextSub = Frozen(0x9C, 0xA3, 0xAF);
-    private static readonly Brush CardBg = Frozen(0x2B, 0x36, 0x47);
-    private static readonly Brush CardBorder = Frozen(0x3A, 0x47, 0x55);
+    private static Brush Bg => NekoPalette.Brush(NekoDesign.Current.Background);
+    private static Brush TextMain => NekoPalette.Brush(NekoDesign.Current.Text);
+    private static Brush TextSub => NekoPalette.Brush(NekoDesign.Current.Muted);
+    private static Brush CardBg => NekoPalette.Brush(NekoDesign.Current.Surface);
+    private static Brush CardBorder => NekoPalette.Brush(NekoDesign.Current.Line);
 
     private readonly List<TodoItem> _items;
     private readonly Action<List<TodoItem>> _save;
@@ -35,15 +28,18 @@ public sealed class TodoWindow : Window
         _save = save;
         _sys = system;
         Title = "Neko 待办清单";
-        Width = 380;
-        Height = 420;
+        Width = 480;
+        Height = 520;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        MinWidth = 280;
+        MinWidth = 380;
         MinHeight = 240;
         Background = Bg;
+        NekoDesign.Apply(this);
         Opacity = 0;
 
-        var root = new DockPanel { Margin = new Thickness(10) };
+        var root = new DockPanel { Margin = new Thickness(24) };
+        var header = NekoDesign.ToolHeader("一件一件来", "写下要做的事，完成一件就打个勾。");
+        DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
 
         _listBox = new ListBox
         {
@@ -55,7 +51,10 @@ public sealed class TodoWindow : Window
         };
 
         // 底部：删除选中 + 输入添加
-        var bottom = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var bottom = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var del = MakeButton("删除选中", new Thickness(10, 4, 10, 4));
         _input = new TextBox
         {
@@ -69,19 +68,20 @@ public sealed class TodoWindow : Window
             CaretBrush = TextMain,
         };
         var add = MakeButton("添加", new Thickness(12, 4, 12, 4));
+        System.Windows.Automation.AutomationProperties.SetName(_input, "新的待办事项");
+        _input.ToolTip = "输入待办事项，回车添加";
         del.Click += (_, _) => { if (_listBox.SelectedIndex >= 0 && _listBox.SelectedIndex < _items.Count) { _items.RemoveAt(_listBox.SelectedIndex); Refresh(); Save(); } };
         add.Click += (_, _) => AddInput();
         _input.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) AddInput(); };
+        Grid.SetColumn(_input, 1); Grid.SetColumn(add, 2);
         bottom.Children.Add(del);
         bottom.Children.Add(_input);
         bottom.Children.Add(add);
         DockPanel.SetDock(bottom, Dock.Bottom);
 
         Refresh();
-        DockPanel.SetDock(_listBox, Dock.Top);
-
-        root.Children.Add(_listBox);
         root.Children.Add(bottom);
+        root.Children.Add(_listBox);
         Content = root;
 
         Loaded += (_, _) => BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(150)));
@@ -114,13 +114,16 @@ public sealed class TodoWindow : Window
         {
             var cb = new CheckBox
             {
-                Content = item.Text,
+                Content = new TextBlock { Text = item.Text, TextWrapping = TextWrapping.Wrap,
+                    TextDecorations = item.Done ? TextDecorations.Strikethrough : null, Opacity = item.Done ? 0.55 : 1 },
                 IsChecked = item.Done,
                 FontSize = 13,
                 Margin = new Thickness(4, 2, 4, 2),
                 Foreground = TextMain,
             };
-            cb.Click += (_, _) => { item.Done = cb.IsChecked == true; Save(); };
+            cb.Click += (_, _) => { item.Done = cb.IsChecked == true;
+                if (cb.Content is TextBlock text) { text.TextDecorations = item.Done ? TextDecorations.Strikethrough : null; text.Opacity = item.Done ? 0.55 : 1; }
+                Save(); };
             _listBox.Items.Add(cb);
         }
         if (_items.Count == 0)

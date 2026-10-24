@@ -54,7 +54,7 @@ public sealed class AffectionSettingsPage : ISettingsPage
             // 否则「只写盘、内存不动」会让旧值在下次 flush 时写回（重置静默失效）。
             _onReset?.Invoke();
             Refresh();   // 此时 _getScore() 已为 0，页面文本同步
-            MessageBox.Show("好感度已重置为 0", "好感度设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            PluginUi.ShowStatus(stack, "好感度已重置为 0");
         };
 
         stack.Children.Add(scoreText);

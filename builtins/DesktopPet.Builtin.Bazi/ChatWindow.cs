@@ -16,7 +16,7 @@ namespace DesktopPet.Builtin.Bazi;
 /// </summary>
 public sealed class ChatWindow : Window
 {
-    private static readonly Brush UserBubbleBg = Frozen(0x33, 0x44, 0x5C);
+    private static Brush UserBubbleBg => NekoPalette.Brush(NekoDesign.Current.Selected);
     private static readonly Brush ErrorText = Frozen(0xE8, 0x9A, 0x9A);
 
     private readonly Func<string, Task<ChatResult>> _ask;
@@ -33,12 +33,13 @@ public sealed class ChatWindow : Window
         _ask = ask;
 
         Title = "Neko 命理咨询";
-        Width = 420;
-        Height = 520;
+        Width = 540;
+        Height = 620;
         MinWidth = 320;
         MinHeight = 320;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = PluginUi.Bg;
+        Background = NekoPalette.Brush(NekoDesign.Current.Background);
+        NekoDesign.Apply(this);
         Opacity = 0;   // 淡入起点
 
         // ---- 顶部提示 ----
@@ -46,13 +47,13 @@ public sealed class ChatWindow : Window
         {
             Text = "结合你的命盘作答，仅供传统文化趣味参考。",
             FontSize = 11,
-            Foreground = PluginUi.TextSub,
-            Margin = new Thickness(10, 8, 10, 4),
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Muted),
+            Margin = new Thickness(0, 0, 0, 0),
             TextWrapping = TextWrapping.Wrap,
         };
 
         // ---- 对话区 ----
-        _messages.Margin = new Thickness(10, 4, 10, 6);
+        _messages.Margin = new Thickness(24, 4, 24, 12);
         _scroll = new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -61,17 +62,21 @@ public sealed class ChatWindow : Window
         };
 
         // ---- 底部输入区 ----
-        var inputGrid = new Grid { Margin = new Thickness(10) };
+        var inputGrid = new Grid { Margin = new Thickness(24, 12, 24, 24) };
         inputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         inputGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         _input = PluginUi.Input();
         _input.FontSize = 13;
         _input.MinHeight = 30;
-        _input.AcceptsReturn = false;
+        _input.AcceptsReturn = true;
+        _input.TextWrapping = TextWrapping.Wrap;
+        _input.MaxHeight = 120;
+        _input.ToolTip = "Enter 发送 · Shift+Enter 换行";
+        System.Windows.Automation.AutomationProperties.SetName(_input, "咨询内容");
         _input.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter) { e.Handled = true; Send(); }
+            if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { e.Handled = true; Send(); }
         };
         Grid.SetColumn(_input, 0);
 
@@ -85,9 +90,12 @@ public sealed class ChatWindow : Window
         inputGrid.Children.Add(_sendBtn);
 
         var dock = new DockPanel();
-        DockPanel.SetDock(hint, Dock.Top);
+        var heading = new StackPanel { Margin = new Thickness(24,24,24,14) };
+        heading.Children.Add(NekoDesign.ToolHeader("聊一聊", "Enter 发送 · Shift+Enter 换行"));
+        heading.Children.Add(hint);
+        DockPanel.SetDock(heading, Dock.Top);
         DockPanel.SetDock(inputGrid, Dock.Bottom);
-        dock.Children.Add(hint);
+        dock.Children.Add(heading);
         dock.Children.Add(inputGrid);
         dock.Children.Add(_scroll);
         Content = dock;
@@ -146,19 +154,19 @@ public sealed class ChatWindow : Window
         var tb = new TextBlock
         {
             Text = text,
-            Foreground = isError ? ErrorText : PluginUi.TextMain,
+            Foreground = isError ? ErrorText : NekoPalette.Brush(NekoDesign.Current.Text),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12.5,
         };
         var bubble = new Border
         {
-            Background = isUser ? UserBubbleBg : PluginUi.CardBg,
-            BorderBrush = PluginUi.Border,
+            Background = isUser ? UserBubbleBg : NekoPalette.Brush(NekoDesign.Current.Surface),
+            BorderBrush = NekoPalette.Brush(NekoDesign.Current.Line),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(9, 6, 9, 6),
-            Margin = new Thickness(0, 3, 0, 3),
-            MaxWidth = 330,
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14, 12, 14, 12),
+            Margin = new Thickness(0, 6, 0, 6),
+            MaxWidth = Math.Max(200, ActualWidth > 0 ? ActualWidth - 100 : Width - 100),
             HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             Child = tb,
         };
@@ -170,7 +178,7 @@ public sealed class ChatWindow : Window
     private static void SetBubbleText(TextBlock tb, string text, bool isError)
     {
         tb.Text = string.IsNullOrEmpty(text) ? "（空回复）" : text;
-        tb.Foreground = isError ? ErrorText : PluginUi.TextMain;
+        tb.Foreground = isError ? ErrorText : NekoPalette.Brush(NekoDesign.Current.Text);
     }
 
     /// <summary>滚到底部：延后到布局完成后执行，避免新增气泡当帧未测量导致滚动失效。</summary>

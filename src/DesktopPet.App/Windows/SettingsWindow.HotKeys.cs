@@ -57,6 +57,7 @@ public sealed partial class SettingsWindow : Window
 
     private FrameworkElement WrapToggleWithLabel(string label, ToggleSwitch sw, double l = 0, double t = 0, double r = 0, double b = 0)
     {
+        System.Windows.Automation.AutomationProperties.SetName(sw, label);
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(l, t, r, b), VerticalAlignment = VerticalAlignment.Center };
         sp.Children.Add(sw);
         sp.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = new SolidColorBrush(TextSub), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) });  // v0.1.38：4→6

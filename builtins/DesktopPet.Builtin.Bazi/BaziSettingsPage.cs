@@ -22,13 +22,6 @@ public sealed class BaziSettingsPage : ISettingsPage
     /// </summary>
     private readonly Action? _onSaved;
 
-    /// <summary>
-    /// v0.1.82：出生字段预览的输入去抖计时器（300ms）。
-    /// <para>避免逐键触发同步排盘（<see cref="BaziEngine.ComputeProfile"/> 是同步天文 / 历法计算）导致输入卡顿。
-    /// 在 <see cref="BuildContent"/> 内创建，内容卸载（<c>Unloaded</c>）时停止并释放。</para>
-    /// </summary>
-    private DispatcherTimer? _previewDebounce;
-
     /// <param name="storage">插件私有存储。</param>
     /// <param name="onSaved">
     /// 可选：保存成功后回调（在 UI 线程上执行）。插件用它重排每日播报 ——
@@ -59,8 +52,8 @@ public sealed class BaziSettingsPage : ISettingsPage
         var calCombo = new ComboBox
         {
             Width = 90,
-            Foreground = PluginUi.TextMain,
-            Background = PluginUi.CardBg,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+            Background = NekoPalette.Brush(NekoDesign.Current.Surface),
         };
         var calSolar = new ComboBoxItem { Content = "公历" };
         var calLunar = new ComboBoxItem { Content = "农历" };
@@ -73,7 +66,7 @@ public sealed class BaziSettingsPage : ISettingsPage
             Content = "闰月",
             IsChecked = p.LeapMonth,
             IsEnabled = p.IsLunar,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(12, 0, 0, 0),
         };
@@ -118,8 +111,8 @@ public sealed class BaziSettingsPage : ISettingsPage
         var genderCombo = new ComboBox
         {
             Width = 90,
-            Foreground = PluginUi.TextMain,
-            Background = PluginUi.CardBg,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+            Background = NekoPalette.Brush(NekoDesign.Current.Surface),
         };
         var genderFemale = new ComboBoxItem { Content = "女" };
         var genderMale = new ComboBoxItem { Content = "男" };
@@ -149,9 +142,9 @@ public sealed class BaziSettingsPage : ISettingsPage
             Password = p.ApiKey ?? "",
             Width = 260,
             HorizontalAlignment = HorizontalAlignment.Left,
-            Foreground = PluginUi.TextMain,
-            Background = PluginUi.CardBg,
-            BorderBrush = PluginUi.Border,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+            Background = NekoPalette.Brush(NekoDesign.Current.Surface),
+            BorderBrush = NekoPalette.Brush(NekoDesign.Current.Line),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(6, 3, 6, 3),
             Margin = new Thickness(0, 0, 0, 4),
@@ -170,7 +163,7 @@ public sealed class BaziSettingsPage : ISettingsPage
         {
             Content = "开启每日运势播报",
             IsChecked = p.DailyBroadcastEnabled,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             Margin = new Thickness(0, 0, 0, 8),
         };
         root.Children.Add(broadcastCheck);
@@ -193,7 +186,7 @@ public sealed class BaziSettingsPage : ISettingsPage
         {
             Content = "启用人格定制",
             IsChecked = p.MbtiEnabled,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 0, 4),
         };
@@ -208,8 +201,8 @@ public sealed class BaziSettingsPage : ISettingsPage
         var typeCombo = new ComboBox
         {
             Width = 220,
-            Foreground = PluginUi.TextMain,
-            Background = PluginUi.CardBg,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+            Background = NekoPalette.Brush(NekoDesign.Current.Surface),
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 0, 0, 8),
             Visibility = p.MbtiEnabled ? Visibility.Visible : Visibility.Collapsed,
@@ -299,19 +292,19 @@ public sealed class BaziSettingsPage : ISettingsPage
             BroadcastTime = string.IsNullOrWhiteSpace(timeText.Text) ? "08:00" : timeText.Text.Trim(),
         };
 
-        void Persist()
+        bool Persist()
         {
             var draft = FullDraft();
             try { draft.Save(_storage); }
             catch (System.Security.Cryptography.CryptographicException)
             {
-                MessageBox.Show("Windows 用户加密暂不可用，设置未保存。原有数据保持不变，请检查当前 Windows 用户环境后重试。",
-                    "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
+                PluginUi.ShowStatus(root, "Windows 用户加密暂不可用，设置未保存。请检查当前 Windows 用户环境后重试。", error: true);
+                return false;
             }
             RefreshPreview();
             // v0.1.84：保存后通知插件重排每日播报（改时间 / 开关后立即取消旧排期、按新值重排）。
             _onSaved?.Invoke();
+            return true;
         }
 
         // ==== 实时预览：任一出生字段变化即重算四柱 ====
@@ -347,19 +340,18 @@ public sealed class BaziSettingsPage : ISettingsPage
         // 用 DispatcherTimer 去抖：每次输入都重置计时器，停手 300ms 后才真正重算一次 ——
         // 保证「最终值一定会被计算并预览」（不会出现停手了却不刷新）。
         // 说明：DispatcherTimer 未实现 IDisposable，Stop() 即会将其从 Dispatcher 队列移除；
-        //       卸载时 Stop() + 置空即可解除对闭包（含控件引用）的持有，等价于释放。
-        _previewDebounce?.Stop();
-        _previewDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-        _previewDebounce.Tick += (_, _) =>
+        //       每个内容实例持有自己的计时器；卸载时 Stop()，缓存页面重新挂载后仍可继续编辑。
+        var previewDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        previewDebounce.Tick += (_, _) =>
         {
-            _previewDebounce?.Stop();
+            previewDebounce.Stop();
             RefreshPreview();
         };
 
         void ScheduleRefresh()
         {
-            _previewDebounce!.Stop();
-            _previewDebounce!.Start();
+            previewDebounce.Stop();
+            previewDebounce.Start();
         }
 
         // ==== 事件接线：任一出生命盘字段变化 → 去抖后重算四柱 ====
@@ -379,8 +371,7 @@ public sealed class BaziSettingsPage : ISettingsPage
 
         saveBtn.Click += (_, _) =>
         {
-            Persist();
-            MessageBox.Show("已保存", "命理助手设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (Persist()) PluginUi.ShowStatus(root, "已保存");
         };
 
         RefreshPreview();
@@ -396,8 +387,7 @@ public sealed class BaziSettingsPage : ISettingsPage
         // 页面关闭 / 卸载时停止并释放去抖计时器（DispatcherTimer 无 IDisposable，详见上方说明）。
         scroller.Unloaded += (_, _) =>
         {
-            _previewDebounce?.Stop();
-            _previewDebounce = null;
+            previewDebounce.Stop();
         };
         return scroller;
     }

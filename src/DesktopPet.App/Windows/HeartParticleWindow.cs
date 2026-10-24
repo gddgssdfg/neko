@@ -102,7 +102,9 @@ public sealed class HeartParticleWindow : Window
         int count = minCount + _rng.Next(0, maxCount - minCount + 1);   // [min, max] 闭区间
         for (int i = 0; i < count; i++)
         {
-            double jitterX = (_rng.NextDouble() - 0.5) * 36;   // 横向散布
+            // Keep several hearts visibly separated; unconstrained random samples can all cluster together.
+            double jitterX = count == 1 ? (_rng.NextDouble() - 0.5) * 36
+                : (i / (double)(count - 1) - 0.5) * 28 + (_rng.NextDouble() - 0.5) * 4;
             double x = Math.Clamp(localX + jitterX, 8, WindowW - 8);
             double y = Math.Clamp(localY, 6, WindowH - 6);
 

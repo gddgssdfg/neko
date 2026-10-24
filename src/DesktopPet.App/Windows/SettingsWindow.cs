@@ -13,11 +13,11 @@ using DesktopPet.Core;
 namespace DesktopPet.App.Windows;
 
 /// <summary>
-/// 设置页（v0.1.31 重做——参照 BongoCat 设置页深色主题 + 左侧 sidebar + 主区卡片式 toggle）：
+/// 伙伴控制台：共用 SDK 主题、可调整窗口、响应式卡片与插件设置懒加载。
 ///   通用：开机自启、游戏模式
 ///   猫咪：缩放、透明度、键鼠反应、回到默认位置、鼠标穿透
 ///   输入：键鼠映射（双模态）、径向菜单热键、老板键、附加热键
-///   插件：原 BuildPluginTab 保留
+///   插件：搜索 / 运行状态 / 按需展开设置
 ///   关于：版本 + 介绍
 /// 改动立即生效并持久化到 数据根/config.json。
 /// </summary>
@@ -38,7 +38,7 @@ public sealed partial class SettingsWindow : Window
     private readonly AppConfig _config;
     private ContentControl _mainContent = new();
     private Border _sidebarListPanel = new();
-    private readonly List<Border> _sideItems = new();
+    private readonly List<Button> _sideItems = new();
     private string _currentSection = "general";
 
     // ---- v0.1.88：切页结果缓存（灯灯反馈「设置菜单处还不够流畅」）----
@@ -73,17 +73,17 @@ public sealed partial class SettingsWindow : Window
     private volatile bool _closed;
 
     // v0.1.50：主题色（深/浅两套，按 Config.Theme 在 ctor 选择）—— 改实例字段（原 static 常量）
-    private readonly Color BgRoot;
-    private readonly Color BgSide;
-    private readonly Color BgSideSel;
-    private readonly Color BgCard;
-    private readonly Color BgCardHover;
-    private readonly Color BorderC;
-    private readonly Color Accent;
-    private readonly Color TextMain;
-    private readonly Color TextSub;
-    private readonly Color ToggleOff;
-    private readonly Color TitleBar;
+    private Color BgRoot;
+    private Color BgSide;
+    private Color BgSideSel;
+    private Color BgCard;
+    private Color BgCardHover;
+    private Color BorderC;
+    private Color Accent;
+    private Color TextMain;
+    private Color TextSub;
+    private Color ToggleOff;
+    private Color TitleBar;
     private Color AccentText => _config.Theme == "light" ? Accent : Color.FromRgb(0xEE, 0xB5, 0x8F);
 
     /// <summary>v0.1.50：语言 helper（"zh"/"en"）—— 核心文案双语，其他后续</summary>
@@ -93,41 +93,15 @@ public sealed partial class SettingsWindow : Window
     {
         _pet = pet;
         _config = pet.Config;
-        // 主题：浅色 / 深色（默认深色，原 v0.1.31 色板）
-        if (_config.Theme == "light")
-        {
-            BgRoot = Color.FromRgb(0xFA, 0xF7, 0xF2);
-            BgSide = Color.FromRgb(0xF1, 0xEB, 0xE3);
-            BgSideSel = Color.FromRgb(0xE8, 0xDC, 0xCD);
-            BgCard = Color.FromRgb(0xFF, 0xFF, 0xFF);
-            BgCardHover = Color.FromRgb(0xF1, 0xEB, 0xE3);
-            BorderC = Color.FromRgb(0xDE, 0xD5, 0xC9);
-            Accent = Color.FromRgb(0x9A, 0x4D, 0x2B);
-            TextMain = Color.FromRgb(0x32, 0x2B, 0x26);
-            TextSub = Color.FromRgb(0x76, 0x68, 0x5D);
-            ToggleOff = Color.FromRgb(0xB8, 0xC0, 0xCC);
-            TitleBar = Color.FromRgb(0xFA, 0xF7, 0xF2);
-        }
-        else
-        {
-            BgRoot = Color.FromRgb(0x22, 0x24, 0x23);
-            BgSide = Color.FromRgb(0x1B, 0x1E, 0x1C);
-            BgSideSel = Color.FromRgb(0x3A, 0x32, 0x29);
-            BgCard = Color.FromRgb(0x2B, 0x2F, 0x2C);
-            BgCardHover = Color.FromRgb(0x36, 0x3C, 0x37);
-            BorderC = Color.FromRgb(0x47, 0x4D, 0x46);
-            Accent = Color.FromRgb(0xA9, 0x59, 0x31);
-            TextMain = Color.FromRgb(0xF6, 0xF0, 0xE5);
-            TextSub = Color.FromRgb(0xB8, 0xB7, 0xAC);
-            ToggleOff = Color.FromRgb(0x59, 0x63, 0x59);
-            TitleBar = Color.FromRgb(0x22, 0x24, 0x23);
-        }
+        ApplyPalette();
         Title = T("Neko 设置", "Neko Settings");
-        Width = Math.Min(940, SystemParameters.WorkArea.Width);
-        Height = Math.Min(740, SystemParameters.WorkArea.Height);
+        Width = Math.Min(1040, SystemParameters.WorkArea.Width);
+        Height = Math.Min(780, SystemParameters.WorkArea.Height);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(BgRoot);
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResize;
+        MinWidth = Math.Min(760, SystemParameters.WorkArea.Width);
+        MinHeight = Math.Min(520, SystemParameters.WorkArea.Height);
         FontFamily = new FontFamily("Microsoft YaHei UI, Segoe UI");
         // v0.1.82：本机是 125% DPI 缩放（物理 2560×1440 / 逻辑 2048×1152），
         // 不做布局取整时 1px 卡片描边与圆角会落在半像素上 → 发虚、发灰。
@@ -142,25 +116,42 @@ public sealed partial class SettingsWindow : Window
         _pet.UIApi.RadialRegistryChanged += OnRadialRegistryChanged;
     }
 
+    private void ApplyPalette()
+    {
+        var p = _config.Theme == "light" ? DesktopPet.Sdk.NekoPalette.Light : DesktopPet.Sdk.NekoPalette.Dark;
+        BgRoot = TitleBar = p.Background; BgSide = p.Surface; BgSideSel = p.Selected;
+        BgCard = p.Surface; BgCardHover = p.Raised; BorderC = p.Line;
+        Accent = p.Accent; TextMain = p.Text; TextSub = p.Muted; ToggleOff = p.Line;
+        DesktopPet.Sdk.NekoDesign.LightTheme = _config.Theme == "light";
+        DesktopPet.Sdk.NekoDesign.Apply(this, _config.Theme == "light");
+    }
+
+    private void RefreshAppearance()
+    {
+        DesktopPet.Sdk.NekoDesign.RefreshWindows(_config.Theme == "light");
+        ApplyPalette();
+        InvalidateAllPages();
+        BuildLayout();
+        ShowSection(_currentSection);
+        _pet.RefreshCompanionTheme();
+    }
+
     private void BuildLayout()
     {
-        // 顶栏：标题 + 版本号
-        var titleBar = new Border
-        {
-            Background = new SolidColorBrush(TitleBar),
-            Padding = new Thickness(20, 14, 20, 14),
-            Child = new TextBlock
-            {
-                Text = T("NEKO  /  陪伴你的每一天", "NEKO  /  A little company, every day"),
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(TextSub),
-            }
-        };
+        _sideItems.Clear();
+        var titleRow = new DockPanel();
+        var status = new TextBlock { Text = T("修改即时保存  ·  v", "Autosaved  ·  v") + UpdateService.CurrentVersion,
+            Foreground = new SolidColorBrush(TextSub), FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        DockPanel.SetDock(status, Dock.Right);
+        titleRow.Children.Add(status);
+        titleRow.Children.Add(new TextBlock { Text = T("NEKO  /  伙伴控制台", "NEKO  /  Companion studio"),
+            Foreground = new SolidColorBrush(TextMain), FontWeight = FontWeights.SemiBold, FontSize = 12 });
+        var titleBar = new Border { Background = new SolidColorBrush(BgSide), Padding = new Thickness(24, 17, 24, 17),
+            BorderBrush = new SolidColorBrush(BorderC), BorderThickness = new Thickness(0,0,0,1), Child = titleRow };
 
         // 主体：sidebar + content
         var body = new Grid();
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(188) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(204) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         // Sidebar
@@ -186,8 +177,8 @@ public sealed partial class SettingsWindow : Window
     private Border BuildSidebar()
     {
         var panel = new StackPanel { Background = new SolidColorBrush(BgSide) };
-        var brand = new StackPanel { Margin = new Thickness(22, 24, 16, 30) };
-        var mascotPath = System.IO.Path.Combine(Paths.Assets, "amber", "thumb.png");
+        var brand = new StackPanel { Margin = new Thickness(24, 22, 18, 24) };
+        var mascotPath = System.IO.Path.Combine(Paths.Assets, _config.Skin, "thumb.png");
         if (System.IO.File.Exists(mascotPath))
         {
             try
@@ -198,35 +189,37 @@ public sealed partial class SettingsWindow : Window
                 mascot.UriSource = new Uri(mascotPath, UriKind.Absolute);
                 mascot.EndInit();
                 mascot.Freeze();
-                brand.Children.Add(new Image { Source = mascot, Width = 84, Height = 84,
-                    HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12) });
+                var mascotImage = new Image { Source = mascot, Width = 64, Height = 64,
+                    HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12) };
+                RenderOptions.SetBitmapScalingMode(mascotImage, SkinRegistry.Resolve(Paths.Assets, _config.Skin).PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+                brand.Children.Add(mascotImage);
             }
             catch (Exception ex) { Log.Warn($"设置页品牌缩略图加载失败：{ex.Message}"); }
         }
-        brand.Children.Add(new TextBlock { Text = "Neko", FontSize = 28, FontWeight = FontWeights.Bold,
+        brand.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(_config.CatName) ? "Neko" : _config.CatName, FontSize = 24, FontWeight = FontWeights.Bold,
             Foreground = new SolidColorBrush(TextMain) });
         brand.Children.Add(new TextBlock { Text = T("你的小小桌面伙伴", "Your desktop companion"), FontSize = 11,
             Margin = new Thickness(0, 6, 0, 0), Foreground = new SolidColorBrush(TextSub) });
         panel.Children.Add(brand);
         string[] sections = { "general", "pet", "input", "radial", "plugin", "about" };
-        string[] labels = { T("通用", "General"), T("猫咪", "Cat"), T("输入", "Input"), T("径向菜单", "Radial Menu"), T("插件", "Plugins"), T("关于", "About") };   // v0.1.50：双语
+        string[] labels = { T("通用", "General"), T("猫咪", "Cat"), T("键盘与输入", "Keyboard & input"), T("径向菜单", "Radial Menu"), T("插件中心", "Plugins"), T("关于", "About") };   // v0.1.50：双语
         string[] icons = { "\uE713", "\uE8D4", "\uE765", "\uE74C", "\uE71B", "\uE946" };
 
         for (int i = 0; i < sections.Length; i++)
         {
             var sec = sections[i];
-            var item = new Border
+            var item = new Button
             {
+                HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = new SolidColorBrush(BgSide),
                 BorderThickness = new Thickness(3, 0, 0, 0),
-                CornerRadius = new CornerRadius(8),
                 Margin = new Thickness(10, 2, 10, 2),
                 Focusable = true,
                 ToolTip = labels[i],
                 BorderBrush = new SolidColorBrush(Colors.Transparent),
                 Padding = new Thickness(14, 13, 10, 13),
                 Cursor = Cursors.Hand,
-                Child = new StackPanel
+                Content = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Children =
@@ -236,19 +229,20 @@ public sealed partial class SettingsWindow : Window
                     }
                 }
             };
-            item.MouseLeftButtonUp += (_, _) => ShowSection(sec);
-            item.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { ShowSection(sec); e.Handled = true; } };
+            item.Click += (_, _) => ShowSection(sec);
+            System.Windows.Automation.AutomationProperties.SetName(item, labels[i]);
             // v0.1.47：hover/选中态用 ColorAnimation 平滑过渡（150ms），不再硬设新 brush
             var bgBrush = (SolidColorBrush)item.Background;
             var borderBrush = (SolidColorBrush)item.BorderBrush;
-            var iconText = (TextBlock)((StackPanel)item.Child!).Children[0];
-            var labelText = (TextBlock)((StackPanel)item.Child!).Children[1];
+            var iconText = (TextBlock)((StackPanel)item.Content!).Children[0];
+            var labelText = (TextBlock)((StackPanel)item.Content!).Children[1];
             item.MouseEnter += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(BgCardHover, TimeSpan.FromMilliseconds(150))); };
             item.MouseLeave += (_, _) => { if (_currentSection != sec) bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, new ColorAnimation(BgSide, TimeSpan.FromMilliseconds(150))); };
             _sideItems.Add(item);
             panel.Children.Add(item);
         }
-        return new Border { Child = panel, BorderBrush = new SolidColorBrush(BorderC), BorderThickness = new Thickness(0, 0, 1, 0) };
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        return new Border { Child = scroll, BorderBrush = new SolidColorBrush(BorderC), BorderThickness = new Thickness(0, 0, 1, 0) };
     }
 
     /// <summary>切换到指定栏（v0.1.39 起改 public：托盘「关于」项要能直接定位到 about 栏）</summary>
@@ -262,7 +256,7 @@ public sealed partial class SettingsWindow : Window
             var item = _sideItems[i];
             var bgBrush = (SolidColorBrush)item.Background;
             var borderBrush = (SolidColorBrush)item.BorderBrush;
-            var sp = (StackPanel)item.Child!;
+            var sp = (StackPanel)item.Content!;
             var iconText = (TextBlock)sp.Children[0];
             var labelText = (TextBlock)sp.Children[1];
             bgBrush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty,

@@ -25,6 +25,7 @@ public partial class App : Application
 
         // 加载配置（先读配置拿到 LogLevel，日志才能按配置过滤）
         var config = ConfigManager.Load(Paths.ConfigFile);
+        DesktopPet.Sdk.NekoDesign.LightTheme = config.Theme == "light";
 
         // v0.1.61：初始化文件日志（级别来自配置；默认 warn 及以上落盘 <数据根>/logs）
         Log.Initialize(config.LogLevel);

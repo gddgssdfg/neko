@@ -49,7 +49,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
         {
             Content = $"整点报时已{(_getEnabled() ? "开启" : "关闭")}",
             IsChecked = enabled,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             Margin = new Thickness(0, 0, 0, 12),
         };
 
@@ -60,7 +60,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
         {
             Text = "仅在该时段内播报（开始 > 结束视为跨天，如 22-6 点）",
             FontSize = 11,
-            Foreground = PluginUi.TextSub,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Muted),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
@@ -76,7 +76,7 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
             _setEnabled(newEnabled);
             _onSaved();   // v0.1.82：通知插件刷新内存配置缓存（时段立即生效，tick 不再读盘）
             toggle.Content = $"整点报时已{(newEnabled ? "开启" : "关闭")}";
-            MessageBox.Show("已保存", "整点报时设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            PluginUi.ShowStatus(stack, "已保存");
         };
 
         stack.Children.Add(toggle);
@@ -90,13 +90,13 @@ public sealed class HourlyChimeSettingsPage : ISettingsPage
     private FrameworkElement MakeHourRow(string caption, int value, Action<int> onChange)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        row.Children.Add(new TextBlock { Text = caption, Foreground = PluginUi.TextSub, Width = 40, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = caption, Foreground = NekoPalette.Brush(NekoDesign.Current.Muted), Width = 40, VerticalAlignment = VerticalAlignment.Center });
 
         var minus = StepButton("−");
         var valueText = new TextBlock
         {
             Text = value.ToString("D2"),
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             Width = 32,
             TextAlignment = TextAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,

@@ -44,10 +44,7 @@ public sealed partial class SettingsWindow : Window
             {
                 _config.Theme = i == 1 ? "light" : "dark";
                 Save();
-                // v0.1.88：主题色在构造时按 Config.Theme 选定（改主题需重开窗口才换色），
-                // 但缓存里存的是旧主题构建的整页 → 清空缓存，保证重开后不会残留旧主题页（幂等兜底）。
-                InvalidateAllPages();
-                MessageBox.Show(T("主题已保存，重新打开设置窗口生效。", "Theme saved. Reopen settings to apply."));
+                Dispatcher.BeginInvoke(new Action(RefreshAppearance));
             }));
         stack.Children.Add(BuildChoiceCard(
             T("界面语言", "Language"), T("中文 / English", "Chinese / English"),
@@ -60,7 +57,7 @@ public sealed partial class SettingsWindow : Window
                 // 否则切到任何已访问页都会显示旧语言的缓存内容（正确性 bug）。
                 InvalidateAllPages();
                 // v0.1.51：语言即时生效——重建当前栏（页面标题/卡片文案立即变英文；sidebar 下次打开变）
-                ShowSection(_currentSection);
+                Dispatcher.BeginInvoke(new Action(RefreshAppearance));
             }));
         return WrapPage(stack, T("通用", "General"));
     }
@@ -392,12 +389,29 @@ public sealed partial class SettingsWindow : Window
     {
         var stack = new StackPanel();
 
-        stack.Children.Add(BuildButtonCard("接入插件", "放入插件目录后刷新列表并启用；更新已有插件前先禁用，复制新文件后再启用。", "刷新插件列表", () => RebuildSection("plugin")));
-        stack.Children.Add(BuildButtonCard("插件目录", Paths.Plugins, "打开插件目录", () =>
-        {
-            try { System.IO.Directory.CreateDirectory(Paths.Plugins); Process.Start(new ProcessStartInfo { FileName = Paths.Plugins, UseShellExecute = true }); }
-            catch (Exception ex) { MessageBox.Show("打开插件目录失败：" + ex.Message); }
-        }));
+        var toolbar = new DockPanel { Margin = new Thickness(0,0,0,16) };
+        var refresh = DesktopPet.Sdk.PluginUi.Button("刷新列表");
+        refresh.Click += (_,_) => RebuildSection("plugin");
+        var folder = DesktopPet.Sdk.PluginUi.Button("打开插件目录");
+        folder.Margin = new Thickness(8,0,0,0);
+        folder.Click += (_,_) => { try { System.IO.Directory.CreateDirectory(Paths.Plugins); Process.Start(new ProcessStartInfo { FileName = Paths.Plugins, UseShellExecute = true }); }
+            catch (Exception ex) { MessageBox.Show("打开插件目录失败：" + ex.Message); } };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        actions.Children.Add(refresh); actions.Children.Add(folder); DockPanel.SetDock(actions, Dock.Right);
+        toolbar.Children.Add(actions);
+        var search = DesktopPet.Sdk.PluginUi.Input();
+        search.ToolTip = "搜索插件名称、说明或作者";
+        System.Windows.Automation.AutomationProperties.SetName(search, "搜索插件");
+        search.Margin = new Thickness(0,0,12,0);
+        toolbar.Children.Add(search); stack.Children.Add(toolbar);
+        stack.Children.Add(new TextBlock { Text = "搜索名称、说明或作者 · 展开插件设置以调整功能", Foreground = new SolidColorBrush(TextSub), Margin = new Thickness(0,0,0,14), FontSize = 12 });
+        var results = new List<(Border Card, string Search)>();
+        var noResults = new TextBlock { Text = "没有匹配的插件，试试其他关键词。", Foreground = new SolidColorBrush(TextSub), Visibility = Visibility.Collapsed, Margin = new Thickness(0,18,0,18) };
+        search.TextChanged += (_,_) => {
+            var query = search.Text.Trim(); int visible = 0;
+            foreach (var entry in results) { bool match = entry.Search.Contains(query, StringComparison.OrdinalIgnoreCase); entry.Card.Visibility = match ? Visibility.Visible : Visibility.Collapsed; if (match) visible++; }
+            noResults.Visibility = visible == 0 ? Visibility.Visible : Visibility.Collapsed;
+        };
         var plugins = _pet.PluginHost.GetInstalledPlugins();
         if (plugins.Count == 0)
         {
@@ -445,6 +459,7 @@ public sealed partial class SettingsWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(12, 0, 0, 0),
             };
+            System.Windows.Automation.AutomationProperties.SetName(toggle, "启用" + p.Manifest.Name);
             toggle.Toggled += on =>
             {
                 bool ok = on ? _pet.PluginHost.EnablePlugin(idCap) : _pet.PluginHost.DisablePlugin(idCap);
@@ -458,6 +473,7 @@ public sealed partial class SettingsWindow : Window
                 if (on) _config.DisabledPlugins.RemoveAll(id => string.Equals(id, idCap, StringComparison.OrdinalIgnoreCase));
                 else if (!_config.DisabledPlugins.Contains(idCap, StringComparer.OrdinalIgnoreCase)) _config.DisabledPlugins.Add(idCap);
                 Save();
+                Dispatcher.BeginInvoke(new Action(() => RebuildSection("plugin")));
                 // v0.1.88：启停插件可能增删其注册的设置页（内嵌在插件卡内）→ 插件页缓存作废，
                 // 下次进入 plugin 页重建以反映新的插件集合/设置页。
                 InvalidatePage("plugin");
@@ -468,6 +484,8 @@ public sealed partial class SettingsWindow : Window
             Grid.SetColumn(toggle, 2);
             titleRow.Children.Add(toggle);
             sp.Children.Add(titleRow);
+
+            sp.Children.Add(new TextBlock { Text = enabled ? "● 运行中" : _pet.PluginHost.IsEnabled(p.Manifest.Id) ? "○ 待加载 / 加载失败" : "○ 已停用", Foreground = new SolidColorBrush(AccentText), FontSize = 11, Margin = new Thickness(0,6,0,0) });
 
             // 作者
             sp.Children.Add(new TextBlock
@@ -507,16 +525,26 @@ public sealed partial class SettingsWindow : Window
             {
                 if (page.Title == p.Manifest.Id || page.Title == p.Manifest.Name)
                 {
-                    try { if (page.BuildContent() is FrameworkElement u) { ApplyPluginTheme(u); u.Margin = new Thickness(0, 10, 0, 0); sp.Children.Add(u); } }
-                    catch (Exception ex)
+                    var details = new Expander { Header = "插件设置", Margin = new Thickness(0,12,0,0) };
+                    details.Expanded += (_,_) =>
                     {
-                        // v0.1.82 P1-8：插件设置页构建失败（插件 bug）会让该页整块消失，必须留痕以便定位
-                        Log.Warn($"[设置] 插件设置页构建失败：「{page.Title}」- {ex.GetType().Name}: {ex.Message}");
-                    }
+                        if (details.Content is not null) return;
+                        try
+                        {
+                            if (page.BuildContent() is FrameworkElement content)
+                            { ApplyPluginTheme(content); content.Margin = new Thickness(0,12,0,0); details.Content = content; }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warn($"[设置] 插件设置页构建失败：「{page.Title}」- {ex.GetType().Name}: {ex.Message}");
+                            details.Content = new TextBlock { Text = "设置加载失败，请重新启用插件后再试。", TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(TextSub) };
+                        }
+                    };
+                    sp.Children.Add(details);
                 }
             }
 
-            stack.Children.Add(new Border
+            var pluginCard = new Border
             {
                 Background = new SolidColorBrush(BgCard),
                 BorderBrush = new SolidColorBrush(BorderC),
@@ -525,8 +553,11 @@ public sealed partial class SettingsWindow : Window
                 Padding = new Thickness(20, 14, 20, 14),
                 Margin = new Thickness(0, 0, 0, 12),
                 Child = sp,
-            });
+            };
+            results.Add((pluginCard, $"{p.Manifest.Name} {p.Manifest.Description} {p.Manifest.Author} {p.Manifest.Id}"));
+            stack.Children.Add(pluginCard);
         }
+        stack.Children.Add(noResults);
         foreach (var (dir, error) in _pet.PluginHost.Errors.Where(e => !plugins.Any(p => string.Equals(p.PluginDir, e.dir, StringComparison.OrdinalIgnoreCase))))
             stack.Children.Add(new TextBlock
             {
@@ -540,7 +571,7 @@ public sealed partial class SettingsWindow : Window
     private UIElement BuildAboutPage()
     {
         var sp = new StackPanel { Margin = new Thickness(0, 0, 0, 0) };
-        sp.Children.Add(MakeHeader("Neko 桌宠"));
+        sp.Children.Add(MakeSectionHeader("关于这只小伙伴"));
         sp.Children.Add(new TextBlock
         {
             Text = $"版本：v{_config.GetType().Assembly.GetName().Version?.ToString(3) ?? "?"}\n\n一只轻量像素橘猫，支持插件生态和键鼠可视化。\n\n作者：灯灯（Lantern）\n技术：C# + WPF + .NET 8",

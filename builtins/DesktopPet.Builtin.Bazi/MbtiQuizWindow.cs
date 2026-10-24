@@ -31,21 +31,22 @@ public sealed class MbtiQuizWindow : Window
         _answers = new int?[MbtiQuiz.Questions.Count];
 
         Title = "Neko 人格测试";
-        Width = 460;
-        Height = 520;
+        Width = 520;
+        Height = 600;
         MinWidth = 380;
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = PluginUi.Bg;
+        Background = NekoPalette.Brush(NekoDesign.Current.Background);
+        NekoDesign.Apply(this);
         Opacity = 0;
 
         // ---- 标题 + 进度条 ----
         var title = new TextBlock
         {
             Text = "人格测试（生日性格分析）",
-            FontSize = 16,
+            FontSize = 24,
             FontWeight = FontWeights.SemiBold,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             Margin = new Thickness(20, 16, 20, 0),
         };
         _progress = new ProgressBar
@@ -54,13 +55,13 @@ public sealed class MbtiQuizWindow : Window
             Maximum = MbtiQuiz.Questions.Count,
             Height = 6,
             Margin = new Thickness(20, 10, 20, 0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0x4C, 0x9F, 0xFF)),
-            Background = PluginUi.CardBg,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Accent),
+            Background = NekoPalette.Brush(NekoDesign.Current.Surface),
         };
         _dimensionLabel = new TextBlock
         {
             FontSize = 11,
-            Foreground = PluginUi.TextSub,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Muted),
             Margin = new Thickness(20, 8, 20, 0),
         };
 
@@ -68,7 +69,7 @@ public sealed class MbtiQuizWindow : Window
         _questionText = new TextBlock
         {
             FontSize = 14,
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(20, 18, 20, 12),
             MinHeight = 60,
@@ -76,7 +77,7 @@ public sealed class MbtiQuizWindow : Window
 
         _optA = new RadioButton
         {
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             FontSize = 13,
             Margin = new Thickness(20, 4, 20, 4),
             GroupName = "mbti",
@@ -84,7 +85,7 @@ public sealed class MbtiQuizWindow : Window
         };
         _optB = new RadioButton
         {
-            Foreground = PluginUi.TextMain,
+            Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
             FontSize = 13,
             Margin = new Thickness(20, 4, 20, 4),
             GroupName = "mbti",

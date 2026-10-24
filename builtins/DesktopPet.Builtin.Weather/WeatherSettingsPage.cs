@@ -35,7 +35,7 @@ public sealed class WeatherSettingsPage : ISettingsPage
         {
             var city = string.IsNullOrWhiteSpace(input.Text) ? WeatherPlugin.DefaultCity : input.Text.Trim();
             _storage.Set(WeatherPlugin.CityKey, city);
-            MessageBox.Show($"天气城市已设为「{city}」", "天气设置", MessageBoxButton.OK, MessageBoxImage.Information);
+            PluginUi.ShowStatus(stack, $"天气城市已设为「{city}」");
         };
 
         stack.Children.Add(label);

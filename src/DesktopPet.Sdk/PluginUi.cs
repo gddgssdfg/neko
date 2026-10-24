@@ -5,7 +5,7 @@ using System.Windows.Media;
 namespace DesktopPet.Sdk;
 
 /// <summary>
-/// 插件设置页深色控件工厂（v0.1.64）。配色与宿主设置页一致，
+/// 插件控件工厂：使用 NekoDesign 的当前主题和统一控件模板，
 /// 让所有插件设置页风格统一，避免"各写各的控件样式"。
 ///
 /// 用法示例：
@@ -19,51 +19,65 @@ namespace DesktopPet.Sdk;
 /// </summary>
 public static class PluginUi
 {
+    /// <summary>Inline save feedback; reuse one label and keep focus in the form.</summary>
+    public static void ShowStatus(Panel panel, string message, bool error = false)
+    {
+        var label = panel.Children.OfType<TextBlock>().FirstOrDefault(t => Equals(t.Tag, "Neko.Status"));
+        if (label is null)
+        {
+            label = Text(""); label.Tag = "Neko.Status"; label.Margin = new Thickness(0,12,0,0);
+            System.Windows.Automation.AutomationProperties.SetLiveSetting(label, System.Windows.Automation.AutomationLiveSetting.Polite);
+            panel.Children.Add(label);
+        }
+        label.Text = message;
+        label.Foreground = NekoPalette.Brush(error ? NekoDesign.Current.Accent : NekoDesign.Current.Muted);
+        System.Windows.Automation.Peers.UIElementAutomationPeer.FromElement(label)?.RaiseAutomationEvent(System.Windows.Automation.Peers.AutomationEvents.LiveRegionChanged);
+    }
     /// <summary>窗口/页面背景 #1E262F</summary>
-    public static readonly Brush Bg = Frozen(0x1E, 0x26, 0x2F);
+    public static readonly Brush Bg = NekoPalette.Brush(NekoPalette.Dark.Background);
 
     /// <summary>卡片 / 输入框底 #2B3647</summary>
-    public static readonly Brush CardBg = Frozen(0x2B, 0x36, 0x47);
+    public static readonly Brush CardBg = NekoPalette.Brush(NekoPalette.Dark.Surface);
 
     /// <summary>主文字 #E5E7EB</summary>
-    public static readonly Brush TextMain = Frozen(0xE5, 0xE7, 0xEB);
+    public static readonly Brush TextMain = NekoPalette.Brush(NekoPalette.Dark.Text);
 
     /// <summary>次文字 #9CA3AF</summary>
-    public static readonly Brush TextSub = Frozen(0x9C, 0xA3, 0xAF);
+    public static readonly Brush TextSub = NekoPalette.Brush(NekoPalette.Dark.Muted);
 
     /// <summary>边框 #3A4755</summary>
-    public static readonly Brush Border = Frozen(0x3A, 0x47, 0x55);
+    public static readonly Brush Border = NekoPalette.Brush(NekoPalette.Dark.Line);
 
-    /// <summary>深色主题文本（sub=true 用次文字色）。</summary>
+    /// <summary>当前主题文本（sub=true 用次文字色）。</summary>
     public static System.Windows.Controls.TextBlock Text(string content, bool sub = false) => new()
     {
         Text = content,
-        Foreground = sub ? TextSub : TextMain,
+        Foreground = sub ? NekoPalette.Brush(NekoDesign.Current.Muted) : NekoPalette.Brush(NekoDesign.Current.Text),
         FontSize = 12.5,
         TextWrapping = TextWrapping.Wrap,
         VerticalAlignment = VerticalAlignment.Center,
     };
 
-    /// <summary>深色主题按钮：深底 + 浅字 + 边框。</summary>
+    /// <summary>当前主题按钮：深底 + 浅字 + 边框。</summary>
     public static System.Windows.Controls.Button Button(string text) => new()
     {
         Content = text,
-        Foreground = TextMain,
-        Background = CardBg,
-        BorderBrush = Border,
+        Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+        Background = NekoPalette.Brush(NekoDesign.Current.Surface),
+        BorderBrush = NekoPalette.Brush(NekoDesign.Current.Line),
         BorderThickness = new Thickness(1),
         Padding = new Thickness(12, 4, 12, 4),
     };
 
-    /// <summary>深色主题单行输入框：深底 + 浅字 + Caret 浅色。</summary>
+    /// <summary>当前主题单行输入框：深底 + 浅字 + Caret 浅色。</summary>
     public static System.Windows.Controls.TextBox Input(string text = "") => new()
     {
         Text = text,
-        Foreground = TextMain,
-        Background = CardBg,
-        BorderBrush = Border,
+        Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
+        Background = NekoPalette.Brush(NekoDesign.Current.Surface),
+        BorderBrush = NekoPalette.Brush(NekoDesign.Current.Line),
         BorderThickness = new Thickness(1),
-        CaretBrush = TextMain,
+        CaretBrush = NekoPalette.Brush(NekoDesign.Current.Text),
         Padding = new Thickness(6, 3, 6, 3),
         VerticalContentAlignment = VerticalAlignment.Center,
     };
@@ -72,16 +86,10 @@ public static class PluginUi
     public static System.Windows.Controls.TextBlock SectionHeader(string title) => new()
     {
         Text = title,
-        Foreground = TextMain,
+        Foreground = NekoPalette.Brush(NekoDesign.Current.Text),
         FontSize = 14,
         FontWeight = FontWeights.Bold,
         Margin = new Thickness(0, 0, 0, 8),
     };
 
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();   // 冻结后可跨线程共享、省渲染开销（宿主常驻内存红线）
-        return brush;
-    }
 }

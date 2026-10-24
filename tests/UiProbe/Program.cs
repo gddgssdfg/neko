@@ -274,7 +274,7 @@ internal static class Program
             int plateB = pixels[4 * (plateRow * w + w / 2) + 2];
             if (holeA > 20) throw new Exception($"中心洞不透明 alpha={holeA}（挖洞失效，猫会被挡住）");
             if (plateA < 220) throw new Exception($"底盘太透 alpha={plateA}（看不清，用户要求能看清）");
-            if (plateB < 200) throw new Exception($"底盘颜色异常 B={plateB}（应近白）");
+            if (Math.Abs(plateB - DesktopPet.Sdk.NekoPalette.Dark.Surface.R) > 5) throw new Exception($"底盘未使用深色主题 B={plateB}");
             Console.WriteLine($"      [像素] 洞 alpha={holeA}（应≈0），底盘 alpha={plateA} B={plateB}（应≈255）；截图: {pngPath}");
         });
 
@@ -282,15 +282,15 @@ internal static class Program
         menu2.Close();
 
         // ---- v0.1.28 第 16 项：键鼠映射窗（BongoCat 核心视觉）----
-        Check("键鼠映射窗：66 键注册 + 鼠标 3 区 + 高亮/拍爪切换", () =>
+        Check("键鼠映射窗：74 键注册 + 鼠标 3 区 + 高亮/拍爪切换", () =>
         {
             var gi = new GlobalInput();          // 不 Install，纯 UI 测试
             var mcfg = new AppConfig();
             var mirror = new InputMirrorWindow(gi, mcfg, () => { });
             mirror.Show();
             mirror.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
-            if (mirror.RegisteredKeys != 66)
-                throw new Exception($"注册键位 {mirror.RegisteredKeys} ≠ 66（vk 冲突被吞，键盘会缺键）");
+            if (mirror.RegisteredKeys != 74)
+                throw new Exception($"注册键位 {mirror.RegisteredKeys} ≠ 74（vk 冲突被吞，键盘会缺键）");
             // v0.1.36：布局不重叠不溢出（v0.1.28 Grid 列溢出 bug 的回归守护）；v0.1.44：键盘画布缩小（KbW 反射读，防数字漂移）
             double kbw = (double)typeof(InputMirrorWindow).GetField("KbW", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
             if (mirror.LayoutHasOverlaps())
@@ -1075,15 +1075,15 @@ internal static class Program
                 win.Config.Theme = "dark";
                 var swDark = new SettingsWindow(win);
                 var bgDark = (Color)bgRootField.GetValue(swDark)!;
-                if (bgDark.R != 0x22 || bgDark.G != 0x24 || bgDark.B != 0x23)
-                    throw new Exception($"深色主题 BgRoot 应=#222423 实际=#{bgDark.R:X2}{bgDark.G:X2}{bgDark.B:X2}");
+                if (bgDark != DesktopPet.Sdk.NekoPalette.Dark.Background)
+                    throw new Exception($"深色主题 BgRoot 未使用共享深色主题 实际=#{bgDark.R:X2}{bgDark.G:X2}{bgDark.B:X2}");
                 swDark.Close();
 
                 win.Config.Theme = "light";
                 var swLight = new SettingsWindow(win);
                 var bgLight = (Color)bgRootField.GetValue(swLight)!;
-                if (bgLight.R != 0xFA || bgLight.G != 0xF7 || bgLight.B != 0xF2)
-                    throw new Exception($"浅色主题 BgRoot 应=#FAF7F2 实际=#{bgLight.R:X2}{bgLight.G:X2}{bgLight.B:X2}");
+                if (bgLight != DesktopPet.Sdk.NekoPalette.Light.Background)
+                    throw new Exception($"浅色主题 BgRoot 未使用共享浅色主题 实际=#{bgLight.R:X2}{bgLight.G:X2}{bgLight.B:X2}");
                 swLight.Close();
             }
             finally
@@ -1114,27 +1114,18 @@ internal static class Program
             }
 
             // 定位游戏模式卡（3 个选项，中文文案不受语言切换影响）
-            Border? target = null;
-            foreach (var o in Descendants(settings))
-                if (o is Border b && b.Child is TextBlock tb && tb.Text == "全屏时藏猫")
-                { target = b; break; }
-            if (target is null) throw new Exception("找不到游戏模式 ChoiceCard 的『全屏时藏猫』按钮");
-            var panel = (StackPanel)target.Parent!;
-            var buttons = new List<Border>();
-            for (int i = 0; i < panel.Children.Count; i++)
-                if (panel.Children[i] is Border b) buttons.Add(b);
-            if (buttons.Count != 3) throw new Exception($"游戏模式按钮数应=3 实际={buttons.Count}");
+            var target = Descendants(settings).OfType<Button>().FirstOrDefault(b => (b.Content as string) == "全屏时藏猫");
+            if (target is null) throw new Exception("找不到游戏模式按钮");
+            var panel = (WrapPanel)target.Parent!;
+            var buttons = panel.Children.OfType<Button>().ToList();
+            if (buttons.Count != 3) throw new Exception("游戏模式选项数量错误");
 
             var accent = (Color)typeof(SettingsWindow).GetField("Accent", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(settings)!;
             var grey = (Color)typeof(SettingsWindow).GetField("BgCardHover", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(settings)!;
             static int CD(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
 
             // 模拟点击第 2 项（索引 1 = 全屏时藏猫）：onChange + RefreshSelection
-            buttons[1].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-            {
-                RoutedEvent = UIElement.MouseLeftButtonUpEvent,
-                Source = buttons[1],
-            });
+            buttons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
             // 等 150ms ColorAnimation 完成（DispatcherFrame 驱动消息循环，动画时钟才会走）
             var frame = new DispatcherFrame();
@@ -1155,11 +1146,7 @@ internal static class Program
                 throw new Exception($"第3项应保持灰底 #3A4457，实际=#{un2.R:X2}{un2.G:X2}{un2.B:X2}");
 
             // 还原：点回第 1 项（关闭），避免污染游戏模式状态
-            buttons[0].RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-            {
-                RoutedEvent = UIElement.MouseLeftButtonUpEvent,
-                Source = buttons[0],
-            });
+            buttons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             settings.Close();
         });
 
@@ -1952,7 +1939,7 @@ internal static class Program
                     double? received = null;
 
                     // readCurrent 非空：点 + 必须基于 live 而非构建时的 initial
-                    var btns = ((Border, Border))msw.Invoke(p30Settings, new object?[]
+                    var btns = ((Button, Button))msw.Invoke(p30Settings, new object?[]
                     {
                         1.0, 0.2, (Action<double>)(v => received = v), (Func<double>)(() => live),
                     })!;
@@ -1960,26 +1947,23 @@ internal static class Program
                     var decBtn = btns.Item1;
 
                     live = 4.0;   // 模拟切皮肤后外部把实时值改到 4.0
-                    incBtn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = incBtn });
+                    incBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if (received is null || Math.Abs(received.Value - 4.2) > 1e-6)
                         throw new Exception($"readCurrent=4.0 时点 + 应回调 4.2（基于活值），实际 {received?.ToString() ?? "null"}");
 
                     received = null;
                     live = 4.2;
-                    decBtn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = decBtn });
+                    decBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if (received is null || Math.Abs(received.Value - 4.0) > 1e-6)
                         throw new Exception($"readCurrent=4.2 时点 − 应回调 4.0（基于活值），实际 {received?.ToString() ?? "null"}");
 
                     // 回归：readCurrent=null 时退化为内部自持值（无外部写入者的卡片，行为必须不变）
                     received = null;
-                    var btns2 = ((Border, Border))msw.Invoke(p30Settings, new object?[]
+                    var btns2 = ((Button, Button))msw.Invoke(p30Settings, new object?[]
                     {
                         1.0, 0.5, (Action<double>)(v => received = v), (Func<double>?)null,
                     })!;
-                    btns2.Item2.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-                    { RoutedEvent = UIElement.MouseLeftButtonUpEvent, Source = btns2.Item2 });
+                    btns2.Item2.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     if (received is null || Math.Abs(received.Value - 1.5) > 1e-6)
                         throw new Exception($"readCurrent=null 时点 + 应回调 1.5（内部值 1.0+0.5），实际 {received?.ToString() ?? "null"}");
                 }
