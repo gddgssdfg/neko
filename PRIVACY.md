@@ -1,6 +1,6 @@
 # Neko 隐私说明
 
-最后更新：2026-10-24。适用于本仓库主程序及内置插件（Windows 10/11）。自行安装的第三方插件可能有不同的数据行为，见下文。
+最后更新：2026-10-25。适用于本仓库主程序及内置插件（Windows 10/11）。自行安装的第三方插件可能有不同的数据行为，见下文。
 
 Neko 的动画和本地工具可离线运行。数据默认保存在本机；自动更新检查、天气、AI 咨询和网页搜索会按各自触发条件联网。没有 Neko 用户账号、广告或向作者发送的使用分析/遥测。
 
@@ -36,9 +36,9 @@ Neko 的动画和本地工具可离线运行。数据默认保存在本机；自
 
 ## 剪贴板历史
 
-**剪贴板插件默认随内置插件加载，加载后即持续监听系统剪贴板变化，不以打开历史窗口为前提。** 它会把文本保存到本地插件数据中，最多保留最近 20 条去重记录；重启后可继续读取。密码、验证码、令牌和其他敏感文字也可能被记录，当前没有自动识别敏感内容的过滤机制。
+**剪贴板插件默认加载，但不读取或记录剪贴板。** 仅在首次启动勾选，或在「插件 → 剪贴板」/剪贴板窗口明确开启「记录剪贴板」后监听变化；开启后不以历史窗口是否打开为前提。它会把文本保存到本地插件数据中，最多保留最近 20 条去重记录（单条最多 32,768 字符）；重启后可继续读取。默认 7 天过期，可改为 1 天、30 天或永久保留。插件加载、读取历史及运行期间每分钟会清理过期内容；程序退出或插件禁用期间不执行清理，下次加载时再清除。密码、验证码、令牌和其他敏感文字也可能被记录，当前没有自动识别敏感内容的过滤机制。
 
-在「设置 → 插件」禁用剪贴板历史可停止监听，但不会自动删除已有历史。要删除历史，先禁用插件并退出程序，再删除数据根下该插件目录（`plugins/com.lantern.clipboard/`；以插件清单 ID 为准）。不要把用户数据目录提交到公开仓库。
+在剪贴板窗口/插件设置关闭记录会注销监听和轮询；也可禁用整个插件。暂停不会删除已有历史；「清空全部历史」会删除磁盘历史。旧版历史会迁移并保留，无法确定的旧记录时间从迁移时计算，未明确同意的旧配置默认暂停记录。要手工删除历史，先禁用插件并退出程序，再删除数据根下该插件目录（`plugins/com.lantern.clipboard/`；以插件清单 ID 为准）。不要把用户数据目录提交到公开仓库。
 
 ## 网络访问
 
@@ -46,14 +46,14 @@ Neko 的动画和本地工具可离线运行。数据默认保存在本机；自
 
 | 功能 | 目标与发送内容 | 触发与关闭方式 |
 |---|---|---|
-| 版本检查 | `gitee.com` 仓库公开 Releases API，失败时回落 Tags API；不发送用户配置、剪贴板或输入内容 | 自动检查默认开启，每天首次启动后延迟检查；「设置 → 关于」可关闭自动检查或手动查询。下载页由浏览器打开，不静默安装 |
+| 版本检查 | `api.github.com` 仓库公开 Releases API，失败时尝试 `gitee.com` Releases API；不发送用户配置、剪贴板或输入内容 | 首次启动可选择自动检查（默认不勾选），旧配置保留原设置；启用后每天首次启动延迟检查；「设置 → 关于」可关闭自动检查或手动查询。下载页由浏览器打开，不静默安装 |
 | 天气 | `geocoding-api.open-meteo.com` 接收输入的城市名，`api.open-meteo.com` 接收对应经纬度 | 主动查询天气/预报时访问；禁用天气插件可关闭 |
 | 命理 AI 咨询 | `api.deepseek.com/chat/completions` 接收命盘、问题和用于上下文的历史；用户 API Key 作为鉴权凭据发给 DeepSeek | 主动发送咨询消息时访问；禁用插件或不发送消息即可避免请求。API Key 不发送给 Neko 作者 |
 | 快速搜索 | 默认浏览器打开 `https://www.baidu.com/s?wd=<关键词>`；搜索词进入地址及浏览器历史 | 主动搜索时触发；禁用搜索插件可关闭 |
 
 AI 对话历史还会保存在本机（最近 10 轮）。涉及出生资料或其他个人信息时，请先确认愿意发送给 AI 服务提供方。
 
-本表针对当前主程序和内置插件，不涵盖你另外安装的插件或系统/浏览器自身的联网行为。仓库在 GitHub 和 Gitee 同步，并不表示程序同时向两处发送版本查询；当前内置更新源仍为 Gitee。
+本表针对当前主程序和内置插件，不涵盖你另外安装的插件或系统/浏览器自身的联网行为。仓库在 GitHub 和 Gitee 同步，并不表示程序同时向两处发送版本查询；当前优先 GitHub，失败时尝试 Gitee；不访问私有仓库凭据，也不内置作者令牌。
 
 ## 其他系统能力与第三方插件
 
@@ -74,9 +74,9 @@ AI 对话历史还会保存在本机（最近 10 轮）。涉及出生资料或�
 Neko's animation and local tools work offline. Data defaults to `%AppData%\Neko`; `NEKO_DATA_DIR` overrides it, and `portable.flag` selects the program's `data/` directory. The actual directory is shown in Settings → About.
 
 - Raw keystrokes and mouse trajectories are not persisted or uploaded. Local activity reminders can save a date and aggregate active minutes.
-- The clipboard-history plugin starts listening when loaded (enabled by default), and persists up to 20 recent text entries locally. Sensitive copied text is not automatically filtered. Disabling stops collection but does not erase existing history.
+- Clipboard recording is off by default and only starts after explicit opt-in in onboarding or plugin settings. It persists up to 20 recent entries locally (32,768 characters each), with 7-day default retention (1/7/30 days or forever). Sensitive copied text is not automatically filtered. Pausing unregisters the listener but keeps history; Clear deletes persisted entries. Old history migrates without automatically opting in.
 - Notes, profiles and AI chat history are ordinary local plugin data, not all encrypted. The saved DeepSeek key is protected with Windows current-user DPAPI.
-- Automatic update checks contact Gitee by default and can be disabled. Explicit weather requests contact Open-Meteo; sending AI chat contacts DeepSeek with chart data, conversation context and the user's API key for authentication; web search opens Baidu in the default browser.
+- When enabled, automatic update checks contact public GitHub Releases first, then Gitee on failure. Onboarding leaves automatic checks unchecked; existing preferences are preserved. Explicit weather requests contact Open-Meteo; sending AI chat contacts DeepSeek with chart data, conversation context and the user's API key for authentication; web search opens Baidu in the default browser.
 - Logs remain local but may contain exception messages and paths. Review them before sharing.
 - Third-party DLL plugins run in-process with user privileges; the plugin API is not a security sandbox.
 - Exit Neko before deleting the actual data root. Also check portable/legacy/custom locations and backups. Local deletion does not erase data already sent to third parties.

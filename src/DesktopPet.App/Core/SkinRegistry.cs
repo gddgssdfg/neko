@@ -219,6 +219,10 @@ public static class SkinRegistry
     // ------------------------------------------------------------------
 
     /// <summary>解析单个 skin.json；任何异常都捕获并返回 null。</summary>
+    public static SkinInfo InspectFolder(string directory)
+        => TryLoad(directory, System.IO.Path.Combine(directory, ManifestFileName))
+            ?? throw new FormatException("skin.json 无效：请检查 id 与目录名、帧尺寸及 states 声明；详细原因见日志。");
+
     private static SkinInfo? TryLoad(string skinDir, string manifestPath)
     {
         try

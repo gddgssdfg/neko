@@ -117,6 +117,33 @@ public sealed class SpriteAtlas
     /// 它会静默盖掉 skin.json，导致用户自制皮肤「只改 skin.json 的 fps 不生效」——
     /// 该覆盖路径已移除，skin.json 是素材侧唯一 fps 声明点。</para>
     /// </summary>
+    public static SpriteAtlas InspectFolder(string directory)
+    {
+        var info = SkinRegistry.InspectFolder(directory);
+        var required = new[] { "idle", "walk", "sit", "sleep", "pet", "drag", "fall", "climb", "work" };
+        foreach (var state in required)
+            if (!info.States.Any(s => s.Name == state)) throw new FormatException($"缺少动作声明：{state}");
+        foreach (var state in info.States)
+        {
+            var paths = info.Layout == SkinLayout.Sheet
+                ? new[] { Path.Combine(directory, $"neko_{state.Name}.png") }
+                : Enumerable.Range(0, info.Frames).Select(i => Path.Combine(directory, $"neko_{state.Name}_{i}.png"));
+            foreach (var path in paths)
+            {
+                if (!File.Exists(path)) throw new FormatException($"缺少帧图：{Path.GetFileName(path)}");
+                using var stream = File.OpenRead(path);
+                var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
+                var bitmap = decoder.Frames[0];
+                int width = info.FrameWidth * (info.Layout == SkinLayout.Sheet ? info.Frames : 1);
+                if (bitmap.PixelWidth != width || bitmap.PixelHeight != info.FrameHeight)
+                    throw new FormatException($"{Path.GetFileName(path)} 应为 {width}×{info.FrameHeight}，实际 {bitmap.PixelWidth}×{bitmap.PixelHeight}");
+            }
+        }
+        var atlas = LoadFromInfo(info, directory);
+        if (info.States.Any(s => !atlas.States.ContainsKey(s.Name))) throw new FormatException("部分动作无法解码，请检查 PNG 文件。");
+        return atlas;
+    }
+
     private static SpriteAtlas LoadFromInfo(SkinInfo info, string skinDir)
     {
         var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale, PixelArt = info.PixelArt };

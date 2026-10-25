@@ -2,7 +2,7 @@ namespace DesktopPet.App.Core;
 
 /// <summary>
 /// 一次「最新发布」查询的结果（v0.1.77 自动更新·阶段1：检查 → 提示 → 打开下载页，**不做静默安装**）。
-/// <para>由 <c>DesktopPet.App.Services.UpdateService.FetchLatestAsync</c> 从 Gitee OpenAPI v5 解析而来。</para>
+/// <para>由 <c>DesktopPet.App.Services.UpdateService.FetchLatestAsync</c> 从公开 GitHub Release 或 Gitee 镜像解析而来。</para>
 /// </summary>
 public sealed class ReleaseInfo
 {
@@ -21,3 +21,6 @@ public sealed class ReleaseInfo
     /// <summary>首个资产的下载直链（<c>assets[0].browser_download_url</c>）；发布无附件时为 null。</summary>
     public string? DownloadUrl { get; init; }
 }
+
+public enum UpdateCheckStatus { Success, NoRelease, Failed, Cancelled }
+public sealed record UpdateCheckResult(UpdateCheckStatus Status, ReleaseInfo? Release = null);

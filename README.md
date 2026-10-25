@@ -134,7 +134,7 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 | **输入** input | 应用模式与快捷键 | 应用模式：互斥「摸鱼模式 / 工作模式」；摸鱼时吸附屏幕边缘；**键盘朝向**（朝我/朝猫=镜像）；快捷键：**径向菜单热键**、**显示·隐藏猫咪（老板键）**、透明度 ±10%、缩放 ±20%、回到默认位置（**附加热键自 v0.1.33 起热更新，改完无需重启**）|
 | **径向菜单** radial | 径向菜单的槽位治理（v0.1.71 新增）| 显示数量：最多显示槽位数（0 = 不限）；**插件顺序与显隐**：逐个槽位 ▲▼ 调序 + 显隐开关（标注「超出上限 / 已隐藏」）；重置：恢复默认 |
 | **插件** plugin | 插件管理（每插件一张卡片）| 名称 + 版本 + **启用/禁用开关**（热启用/禁用，立即 OnLoad/OnUnload）+ 作者 + 描述 + **加载错误**（红色行）+ 插件自带的 `ISettingsPage` 自定义设置页（v0.1.44 起卡片式）|
-| **关于** about | 版本与更新 | 版本号（读程序集）；**自动检查更新**（卡片 + 开关，默认每天启动静默检查一次）；快捷键速查 |
+| **关于** about | 版本与更新 | 版本号（读程序集）；**自动检查更新**（首启选择，开启后每天启动检查一次）；快捷键速查 |
 
 > ⚠️ **皮肤选择器（v0.1.82）**：外观列表已从旧的 WrapPanel 标签改为「一行一个皮肤 + 48px 预览缩略图」；缩略图来自 `neko-assets/<id>/thumb.png`（缺失显示占位，不影响选择）。切换皮肤时若作者声明了 `recommendedScale`，宿主会自动套用推荐缩放（并把「缩放倍率」卡片同步刷新）。
 >
@@ -196,8 +196,8 @@ python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 
 
 | 依赖 | 许可 | 用途 |
 |---|---|---|
-| [Hardcodet.NotifyIcon.Wpf](https://github.com/hardcodet/wpf-notifyicon) | MIT | 托盘图标 |
-| [Tomlyn](https://github.com/xoofx/Tomlyn) | MIT | `plugin.toml` 解析 |
+| [Hardcodet.NotifyIcon.Wpf](https://github.com/hardcodet/wpf-notifyicon) | CPOL 1.02 | 托盘图标 |
+| [Tomlyn](https://github.com/xoofx/Tomlyn) | BSD-2-Clause | `plugin.toml` 解析 |
 | [lunar-csharp](https://github.com/6tail/lunar-csharp) | MIT | 农历 / 八字换算 |
 | `System.Drawing.Common` · `System.Security.Cryptography.ProtectedData` | MIT | .NET 官方库 |
 
@@ -218,4 +218,24 @@ python tools/sync_remotes.py
 
 只需首次添加尚不存在的远端。同步脚本先检查两个远端的推送条件，再依次推送当前提交及标签，不强推、不保存令牌；网络中断时可能只有一端成功，排除问题后重新运行即可。建议固定一个本地工作副本提交，避免两端分别修改同一分支。两端 Release、下载附件、Issue、权限设置不随 Git 推送自动同步。
 
-2026-10-24 公开准备时，历史中的已撤回角色皮肤已清理；旧克隆请重新克隆或在备份本地改动后按维护者说明同步，不要把旧历史再次推回。更新检查当前仍使用 Gitee。
+2026-10-24 公开准备时，历史中的已撤回角色皮肤已清理；旧克隆请重新克隆或在备份本地改动后按维护者说明同步，不要把旧历史再次推回。更新检查优先使用公开 GitHub Release，失败时尝试 Gitee。
+
+
+## 自动检查与出包
+
+新安装可在首次启动选择是否显示键鼠面板、是否自动检查更新，以及是否记录剪贴板。名字和称呼可使用默认值；剪贴板记录和自动更新在引导中默认不勾选。剪贴板窗口/插件设置支持暂停、清空和过期清理。
+
+外观页可选择皮肤目录，预览并检查动作/帧图后安装，或恢复默认橘猫。插件页可预览插件声明的能力后导入，导入后保持停用；确认来源可信再开启。导入不覆盖同名包，更新已有扩展前请备份并移走旧包。
+
+GitHub 的 master / PR 会运行 Windows 回归；版本标签及手动运行还会出包。标签构建在测试通过后创建 **Release 草稿**，包含 MSI、便携 ZIP 和 `SHA256SUMS.txt`，维护者审核附件后再公开。草稿/预发布不触发客户端正式更新。
+
+本地出包：安装 .NET 8、Pillow 和 WiX 4.0.5 后，设置 `PythonExe` 为实际 Python 路径，再执行：
+
+```powershell
+python tools/ci.py
+python tools/package_release.py
+```
+
+产物在 `publish/release/v<版本>/artifacts/`。脚本不覆盖既有出包目录；重复验证可用 `--output` 指定新目录。安装版使用 AppData；便携 ZIP 内含 `portable.flag`。下载后可用 PowerShell `Get-FileHash -Algorithm SHA256 <文件>` 与校验文件比较。
+
+第三方依赖的实际许可见 `THIRD-PARTY-NOTICES.txt`；托盘库 1.1.0 为 CPOL 1.02，Tomlyn 0.18.0 为 BSD-2-Clause，不适用本项目自身的 MIT 授权。发布脚本固定已核验的 .NET 8.0.32 运行时补丁，并附带对应运行时许可。

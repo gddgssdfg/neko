@@ -9,9 +9,7 @@ using DesktopPet.App.Core;
 namespace DesktopPet.App.Windows;
 
 /// <summary>
-/// v0.1.41 首次启动引导（封包需求核心：首次安装时设置称呼+取名）。
-/// 像素风对话框：深色主题（与设置页一致）+ 蓝色 accent。必填校验，未填完不让进入主程序。
-/// 取消按钮 = 退出程序（首次都没设置就退出，宁可不让用户"带着没名字的猫"凑合）。
+/// 首次启动：默认名字、可跳过的称呼与功能选择。
 /// </summary>
 public sealed class FirstRunWindow : Window
 {
@@ -29,13 +27,16 @@ public sealed class FirstRunWindow : Window
     private readonly TextBox _txtName = MakeInput("奶糖/小橘/糖饼…");
     private readonly TextBox _txtTitle = MakeInput("主人/小可爱/老板…");
     private readonly TextBlock _lblErr;
+    private readonly CheckBox _keyboard = new() { Content = "显示键盘和实时鼠标", IsChecked = true };
+    private readonly CheckBox _network = new() { Content = "启动时自动检查更新（访问 GitHub，失败时尝试 Gitee）", IsChecked = false };
+    private readonly CheckBox _clipboard = new() { Content = "记录剪贴板历史（可能包含敏感文本，仅本地保存）", IsChecked = false };
 
     public FirstRunWindow(AppConfig config)
     {
         _config = config;
         Title = "欢迎养 Neko";
         Width = 500;
-        Height = Math.Min(540, SystemParameters.WorkArea.Height);
+        Height = Math.Min(720, SystemParameters.WorkArea.Height);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         WindowStyle = WindowStyle.SingleBorderWindow;
         ResizeMode = ResizeMode.NoResize;
@@ -91,6 +92,16 @@ public sealed class FirstRunWindow : Window
         stack.Children.Add(WrapField(_txtTitle));
         stack.Children.Add(MakeFieldHint("出现在休息提醒、闲聊等场景（≤12 字）"));
 
+        stack.Children.Add(MakeFieldLabel("按你的习惯开始"));
+        foreach (var option in new[] { _keyboard, _network, _clipboard })
+        {
+            var text = option.Content.ToString()!;
+            System.Windows.Automation.AutomationProperties.SetName(option, text);
+            option.Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 365 };
+            option.Margin = new Thickness(0, 7, 0, 7); option.Foreground = new SolidColorBrush(TextMain); stack.Children.Add(option);
+        }
+        stack.Children.Add(MakeFieldHint("天气和 AI 仅在主动查询时联网；这些选项以后都可在设置里修改。"));
+
         // 错误提示
         _lblErr = new TextBlock
         {
@@ -111,6 +122,11 @@ public sealed class FirstRunWindow : Window
         var btnCancel = MakeButton("退出", isPrimary: false);
         btnCancel.Margin = new Thickness(0, 0, 10, 0);
         btnCancel.Click += (_, _) => { DialogResult = false; Close(); };
+        var skip = MakeButton("使用默认设置", isPrimary: false);
+        skip.Width = 130;
+        skip.Margin = new Thickness(0,0,10,0);
+        skip.Click += (_, _) => { _txtName.Text = "小橘"; _txtTitle.Text = "你"; _keyboard.IsChecked = true; _network.IsChecked = false; _clipboard.IsChecked = false; OnConfirm(); };
+        btnRow.Children.Add(skip);
         var btnOk = MakeButton("开始", isPrimary: true);
         btnOk.Click += (_, _) => OnConfirm();
         btnOk.IsDefault = true;       // 回车触发
@@ -130,24 +146,30 @@ public sealed class FirstRunWindow : Window
         PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { DialogResult = false; Close(); } };
 
         // 预填（如果有旧值，比如上版本升级时已经填过但字段是空）
-        if (!string.IsNullOrWhiteSpace(_config.CatName)) _txtName.Text = _config.CatName;
-        if (!string.IsNullOrWhiteSpace(_config.OwnerTitle)) _txtTitle.Text = _config.OwnerTitle;
+        _txtName.Text = string.IsNullOrWhiteSpace(_config.CatName) ? "小橘" : _config.CatName;
+        _txtTitle.Text = string.IsNullOrWhiteSpace(_config.OwnerTitle) ? "你" : _config.OwnerTitle;
     }
 
     private void OnConfirm()
     {
         var name = _txtName.Text?.Trim() ?? "";
         var title = _txtTitle.Text?.Trim() ?? "";
-        if (name.Length == 0 || title.Length == 0)
-        {
-            _lblErr.Text = "两个都填一下哦（首启必填）";
-            return;
-        }
+        if (name.Length == 0) name = "小橘";
+        if (title.Length == 0) title = "你";
         if (name.Length > 12 || title.Length > 12)
         {
             _lblErr.Text = "名字和称呼都控制在 12 字以内（避免气泡装不下）";
             return;
         }
+        try
+        {
+            new DesktopPet.App.Services.JsonPluginStorage(System.IO.Path.Combine(Paths.Data, "plugins", "com.lantern.clipboard"))
+                .Set("recordingEnabled", _clipboard.IsChecked == true);
+        }
+        catch { _lblErr.Text = "无法保存隐私选项，请检查数据目录权限。"; return; }
+        _config.KeyboardMirrorEnabled = _keyboard.IsChecked == true;
+        _config.AppMode = _config.KeyboardMirrorEnabled ? "work" : "slack";
+        _config.UpdateCheckEnabled = _network.IsChecked == true;
         _config.CatName = name;
         _config.OwnerTitle = title;
         ConfigManager.Save(Paths.ConfigFile, _config);   // Save 内部已吞异常，永不抛 → 无需外层 try/catch（v0.1.82 P1-8）

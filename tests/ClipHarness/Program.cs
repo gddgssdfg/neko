@@ -4,7 +4,7 @@
 // ■ 这个工具体验什么
 //   验证 ClipboardHistoryPlugin 在**事件驱动主路径**（AddClipboardFormatListener + WM_CLIPBOARDUPDATE）
 //   下的生命周期是否干净：
-//     1) 主路径判定 —— 替身 IScheduler.EveryCount==0（主路径不调 Every()；走“降级轮询兜底”才会 >0）
+//     1) 主路径判定 —— 替身 IScheduler.EveryCount==1（仅过期清理）（主路径不调 Every()；走“降级轮询兜底”才会 >0）
 //     2) 真写剪贴板 → 真实收到 WM_CLIPBOARDUPDATE → 历史被记录（证明监听真在收消息）
 //     3) OnUnload 无异常、无“注销剪贴板监听失败/清理剪贴板监听异常”
 //     4) 监听确实注销 —— 卸载后再改剪贴板，历史不再增长
@@ -51,6 +51,11 @@ internal static class Program
     private static readonly List<string> Report = new();
     private static string _pluginDir = "";
     private static string _outFile = "";
+    internal static bool SyntheticInput;
+    internal static string SyntheticText = "";
+    private static IntPtr _liveHandle;
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     private static WeakReference? _weakAlc;
     private static WeakReference? _weakInst;
 
@@ -60,6 +65,8 @@ internal static class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+        SyntheticInput = args.Contains("--synthetic-input");
+        args = args.Where(a => a != "--synthetic-input").ToArray();
         var repoRoot = FindRepoRoot();
         _pluginDir = args.Length > 0
             ? args[0]
@@ -143,6 +150,13 @@ internal static class Program
         return AppContext.BaseDirectory;
     }
 
+    private static List<string> ReadEntries(IPluginStorage storage)
+    {
+        var json = storage.Get<string>("entries") ?? "[]";
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return document.RootElement.EnumerateArray().Select(e => e.GetProperty("text").GetString() ?? "").ToList();
+    }
+
     private static void GcAndReport(string tag)
     {
         for (int i = 0; i < 4; i++)
@@ -187,6 +201,12 @@ internal static class Program
     /// <summary>用独立进程 clip.exe 写剪贴板（避开本进程 WPF/OLE 自占用），并回读确认。</summary>
     private static bool SetClip(string text)
     {
+        if (SyntheticInput)
+        {
+            SyntheticText = text;
+            PostMessage(_liveHandle, 0x031D, IntPtr.Zero, IntPtr.Zero);
+            return true;
+        }
         for (int i = 0; i < 6; i++)
         {
             try
@@ -227,8 +247,13 @@ internal static class Program
         W("PLUGIN_DIR_EXISTS=" + Directory.Exists(_pluginDir));
         if (!Directory.Exists(_pluginDir)) { W("ABORT=plugin dir missing"); return; }
 
+        // Preserve non-text clipboard formats by declining this optional live-input probe.
+        var original = SyntheticInput ? null : System.Windows.Clipboard.GetDataObject();
+        var formats = original?.GetFormats(false) ?? Array.Empty<string>();
+        if (formats.Any(f => f is not ("Text" or "UnicodeText" or "OEMText" or "Locale")))
+        { W("ABORT=clipboard contains non-text formats; left unchanged"); return; }
         string? origClip = null;
-        try { origClip = System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : null; } catch { }
+        try { if (!SyntheticInput) origClip = System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : null; } catch { }
 
         var stamp = DateTime.Now.ToString("HHmmss");
         var loader = new PluginLoader(Path.GetDirectoryName(_pluginDir)!);
@@ -243,22 +268,24 @@ internal static class Program
         _weakAlc = new WeakReference(lp1.Context);
         _weakInst = new WeakReference(inst1);
 
+        ctx1.Cap.Stor.Set("recordingEnabled", true);
         inst1.OnLoad(ctx1);
 
         W("SCHED_TIMERS_CREATED=" + ctx1.Cap.Sched.EveryCount);
-        W("MAIN_PATH_ENGAGED=" + (ctx1.Cap.Sched.EveryCount == 0));
+        W("MAIN_PATH_ENGAGED=" + (ctx1.Cap.Sched.EveryCount == 1));
         W("LOG_EVENT_DRIVEN=" + ctx1.Cap.Sys.Logs.Any(l => l.Contains("已启用事件驱动监听")));
         W("LOG_FALLBACK_WARN=" + ctx1.Cap.Sys.Logs.Any(l => l.Contains("降级")));
         W("UI_SLOTS_REGISTERED=" + ctx1.Ui.Slots);
 
         var hwnd1 = GetMessageWindowHandle(inst1);
+        _liveHandle = hwnd1;
         W("HWND_BEFORE_UNLOAD=" + hwnd1);
 
         var h1 = "NEKO-H1-" + stamp;
         var set1 = SetClip(h1);
         W("SET1_OK=" + set1);
         Pump(700);
-        var hist1 = ctx1.Cap.Stor.Get<List<string>>("history") ?? new List<string>();
+        var hist1 = ReadEntries(ctx1.Cap.Stor);
         W("AFTER_H1_COUNT=" + hist1.Count);
         W("AFTER_H1_TOP=" + (hist1.Count > 0 ? hist1[0].Replace("\r", "").Replace("\n", "") : "(none)"));
         W("LIVE_LISTENER_WORKS=" + (hist1.Count > 0 && hist1[0].Contains(h1)));
@@ -276,7 +303,7 @@ internal static class Program
         var set2 = SetClip(h2);
         W("SET2_OK=" + set2);
         Pump(700);
-        var hist2 = ctx1.Cap.Stor.Get<List<string>>("history") ?? new List<string>();
+        var hist2 = ReadEntries(ctx1.Cap.Stor);
         W("AFTER_H2_COUNT=" + hist2.Count);
         W("LISTENER_UNREGISTERED=" + (set2 && hist2.Count == hist1.Count));
 
@@ -293,9 +320,11 @@ internal static class Program
         {
             var ctx2 = new FakeContext();
             var inst2 = lp2.Instance;
+            ctx2.Cap.Stor.Set("recordingEnabled", true);
             inst2.OnLoad(ctx2);
-            W("RELOAD_MAIN_PATH=" + (ctx2.Cap.Sched.EveryCount == 0));
+            W("RELOAD_MAIN_PATH=" + (ctx2.Cap.Sched.EveryCount == 1));
             var hwnd2 = GetMessageWindowHandle(inst2);
+            _liveHandle = hwnd2;
             W("HWND_RELOAD=" + hwnd2);
             W("HWND_RELOAD_DISTINCT=" + (hwnd2 != hwnd1 && hwnd2 != IntPtr.Zero));
             W("OLD_HWND_STILL_DEAD=" + !IsWindow(hwnd1));
@@ -304,7 +333,7 @@ internal static class Program
             var set3 = SetClip(h3);
             W("SET3_OK=" + set3);
             Pump(700);
-            var hist3 = ctx2.Cap.Stor.Get<List<string>>("history") ?? new List<string>();
+            var hist3 = ReadEntries(ctx2.Cap.Stor);
             W("AFTER_RELOAD_COUNT=" + hist3.Count);
             W("RELOAD_WORKS=" + (set3 && hist3.Count == 1 && hist3[0].Contains(h3)));
 
@@ -314,7 +343,7 @@ internal static class Program
             W("RELOAD_HWND_ISWINDOW_AFTER_UNLOAD=" + IsWindow(hwnd2));
         }
 
-        try { if (origClip is not null) System.Windows.Clipboard.SetText(origClip); } catch { }
+        try { if (!SyntheticInput) { if (origClip is not null) System.Windows.Clipboard.SetText(origClip); else System.Windows.Clipboard.Clear(); } } catch { }
         W("SCENARIO_DONE");
     }
 
@@ -371,6 +400,7 @@ internal sealed class FakeSystem : ISystem
     public void Notify(string title, string body) { }
     public string? ReadClipboard()
     {
+        if (Program.SyntheticInput) return Program.SyntheticText;
         try { return System.Windows.Clipboard.ContainsText() ? System.Windows.Clipboard.GetText() : null; }
         catch { return null; }
     }

@@ -1,0 +1,89 @@
+name: Windows checks and release artifacts
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PYTHONIOENCODING: utf-8
+      DOTNET_ROLL_FORWARD: LatestMajor
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install asset dependencies
+        run: python -m pip install -r tools/requirements-art.txt
+      - name: Version and regression checks
+        shell: pwsh
+        run: |
+          $env:PythonExe = (Get-Command python).Source
+          python tools/check_version.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/ci.py
+      - name: Clipboard listener lifecycle (synthetic input only)
+        shell: pwsh
+        run: |
+          dotnet build tests/ClipHarness/ClipHarness.csproj -p:BaseOutputPath=bin_ci/ -v minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./tests/ClipHarness/bin_ci/Debug/net8.0-windows/ClipHarness.exe ./src/DesktopPet.App/bin_ci/Debug/net8.0-windows/win-x64/plugins/com.lantern.clipboard ./bin_ci_logs/clipboard-lifecycle.log --synthetic-input
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Keep diagnostic logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs
+          path: bin_ci_logs/*.log
+      - name: Install WiX
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        run: dotnet tool install --global wix --version 4.0.5
+      - name: Package clean runtime and checksums
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $env:PythonExe = (Get-Command python).Source
+          python tools/package_release.py
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        with:
+          name: windows-release
+          path: publish/release/*/artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: artifacts
+      - name: Create reviewable release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" artifacts/* --verify-tag --draft --title "Neko $RELEASE_TAG" --generate-notes

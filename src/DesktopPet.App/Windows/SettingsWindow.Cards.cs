@@ -220,7 +220,14 @@ public sealed partial class SettingsWindow : Window
             label.Text = "检查中…";
             try
             {
-                var latest = await UpdateService.FetchLatestAsync(CancellationToken.None);
+                var result = await UpdateService.CheckLatestAsync(CancellationToken.None);
+                var latest = result.Release;
+                if (result.Status == UpdateCheckStatus.Cancelled) return;
+                if (result.Status == UpdateCheckStatus.NoRelease)
+                {
+                    MessageBox.Show("仓库尚无正式发布版本。可以在 GitHub 发布页查看进展。", "Neko");
+                    return;
+                }
                 if (latest is null)
                 {
                     // v0.2.2：失败提示要说实话并**可操作**。真实原因有两类，且此前都显示成"请稍后重试"：

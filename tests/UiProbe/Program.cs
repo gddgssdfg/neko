@@ -1022,7 +1022,7 @@ internal static class Program
               ]
             }
             """;
-            var rel = UpdateService.ParseLatest(giteeJson) ?? throw new Exception("真实 Gitee 响应应能解析");
+            var rel = UpdateService.ParseLatest(giteeJson, "https://gitee.com/gddgssdfg/neko") ?? throw new Exception("真实 Gitee 响应应能解析");
             if (rel.TagName != "v2.7.2") throw new Exception($"tag_name 应 v2.7.2，实际 {rel.TagName}");
             if (rel.Version != "2.7.2") throw new Exception($"Version 应 2.7.2（去 v 前缀），实际 {rel.Version}");
             if (string.IsNullOrEmpty(rel.Notes)) throw new Exception("body 应非空");
@@ -1033,8 +1033,8 @@ internal static class Program
                 throw new Exception($"无 html_url 时应拼发布页地址，实际 {rel.ReleaseUrl}");
 
             // 4) 显式 html_url 应被采用
-            var rel2 = UpdateService.ParseLatest("{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://example.com/r\",\"body\":\"x\"}");
-            if (rel2 is null || rel2.ReleaseUrl != "https://example.com/r") throw new Exception("显式 html_url 应被采用");
+            var rel2 = UpdateService.ParseLatest("{\"tag_name\":\"v9.9.9\",\"html_url\":\"https://github.com/gddgssdfg/neko/releases/tag/v9.9.9\",\"body\":\"x\"}");
+            if (rel2 is null || rel2.ReleaseUrl != "https://github.com/gddgssdfg/neko/releases/tag/v9.9.9") throw new Exception("显式 html_url 应被采用");
 
             // 5) body 截断到 ~2000 字
             var bigBody = new string('A', 2500);
@@ -2159,7 +2159,7 @@ internal static class Program
             // 6) 两级数据源的地址常量必须指向同一仓库（防改了 Owner/Repo 只改一处）
             if (!UpdateService.LatestReleaseApi.Contains("/gddgssdfg/neko/")) throw new Exception("releases 接口地址异常");
             if (!UpdateService.TagsApi.Contains("/gddgssdfg/neko/tags")) throw new Exception("tags 接口地址异常");
-            if (UpdateService.RepoUrl != "https://gitee.com/gddgssdfg/neko") throw new Exception("仓库主页地址异常");
+            if (UpdateService.RepoUrl != "https://github.com/gddgssdfg/neko") throw new Exception("仓库主页地址异常");
         });
 
         // ---- v0.1.82 第 32 项：插件定时器回调（线程池）里调 Pet.Say 必须真的弹出气泡 ----

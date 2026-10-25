@@ -9,7 +9,10 @@ namespace DesktopPet.Builtin.ClipboardHistory;
 /// <summary>Searchable clipboard library. Selection alone never writes to the clipboard.</summary>
 public sealed class ClipboardWindow : Window
 {
-    public ClipboardWindow(List<string> history, Action<string> pick, ISystem system)
+    private Action? _refresh;
+    public void RefreshHistory() => _refresh?.Invoke();
+
+    public ClipboardWindow(List<string> history, Action<string> pick, ISystem system, FrameworkElement? controls = null, Func<List<string>>? loadHistory = null, Func<bool>? recordingState = null)
     {
         Title = "Neko 剪贴板历史";
         Width = 480; Height = 540; MinWidth = 360; MinHeight = 300;
@@ -18,6 +21,7 @@ public sealed class ClipboardWindow : Window
         var root = new DockPanel { Margin = new Thickness(24) };
         var header = NekoDesign.ToolHeader("刚刚复制过", "搜索历史，双击或按回车复制选中内容。");
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
+        if (controls is not null) { controls.Margin = new Thickness(0,0,0,16); DockPanel.SetDock(controls,Dock.Top); root.Children.Add(controls); }
         var search = PluginUi.Input();
         search.ToolTip = "搜索剪贴板内容";
         System.Windows.Automation.AutomationProperties.SetName(search, "搜索剪贴板");
@@ -32,15 +36,16 @@ public sealed class ClipboardWindow : Window
         root.Children.Add(list); Content = root;
         void Refresh()
         {
+            if (loadHistory is not null) history = loadHistory();
             list.Items.Clear();
             var matches = history.Where(text => text.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
             foreach (var text in matches)
                 list.Items.Add(new ListBoxItem { Tag = text, ToolTip = text,
                     Content = new TextBlock { Text = text.Replace('\r', ' ').Replace('\n', ' '),
                         TextTrimming = TextTrimming.CharacterEllipsis, MaxHeight = 44, TextWrapping = TextWrapping.Wrap } });
-            status.Text = $"{matches.Count} 条记录";
+            status.Text = (recordingState?.Invoke() == false ? "记录已暂停 · " : "") + $"{matches.Count} 条记录";
             if (matches.Count == 0)
-                list.Items.Add(new ListBoxItem { IsEnabled = false, Content = history.Count == 0 ? "还没有记录，复制一段文字试试。" : "没有匹配的内容。" });
+                list.Items.Add(new ListBoxItem { IsEnabled = false, Content = history.Count == 0 ? recordingState?.Invoke() == false ? "记录已暂停。请先开启记录，再复制文字。" : "还没有记录，复制一段文字试试。" : "没有匹配的内容。" });
             copy.IsEnabled = false;
         }
         void CopySelection()
@@ -54,6 +59,9 @@ public sealed class ClipboardWindow : Window
         list.MouseDoubleClick += (_, _) => CopySelection();
         list.KeyDown += (_, e) => { if (e.Key == Key.Enter) { CopySelection(); e.Handled = true; } };
         copy.Click += (_, _) => CopySelection();
+        _refresh = Refresh;
+        Activated += (_, _) => Refresh();
+        Closed += (_, _) => _refresh = null;
         Refresh();
         Loaded += (_, _) => search.Focus();
     }

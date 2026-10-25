@@ -21,10 +21,13 @@ namespace DesktopPet.Builtin.ClipboardHistory;
 /// <item><description><b>绝不静默失效</b>：事件监听建不起来时（非 STA / 无 WPF / 注册失败）降级为长间隔轮询兜底并 Warn 留痕。</description></item>
 /// </list>
 /// </remarks>
-public sealed class ClipboardHistoryPlugin : PluginBase
+public sealed class ClipboardHistoryPlugin : PluginBase, ISettingsPage
 {
     public const string HistoryKey = "history";
-    private const int MaxItems = 20;
+    private ClipboardStore _store = null!;
+    private bool _loaded;
+    private IScheduleHandle? _expiryTimer;
+    public string Title => Id;
 
     /// <summary>降级轮询间隔（仅当事件监听不可用时启用）。比旧的 3000ms 更长——它只是兜底，不是主路径。</summary>
     private const int FallbackPollMs = 10_000;
@@ -69,7 +72,17 @@ public sealed class ClipboardHistoryPlugin : PluginBase
             OnInvoke = OpenHistory,
         });
 
-        // 以"载入时的剪贴板内容"为基线：避免把它当成一次新复制而重复入栈。
+        _store = new ClipboardStore(Capability.Storage);
+        _loaded = true;
+        UI.RegisterSettingsPage(this);
+        _expiryTimer = Capability.Scheduler.Every(60_000, () =>
+        { try { _store.Read(); } catch { /* retry on next read */ } });
+        if (_store.Recording) StartListening();
+    }
+
+    private void StartListening()
+    {
+        if (!_loaded || _messageWindow is not null || _fallbackPoller is not null) return;
         _last = Capability.System.ReadClipboard() ?? "";
 
         var eventDriven = false;
@@ -139,7 +152,7 @@ public sealed class ClipboardHistoryPlugin : PluginBase
     /// <summary>消息窗口过程：只处理 <c>WM_CLIPBOARDUPDATE</c>。运行在消息窗口所属线程（宿主 UI 线程）。</summary>
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_CLIPBOARDUPDATE)
+        if (msg == WM_CLIPBOARDUPDATE && _loaded && _store.Recording)
         {
             // 该回调在 UI 线程（STA）上执行 → Clipboard 读取天然合规（无需跨线程封送）。
             // ⚠️ 竞争：通知是在写方调完 SetClipboardData、但**可能尚未 CloseClipboard** 时投递的。
@@ -164,7 +177,7 @@ public sealed class ClipboardHistoryPlugin : PluginBase
             var dispatcher = System.Windows.Application.Current?.Dispatcher;
             if (dispatcher is null) return;
             dispatcher.BeginInvoke(
-                new Action(() => Record(Capability.System.ReadClipboard())),
+                new Action(() => { if (_loaded && _store.Recording) Record(Capability.System.ReadClipboard()); }),
                 System.Windows.Threading.DispatcherPriority.Background);
         }
         catch { /* 重试投递失败：不影响本次通知的主流程 */ }
@@ -180,26 +193,13 @@ public sealed class ClipboardHistoryPlugin : PluginBase
     /// </summary>
     private void Record(string? text)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        if (text == _last) return;   // 连续重复（含系统重复通知）：不记两遍
-        _last = text;
-
-        try
-        {
-            var list = Capability.Storage.Get<List<string>>(HistoryKey) ?? new List<string>();
-            list.RemoveAll(s => s == text);   // 去重：先摘掉旧位置（若存在）
-            list.Insert(0, text);             // 再插到最前（最新在最前）
-            if (list.Count > MaxItems) list.RemoveRange(MaxItems, list.Count - MaxItems);
-            Capability.Storage.Set(HistoryKey, list);
-        }
-        catch (Exception ex)
-        {
-            Capability.System.Log(PluginLogLevel.Warn, $"记录剪贴板历史失败：{ex.GetType().Name}: {ex.Message}");
-        }
+        if (!_loaded || !_store.Recording || text == _last) return;
+        try { _store.Record(text); _last = text ?? ""; }
+        catch (Exception ex) { Capability.System.Log(PluginLogLevel.Warn, $"保存剪贴板历史失败：{ex.GetType().Name}"); }
     }
 
     /// <summary>降级路径：长间隔轮询（仅在事件监听不可用时挂上）。</summary>
-    private void PollOnce() => Record(Capability.System.ReadClipboard());
+    private void PollOnce() { if (_loaded && _store.Recording) Record(Capability.System.ReadClipboard()); }
 
     /// <summary>成对清理消息窗口与系统级监听。顺序不可反：Window 销毁后 Handle 失效，注销会失败并留下系统级监听。</summary>
     private void StopClipboardListener()
@@ -215,14 +215,51 @@ public sealed class ClipboardHistoryPlugin : PluginBase
         _messageWindow = null;
     }
 
+    public object BuildContent() => BuildControls(() => { });
+
+    private System.Windows.FrameworkElement BuildControls(Action refreshed)
+    {
+        var panel = new System.Windows.Controls.StackPanel();
+        panel.Children.Add(DesktopPet.Sdk.PluginUi.Text("开启后会保存复制的文本，包括可能的密码和令牌。仅本地保存，最多 20 条。", sub: true));
+        var enabled = new System.Windows.Controls.CheckBox { Content = "记录剪贴板（关闭即暂停监听）", IsChecked = _store.Recording,
+            Margin = new System.Windows.Thickness(0, 12, 0, 12) };
+        enabled.Click += (_, _) =>
+        {
+            try
+            {
+                bool recording = enabled.IsChecked == true;
+                if (!recording) { StopClipboardListener(); _fallbackPoller?.Dispose(); _fallbackPoller = null; }
+                _store.SetRecording(recording);
+                if (recording) StartListening();
+                refreshed();
+            }
+            catch (Exception) { enabled.IsChecked = _store.Recording; System.Windows.MessageBox.Show("隐私设置无法保存，请检查数据目录权限。本次暂停仍生效，但重启可能读取原设置。"); }
+        };
+        panel.Children.Add(enabled);
+        var days = new System.Windows.Controls.ComboBox { ItemsSource = new[] { "1 天后清理", "7 天后清理", "30 天后清理", "永久保留" },
+            SelectedIndex = Array.IndexOf(new[] { 1, 7, 30, 0 }, _store.RetentionDays), Margin = new System.Windows.Thickness(0, 0, 0, 12) };
+        days.SelectionChanged += (_, _) => { if (days.SelectedIndex < 0) return; try { _store.SetRetention(new[] { 1, 7, 30, 0 }[days.SelectedIndex]); refreshed(); }
+            catch { System.Windows.MessageBox.Show("清理设置保存失败，请重试。"); } };
+        panel.Children.Add(days);
+        var clear = DesktopPet.Sdk.PluginUi.Button("清空全部历史");
+        clear.Click += (_, _) => { try { _store.Clear(); _last = ""; refreshed(); } catch { System.Windows.MessageBox.Show("清空失败，请重试。"); } };
+        panel.Children.Add(clear);
+        return panel;
+    }
+
     private void OpenHistory()
     {
-        var list = Capability.Storage.Get<List<string>>(HistoryKey) ?? new List<string>();
-        new ClipboardWindow(list, pick: t => Capability.System.WriteClipboard(t), system: Capability.System).Show();
+        ClipboardWindow? window = null;
+        var controls = BuildControls(() => window?.RefreshHistory());
+        List<string> Read() => _store.Read().Select(e => e.Text).ToList();
+        window = new ClipboardWindow(Read(), t => Capability.System.WriteClipboard(t), Capability.System, controls, Read, () => _store.Recording);
+        window.Show();
     }
 
     public override void OnUnload()
     {
+        _loaded = false;
+        _expiryTimer?.Dispose(); _expiryTimer = null;
         // 方法体不直接引用 HwndSource —— 把对它的引用隔离在 StopClipboardListener 内并用 try/catch 兜住，
         // 这样即使宿主环境根本没有 WPF（JIT/装配期异常），OnUnload 也不会因清理而抛。
         try { StopClipboardListener(); }

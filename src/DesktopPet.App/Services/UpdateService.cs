@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using DesktopPet.App.Core;
@@ -6,43 +7,27 @@ using DesktopPet.App.Core;
 namespace DesktopPet.App.Services;
 
 /// <summary>
-/// 自动更新服务（v0.1.77·阶段1）——检查 → 提示 → 打开下载页，**不做静默安装**（BongoCat 同款最安全形态）。
-///
-/// <para>数据源：Gitee OpenAPI v5，**两级**（v0.2.2）——
-/// <c>GET /repos/{owner}/{repo}/releases/latest</c>（有 Release 对象时信息最全：说明 + 下载链接）
-/// → 回落 <c>GET /repos/{owner}/{repo}/tags</c>（本项目发布流程只**打 tag**，取最大语义化版本）。
-/// 只支持**公开仓库**：私有仓库的 API 一律 404 `Not Found Project`，而客户端不该内置 token。</para>
-///
-/// <para>设计要点（借鉴 BongoCat 的 <c>update_release.c</c> / <c>update_version.c</c>）：</para>
-/// <list type="bullet">
-///   <item>网络 / 解析 / 404 等任何异常一律 <b>吞掉并返回 null</b>（+ Log.Warn）——用户没网也绝不能崩宿主。</item>
-///   <item>版本比较是纯函数（<see cref="IsNewer"/>），与网络解耦，可独立单测。</item>
-///   <item>解析失败 → 保守返回 null（宁可漏报，不可误报）。</item>
-/// </list>
+/// 优先检查公开 GitHub 正式 Release，失败时尝试 Gitee 镜像。
+/// 不把源码 tag 当作可下载安装的版本；不自动下载或安装。
 /// </summary>
 public static class UpdateService
 {
-    /// <summary>Gitee 仓库 owner。</summary>
+    /// <summary>两个远端的仓库 owner。</summary>
     private const string Owner = "gddgssdfg";
 
-    /// <summary>Gitee 仓库名。</summary>
+    /// <summary>两个远端的仓库名。</summary>
     private const string Repo = "neko";
 
     /// <summary>「最新发布」接口地址（公开只读，无需 token）。</summary>
     public const string LatestReleaseApi =
-        $"https://gitee.com/api/v5/repos/{Owner}/{Repo}/releases/latest";
+        $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
 
-    /// <summary>
-    /// 「列出所有 tag」接口（v0.2.2 新增；每页 100，够用）。
-    /// <para>为什么要它：本项目发布流程是**打 tag**，未必会创建 Gitee **Release 对象** ——
-    /// 而 <c>releases/latest</c> 返回的是 Release 对象，没有 Release 时直接 404，
-    /// 于是"检查更新"永远查不到东西（v0.2.2 实测确认过这个形态）。</para>
-    /// </summary>
+    /// <summary>仅保留标签解析兼容接口；安装更新检查不使用源码标签。</summary>
     public const string TagsApi =
-        $"https://gitee.com/api/v5/repos/{Owner}/{Repo}/tags?per_page=100";
+        $"https://api.github.com/repos/{Owner}/{Repo}/tags?per_page=100";
 
     /// <summary>仓库主页（检查失败时「手动查看」用；永远可达，不依赖是否有 Release / tag）。</summary>
-    public const string RepoUrl = $"https://gitee.com/{Owner}/{Repo}";
+    public const string RepoUrl = $"https://github.com/{Owner}/{Repo}";
 
     /// <summary>更新说明截断长度（release body 可能很长，避免撑爆提示框）。</summary>
     private const int NotesMaxLength = 2000;
@@ -74,23 +59,42 @@ public static class UpdateService
         }
     }
 
-    /// <summary>
-    /// 拉取「最新版本」。**两级数据源**（v0.2.2）：
-    /// <list type="number">
-    ///   <item><see cref="LatestReleaseApi"/> —— 有 Release 对象时信息最全（更新说明 + 下载链接）；</item>
-    ///   <item>回落 <see cref="TagsApi"/> —— 只有 tag（本项目当前形态）时，取 tag 列表中的**最大语义化版本**。</item>
-    /// </list>
-    /// 两级都失败 → 返回 null（**绝不抛**）。
-    /// </summary>
+    /// <summary>兼容入口：正式发布信息；失败、取消、没有发布时为 null。</summary>
     public static async Task<ReleaseInfo?> FetchLatestAsync(CancellationToken ct)
-    {
-        // ① Releases 优先。**静默**：没有 Release 是常态（我们只打 tag），不该每天刷一条 404 警告。
-        var release = await FetchAsync(LatestReleaseApi, ct, quietOnFailure: true).ConfigureAwait(false);
-        if (release is not null) return release;
+        => (await CheckLatestAsync(ct).ConfigureAwait(false)).Release;
 
-        // ② 回落到 tag 列表
-        var json = await GetJsonAsync(TagsApi, ct).ConfigureAwait(false);
-        return json is null ? null : ParseLatestTags(json);
+    public static async Task<UpdateCheckResult> CheckLatestAsync(CancellationToken ct, HttpClient? client = null)
+    {
+        client ??= Http;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        bool failed = false;
+        foreach (var url in new[] { LatestReleaseApi, $"https://gitee.com/api/v5/repos/{Owner}/{Repo}/releases/latest" })
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("Neko-Updater/1.0");
+                using var response = await client.SendAsync(request, deadline.Token).ConfigureAwait(false);
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound) continue;
+                if (!response.IsSuccessStatusCode) { failed = true; continue; }
+                var json = await response.Content.ReadAsStringAsync(deadline.Token).ConfigureAwait(false);
+                using var document = JsonDocument.Parse(json);
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) { failed = true; continue; }
+                if ((root.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) ||
+                    (root.TryGetProperty("prerelease", out var pre) && pre.ValueKind == JsonValueKind.True)) continue;
+                var release = ParseLatest(json, url.Contains("api.github.com", StringComparison.Ordinal) ? RepoUrl : $"https://gitee.com/{Owner}/{Repo}");
+                if (release is not null && TryParseVersion(release.Version, out _, out var isPre) && !isPre)
+                    return new(UpdateCheckStatus.Success, release);
+                failed = true;
+            }
+            catch (OperationCanceledException)
+            { return new(ct.IsCancellationRequested ? UpdateCheckStatus.Cancelled : UpdateCheckStatus.Failed); }
+            catch (Exception ex) when (ex is HttpRequestException or JsonException or IOException)
+            { failed = true; }
+        }
+        return new(failed ? UpdateCheckStatus.Failed : UpdateCheckStatus.NoRelease);
     }
 
     /// <summary>
@@ -140,7 +144,7 @@ public static class UpdateService
     /// <c>tag_name</c> / <c>body</c> / <c>html_url</c> / <c>assets[0].browser_download_url</c>。
     /// <para>字段缺失 / 非法 JSON / 非对象 → 返回 null。</para>
     /// </summary>
-    public static ReleaseInfo? ParseLatest(string? json)
+    public static ReleaseInfo? ParseLatest(string? json, string? repositoryUrl = null)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try
@@ -155,8 +159,9 @@ public static class UpdateService
             // Gitee 的 releases/latest 响应**不含 html_url**（实测 schema：id/tag_name/name/body/assets...），
             // 故缺失时按仓库坐标自行拼「发布页」地址（点「打开下载页」用）。
             var releaseUrl = GetString(root, "html_url");
-            if (string.IsNullOrWhiteSpace(releaseUrl))
-                releaseUrl = $"https://gitee.com/{Owner}/{Repo}/releases/tag/{tag}";
+            if (!Uri.TryCreate(releaseUrl, UriKind.Absolute, out var page) || page.Scheme != "https" ||
+                page.Host is not ("github.com" or "gitee.com"))
+                releaseUrl = $"{repositoryUrl ?? RepoUrl}/releases/tag/{Uri.EscapeDataString(tag)}";
 
             var notes = GetString(root, "body") ?? "";
             if (notes.Length > NotesMaxLength) notes = notes[..NotesMaxLength] + "…";

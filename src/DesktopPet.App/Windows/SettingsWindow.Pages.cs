@@ -105,6 +105,8 @@ public sealed partial class SettingsWindow : Window
             // 同步「缩放倍率」卡片显示，避免设置页显示值与真实值不一致。
             refreshScaleCard();
         }));
+        stack.Children.Add(BuildButtonCard("导入皮肤", "先预览并检查帧尺寸与动作，再安装；不会覆盖已有皮肤。", "选择皮肤目录", () => ImportExtension(false)));
+        stack.Children.Add(BuildButtonCard("恢复默认外观", "切回内置像素橘猫，不删除自定义皮肤。", "恢复默认", () => { _pet.SetSkin(SkinRegistry.DefaultSkinId); Save(); RebuildSection("pet"); }));
         stack.Children.Add(BuildButtonCard(
             "刷新皮肤", "新增或替换素材后重新扫描，并重新加载当前皮肤，无需重启。",
             "刷新皮肤", () => { _pet.SetSkin(_config.Skin, forceReload: true); RebuildSection("pet"); }));
@@ -392,7 +394,9 @@ public sealed partial class SettingsWindow : Window
         folder.Click += (_,_) => { try { System.IO.Directory.CreateDirectory(Paths.Plugins); Process.Start(new ProcessStartInfo { FileName = Paths.Plugins, UseShellExecute = true }); }
             catch (Exception ex) { MessageBox.Show("打开插件目录失败：" + ex.Message); } };
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        actions.Children.Add(refresh); actions.Children.Add(folder); DockPanel.SetDock(actions, Dock.Right);
+        var import = DesktopPet.Sdk.PluginUi.Button("导入插件");
+        import.Margin = new Thickness(8,0,0,0); import.Click += (_,_) => ImportExtension(true);
+        actions.Children.Add(refresh); actions.Children.Add(folder); actions.Children.Add(import); DockPanel.SetDock(actions, Dock.Right);
         toolbar.Children.Add(actions);
         var search = DesktopPet.Sdk.PluginUi.Input();
         search.ToolTip = "搜索插件名称、说明或作者";
@@ -482,6 +486,10 @@ public sealed partial class SettingsWindow : Window
 
             sp.Children.Add(new TextBlock { Text = enabled ? "● 运行中" : _pet.PluginHost.IsEnabled(p.Manifest.Id) ? "○ 待加载 / 加载失败" : "○ 已停用", Foreground = new SolidColorBrush(AccentText), FontSize = 11, Margin = new Thickness(0,6,0,0) });
 
+            sp.Children.Add(new TextBlock { Text = "声明能力：" + ExtensionInstaller.PermissionSummary(p.Manifest),
+                TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(TextSub), FontSize = 11, Margin = new Thickness(0,6,0,0) });
+            sp.Children.Add(new TextBlock { Text = "插件在本机以当前用户权限执行，请只启用可信来源。",
+                TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(TextSub), FontSize = 11 });
             // 作者
             sp.Children.Add(new TextBlock
             {
