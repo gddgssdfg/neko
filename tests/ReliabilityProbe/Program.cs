@@ -12,10 +12,13 @@ using DesktopPet.App.Windows;
 internal static partial class Program
 {
     private static int _failed;
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--dpi96")) SetThreadDpiAwarenessContext(new IntPtr(-1));
         var root = Path.Combine(Path.GetTempPath(), "neko-reliability-" + Guid.NewGuid().ToString("N"));
         Environment.SetEnvironmentVariable("NEKO_DATA_DIR", root);
         Paths.EnsureCreated();

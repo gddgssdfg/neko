@@ -62,9 +62,10 @@ internal static partial class Program
                 double keyboardWidth = mirror.Width, catWidth = pet.Width;
                 var keyboard = UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "键盘大小");
                 keyboard.Value = 1.4;
-                Require(Math.Abs(mirror.Width-keyboardWidth*1.4) < 0.1 && pet.Width == catWidth, "keyboard setting resized the cat");
+                double nativePixel = 1 / VisualTreeHelper.GetDpi(mirror).DpiScaleX;
+                Require(Math.Abs(mirror.Width-keyboardWidth*1.4) <= nativePixel + .01 && pet.Width == catWidth && pet.Config.Scale == 3.2, $"keyboard or cat size mismatch: keyboard {keyboardWidth} -> {mirror.Width}, expected {keyboardWidth*1.4}; cat {catWidth} -> {pet.Width}; DPI {VisualTreeHelper.GetDpi(pet).DpiScaleX}");
                 var cat = UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "猫咪大小"); cat.Value = 4;
-                Require(pet.Width == 128 && Math.Abs(mirror.Width-keyboardWidth*1.4) < 0.1, "cat setting resized the keyboard");
+                Require(pet.Width == 128 && Math.Abs(mirror.Width-keyboardWidth*1.4) <= nativePixel + .01 && pet.Config.KeyboardScale == 1.4, "cat setting resized the keyboard");
                 settings.ShowSection("input");
                 Require(UiChildren<Slider>(settings).Single(s => AutomationProperties.GetName(s) == "键盘大小").Value == 1.4, "the other settings page retained a stale size");
                 var loaded = ConfigManager.Load(Paths.ConfigFile);
