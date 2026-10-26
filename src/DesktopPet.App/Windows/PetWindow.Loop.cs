@@ -21,7 +21,8 @@ public sealed partial class PetWindow : Window
         // v0.1.58(任务5)：真实 elapsed（单调 ms 差）。delta 是本次 tick 到上次 tick 的真实墙钟间隔，
         // 下游所有计时器按 delta 累进/累减——tick 频率抖动不再放大或缩短动画时长。
         var nowMs = Environment.TickCount64;
-        var deltaMs = Math.Max(0L, nowMs - _lastTickMs);
+        if (MotionSuspended || IsPaused) { _lastTickMs = nowMs; UpdateLoopFrequency(); return; }
+        var deltaMs = Math.Clamp(nowMs - _lastTickMs, 0L, 250L);
         _lastTickMs = nowMs;
         var delta = TimeSpan.FromMilliseconds(deltaMs);
 
@@ -124,7 +125,9 @@ public sealed partial class PetWindow : Window
     /// <summary>v0.1.57：根据 IsBusyActiveWindow 调整主循环频率。仅在区间实际变化时改写 Interval（避免反复重启定时器）。</summary>
     private void UpdateLoopFrequency()
     {
-        var desired = IsBusyActiveWindow() ? LoopIntervalMs : IdleLoopIntervalMs;
+        var desired = MotionSuspended || IsPaused ? 1000 :
+            _config.BatterySaverEnabled && _onBattery ? 150 :
+            IsBusyActiveWindow() ? LoopIntervalMs : IdleLoopIntervalMs;
         var current = (int)_loopTimer.Interval.TotalMilliseconds;
         if (desired != current)
             _loopTimer.Interval = TimeSpan.FromMilliseconds(desired);
@@ -154,6 +157,7 @@ public sealed partial class PetWindow : Window
     /// 兼顾"input → immediate response 不延迟"约束。</summary>
     private void RequestActiveLoop()
     {
+        if (MotionSuspended || IsPaused || (_config.BatterySaverEnabled && _onBattery)) return;
         if ((int)_loopTimer.Interval.TotalMilliseconds != LoopIntervalMs)
             _loopTimer.Interval = TimeSpan.FromMilliseconds(LoopIntervalMs);
         try { OnLoopTick(this, EventArgs.Empty); }

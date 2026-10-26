@@ -20,6 +20,7 @@ public sealed partial class SettingsWindow : Window
     {
         var stack = new StackPanel();
         stack.Children.Add(MakeSectionHeader("常规"));   // v0.1.38
+        if (_config.SafeMode) stack.Children.Add(MakeSectionHeader("安全模式：插件暂不加载，默认皮肤用于排查"));
         stack.Children.Add(BuildToggleCard(
             "开机自启动 Neko",
             "登录 Windows 后自动运行",
@@ -59,6 +60,7 @@ public sealed partial class SettingsWindow : Window
                 // v0.1.51：语言即时生效——重建当前栏（页面标题/卡片文案立即变英文；sidebar 下次打开变）
                 Dispatcher.BeginInvoke(new Action(RefreshAppearance));
             }));
+        AddRecoveryCards(stack);
         return WrapPage(stack, T("通用", "General"));
     }
 

@@ -30,7 +30,7 @@ public sealed partial class PetWindow : Window
             RestoreFromGame();
         }
         if (enabled && !_gameTimer.IsEnabled) _gameTimer.Start();
-        if (!enabled) _gameTimer.Stop();
+        // The same timer also samples power state; keep it running.
         ConfigManager.Save(Paths.ConfigFile, _config);
     }
 
@@ -49,9 +49,10 @@ public sealed partial class PetWindow : Window
             else
             {
                 _hiddenByGame = IsVisible; // 老板键先藏了就不代管，退出全屏不抢着显示
-                if (_hiddenByGame) { CloseRadialMenu(); Hide(); }
+                if (_hiddenByGame) { StopDesktopMotion(); CloseRadialMenu(); Hide(); }
             }
             _mirrorWindow?.Hide(); // v0.1.28：游戏模式联动——映射窗也藏（游戏时它纯属干扰）
+            _bubble?.Dismiss();
             _hearts?.Dismiss();    // v0.1.59(⑧)：游戏模式也收起爱心浮层
         }
         else if (!fs && _gameFullscreenActive)
@@ -70,11 +71,11 @@ public sealed partial class PetWindow : Window
         }
         else
         {
-            if (_hiddenByGame) Show();
+            if (_hiddenByGame) { _lastTickMs = Environment.TickCount64; Show(); }
             _hiddenByGame = false;
         }
         // v0.1.28：退出全屏恢复映射窗（猫可见且功能开着才还）
-        if (IsVisible && _config.KeyboardMirrorEnabled) _mirrorWindow?.Show();
+        UpdateMirrorVisibility();
     }
 
     // 注：ShellWindowClasses（static readonly 字段）按「拆分不移动字段」约束仍声明在 PetWindow.cs 主文件。

@@ -46,11 +46,11 @@ public sealed class TrayManager : IDisposable
         {
             if (_tray.Dispatcher.CheckAccess())
             {
-                _tray.ShowBalloonTip(title, body, BalloonIcon.Info);
+                if (_petWindow.TryBeginNotification()) _tray.ShowBalloonTip(title, body, BalloonIcon.Info);
             }
             else
             {
-                _tray.Dispatcher.Invoke(() => _tray.ShowBalloonTip(title, body, BalloonIcon.Info));
+                _tray.Dispatcher.Invoke(() => { if (_petWindow.TryBeginNotification()) _tray.ShowBalloonTip(title, body, BalloonIcon.Info); });
             }
         }
         catch (Exception ex)
@@ -98,6 +98,11 @@ public sealed class TrayManager : IDisposable
         var togglePet = new System.Windows.Controls.MenuItem { Header = "显示/隐藏猫咪" };
         togglePet.Click += (_, _) => _petWindow.TogglePetVisible();
         menu.Items.Add(togglePet);
+        var find = new System.Windows.Controls.MenuItem { Header = "找回猫咪" };
+        find.Click += (_, _) => _petWindow.FindCat(); menu.Items.Add(find);
+        var quiet = new System.Windows.Controls.MenuItem { Header = "安静模式", IsCheckable = true, IsChecked = _petWindow.Config.QuietMode };
+        quiet.Click += (_, _) => _petWindow.SetQuietMode(quiet.IsChecked); menu.Items.Add(quiet);
+        menu.Opened += (_, _) => quiet.IsChecked = _petWindow.Config.QuietMode;
 
         // 插件注册的托盘菜单项（v0.1.30 折叠进"插件…"子菜单，避免主菜单臃肿）
         var pluginItems = _petWindow.UIApi.AllTrayItems;

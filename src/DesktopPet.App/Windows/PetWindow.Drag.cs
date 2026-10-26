@@ -109,6 +109,7 @@ public sealed partial class PetWindow : Window
     /// 同时身体呼吸晃动 + 眼球下移看键盘。KeyboardReactionsEnabled 控制总开关（关=全部不响应）。v0.1.57：立即唤醒主循环（InputResponse）。</summary>
     private void OnInputReaction()
     {
+        if (MotionSuspended || IsPaused) return;
         if (!_config.KeyboardReactionsEnabled) return;
         try
         {

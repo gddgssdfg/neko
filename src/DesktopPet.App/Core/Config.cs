@@ -7,6 +7,9 @@ namespace DesktopPet.App.Core;
 /// <summary>应用配置（数据根下的 config.json；见 <see cref="Paths.Data"/>）</summary>
 public sealed class AppConfig
 {
+    public bool QuietMode { get; set; }
+    public bool BatterySaverEnabled { get; set; } = true;
+    [JsonIgnore] public bool SafeMode { get; set; }
     public bool StartWithWindows { get; set; } = false;
     public List<string> DisabledPlugins { get; set; } = [];
     public double Scale { get; set; } = 3.2; // 显示倍率（32px 精灵 ×3.2 ≈ 102px；灯灯要求缩小 20%）
@@ -110,6 +113,12 @@ public sealed class HotKeyConfig
 
 public static class ConfigManager
 {
+    public static AppConfig Parse(string json)
+    {
+        var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOpts) ?? throw new JsonException("配置必须为对象。");
+        Normalize(config);
+        return config;
+    }
     private static readonly object FileGate = new();
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

@@ -21,6 +21,9 @@ public sealed partial class PetWindow : Window
     {
         if (IsPaused == paused) return;
         IsPaused = paused;
+        _lastTickMs = Environment.TickCount64;
+        if (paused) StopDesktopMotion();
+        UpdateLoopFrequency();
         if (paused)
         {
             _renderer.SetMood(DesktopPet.Core.PetMood.Sleepy);
@@ -37,6 +40,7 @@ public sealed partial class PetWindow : Window
     /// <summary>选择皮肤；forceReload 允许作者替换素材后刷新当前皮肤。</summary>
     public void SetSkin(string skin, bool forceReload)
     {
+        if (_config.SafeMode) return;
         if (!SkinRegistry.Exists(Paths.Assets, skin)) skin = SkinRegistry.DefaultSkinId;
 
         // v0.1.82：把「素材是否需要重载」与「是否要套用推荐缩放」解耦。
@@ -176,8 +180,7 @@ public sealed partial class PetWindow : Window
     {
         // v0.1.59(P3)：工作区缓存——猫未移动（Left/Top 与上次相同）时直接复用上次结果，
         // 省掉 SyncMirrorToCat/SyncFollowers 每帧的 GetMonitorInfo Win32 调用。
-        // 失效条件：猫位移（Left/Top 变化）必然命中新快照并重算；显示器分辨率变化不处理，
-        // 与原逻辑行为等价（原逻辑本身也不响应分辨率变化）。
+        // 位移命中新快照；显示器、DPI、工作区变化及唤醒由 Residency 清除此缓存。
         if (_cachedWorkArea is { } cached && Left == _lastWorkAreaLeft && Top == _lastWorkAreaTop)
             return cached;
         _lastWorkAreaLeft = Left;

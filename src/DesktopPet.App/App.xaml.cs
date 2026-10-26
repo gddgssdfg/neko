@@ -16,6 +16,23 @@ public partial class App : Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        // A settings-initiated restart waits for plugin/data flushes in the old process.
+        var waitArg = e.Args.FirstOrDefault(a => a.StartsWith("--wait-for-process=", StringComparison.Ordinal));
+        if (waitArg is not null && int.TryParse(waitArg.Split('=', 2)[1], out var previousId) && previousId != Environment.ProcessId)
+        {
+            try
+            {
+                using var previous = System.Diagnostics.Process.GetProcessById(previousId);
+                if (!previous.WaitForExit(10000))
+                {
+                    MessageBox.Show("旧进程尚未退出，请关闭后重新启动 Neko。", "重启未完成");
+                    Shutdown(); return;
+                }
+            }
+            catch (ArgumentException) { /* Already exited. */ }
+            catch (Exception ex) { MessageBox.Show("无法等待旧进程退出：" + ex.Message, "重启未完成"); Shutdown(); return; }
+        }
+
         // 1. 初始化目录（v0.1.98：程序根与**数据根**分离，数据根默认在 %AppData%\Neko）
         //    先做一次性迁移：把旧版「程序根/data」里的用户数据（config + 插件数据，含好感度）
         //    复制到新数据根。必须排在 EnsureCreated / ConfigManager.Load 之前——否则会先建出空目录、
@@ -23,12 +40,23 @@ public partial class App : Application
         var dataMigration = Paths.MigrateLegacyData();
         Paths.EnsureCreated();
 
+        bool safeMode = e.Args.Contains("--safe-mode", StringComparer.OrdinalIgnoreCase);
+        string? importFailure = null;
+        if (!safeMode)
+        {
+            try { SettingsBackup.ApplyPending(SettingsBackup.PendingPath, Paths.ConfigFile); }
+            catch (Exception ex) { importFailure = ex.Message; }
+        }
+
         // 加载配置（先读配置拿到 LogLevel，日志才能按配置过滤）
         var config = ConfigManager.Load(Paths.ConfigFile);
+        config.SafeMode = safeMode;
         DesktopPet.Sdk.NekoDesign.LightTheme = config.Theme == "light";
 
         // v0.1.61：初始化文件日志（级别来自配置；默认 warn 及以上落盘 <数据根>/logs）
         Log.Initialize(config.LogLevel);
+        if (importFailure is not null)
+            MessageBox.Show("设置导入未完成：" + importFailure + "\n待导入文件仍保留，可在设置中取消待导入。", "Neko", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         // v0.1.98：「数据到底在哪」必须事后可查——迁移结果用 Warn（默认落盘），位置用 Info
         if (dataMigration is not null)
@@ -64,7 +92,7 @@ public partial class App : Application
         // CatName 或 OwnerTitle 任一为空视为首次启动；引导窗口置顶显示在屏幕中央
         // v0.1.45：开发测试阶段用 `Neko.exe --dev` 跳过引导（灯灯：别每次测试都要输名字），
         // ChatScheduler 内部有 "主人"/"Neko" 兜底，跳过引导不影响功能
-        bool skipOnboarding = e.Args.Any(a => a is "--dev" or "--skip-onboarding");
+        bool skipOnboarding = safeMode || e.Args.Any(a => a is "--dev" or "--skip-onboarding");
         if (!skipOnboarding && (string.IsNullOrWhiteSpace(config.CatName) || string.IsNullOrWhiteSpace(config.OwnerTitle)))
         {
             var onboarding = new FirstRunWindow(config);
@@ -80,8 +108,8 @@ public partial class App : Application
         // 同步自启状态：用户可能直接改了 config.json，注册表也以 config 为准
         try
         {
-            if (config.StartWithWindows && !Autostart.IsEnabled()) Autostart.SetEnabled(true);
-            if (!config.StartWithWindows && Autostart.IsEnabled()) Autostart.SetEnabled(false);
+            if (!safeMode && config.StartWithWindows && !Autostart.IsEnabled()) Autostart.SetEnabled(true);
+            if (!safeMode && !config.StartWithWindows && Autostart.IsEnabled()) Autostart.SetEnabled(false);
         }
         catch (Exception ex)
         {
@@ -141,7 +169,7 @@ public partial class App : Application
     /// </summary>
     private void ScheduleDailyUpdateCheck(AppConfig config)
     {
-        if (!config.UpdateCheckEnabled) return;
+        if (config.SafeMode || !config.UpdateCheckEnabled) return;
 
         var today = DateTime.Now.ToString("yyyy-MM-dd");
         if (string.Equals(config.LastUpdateCheckDay, today, StringComparison.Ordinal)) return;

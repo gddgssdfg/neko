@@ -71,7 +71,7 @@ public sealed partial class PetWindow : Window
     /// <summary>v0.1.40：插件 Say → 像素云朵气泡（所有插件通知统一走这里；开关关闭则静默）</summary>
     private void ShowBubble(string text, int durationMs)
     {
-        if (!_config.ChatEnabled || _radialMenu is { IsVisible: true }) return;
+        if (!_config.ChatEnabled || _radialMenu is { IsVisible: true } || !TryBeginNotification()) return;
         _bubble ??= new BubbleWindow();
         _bubble.ShowBubble(text, durationMs);
         SyncBubblePosition();   // 立即定位（不等主循环下一帧）

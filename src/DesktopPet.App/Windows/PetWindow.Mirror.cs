@@ -27,6 +27,7 @@ public sealed partial class PetWindow : Window
     /// <summary>显示映射窗（懒创建）。v0.1.39：创建后立刻摆到猫下方，避免开局在旧位置闪一帧再跳过去。</summary>
     private void ShowMirror()
     {
+        if (!IsVisible || _sessionLocked || _systemSuspended || _gameFullscreenActive) return;
         if (_mirrorHiddenForMenu && _radialMenu is { IsVisible: true }) return;
         if (_mirrorWindow is null)
         {
@@ -156,7 +157,7 @@ public sealed partial class PetWindow : Window
     private void UpdateMirrorVisibility()
     {
         if (_mirrorWindow is null) return;
-        if (IsVisible && _config.KeyboardMirrorEnabled) _mirrorWindow.Show();
+        if (IsVisible && !_sessionLocked && !_systemSuspended && !_gameFullscreenActive && _config.KeyboardMirrorEnabled) ShowMirror();
         else _mirrorWindow.Hide();
     }
 

@@ -35,6 +35,7 @@ public sealed partial class PetWindow : Window
     /// <summary>打开径向菜单（读取所有插件注册的槽位）</summary>
     public void OpenRadialMenu()
     {
+        if (MotionSuspended || _gameFullscreenActive) return;
         // 单例复用 + Hide() 关闭：反复 Show/Hide 不会触发"窗口关闭期间 Show"异常
         var menu = EnsureRadialMenu();
         _bubble?.Dismiss();
@@ -147,6 +148,7 @@ public sealed partial class PetWindow : Window
     /// </summary>
     private void PruneRadialMenuConfig()
     {
+        if (_config.SafeMode) return; // Missing registrations are intentional in a recovery session.
         try
         {
             var before = _config.RadialMenu.Order.Count + _config.RadialMenu.Visible.Count;

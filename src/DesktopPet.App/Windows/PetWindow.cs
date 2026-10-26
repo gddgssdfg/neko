@@ -176,9 +176,9 @@ public sealed partial class PetWindow : Window
         InitializeWindow();
 
         // 素材（v0.1.74：扫 neko-assets/<skinId>/skin.json 数据驱动加载；未注册的皮肤回退默认 pixel）
-        if (!SkinRegistry.Exists(Paths.Assets, _config.Skin)) { _config.Skin = SkinRegistry.DefaultSkinId; }
-        var atlas = SpriteAtlas.LoadSkin(Paths.Assets, _config.Skin);
-        _config.Skin = atlas.Skin;
+        if (!config.SafeMode && !SkinRegistry.Exists(Paths.Assets, _config.Skin)) { _config.Skin = SkinRegistry.DefaultSkinId; }
+        var atlas = SpriteAtlas.LoadSkin(Paths.Assets, config.SafeMode ? SkinRegistry.DefaultSkinId : _config.Skin);
+        if (!config.SafeMode) _config.Skin = atlas.Skin;
 
         // 事件总线（宿主广播，插件订阅）
         _eventBus = new EventBusImpl();
@@ -220,7 +220,7 @@ public sealed partial class PetWindow : Window
             petApi: petApi,
             uiApi: _uiApi,
             capability: cap,
-            deferredIds: DeferredPluginIds);
+            deferredIds: DeferredPluginIds, safeMode: config.SafeMode);
 
         // 主循环：低频推进状态机 + 帧动画
         _loopTimer = new System.Windows.Threading.DispatcherTimer();
@@ -252,8 +252,8 @@ public sealed partial class PetWindow : Window
 
         // 游戏模式轮询（BongoCat 借鉴）：每秒检测前台是否全屏应用
         _gameTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _gameTimer.Tick += (_, _) => CheckGameMode();
-        if (_config.GameModeEnabled) _gameTimer.Start();
+        _gameTimer.Tick += (_, _) => ResidencyPulse();
+        _gameTimer.Start();
         // 键鼠反应（BongoCat 键盘映射借鉴，v0.1.25 补齐鼠标）：
         // 打字/点击任意处时猫短暂瞪眼（300ms 节流由 GlobalInput 内部做）
         // 设置窗口可关闭（KeyboardReactionsEnabled=false）
@@ -325,6 +325,7 @@ public sealed partial class PetWindow : Window
         base.OnSourceInitialized(e);
         // v0.1.50：Alt+Tab 不显示（BongoCat 同理——非普通窗口）
         WindowEx.HideFromAltTab(this);
+        InitializeResidency();
         var work = GetWorkArea();
         Left = Math.Max(work.X, Math.Min(Left, work.X + work.Width - Width));
         Top = Math.Max(work.Y, Math.Min(Top, work.Y + work.Height - Height));
@@ -372,10 +373,15 @@ public sealed partial class PetWindow : Window
         if (IsVisible)
         {
             CloseRadialMenu();
+            StopDesktopMotion();
+            _bubble?.Dismiss();
+            _hearts?.Dismiss();
             Hide();
         }
         else
         {
+            if (_sessionLocked || _systemSuspended || _hiddenByGame) return;
+            _lastTickMs = Environment.TickCount64;
             Show();
             Activate();
         }
@@ -424,6 +430,7 @@ public sealed partial class PetWindow : Window
     {
         if (_isDisposed) return;
         _isDisposed = true;
+        DisposeResidency();
         _loopTimer.Stop();
         _gameTimer.Stop();
         _fallTimer?.Stop();

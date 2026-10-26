@@ -6,7 +6,7 @@
 > | 项 | 值 |
 > |---|---|
 > | 运行环境 | Windows 10（1809+）+ .NET 8 + VS 2022 |
-> | 分发范围 | 仅自用与朋友圈（受控分发，非开放创意工坊） |
+> | 分发范围 | GitHub 公开源码；Gitee 私有镜像；第三方扩展仅安装可信来源 |
 > | 现状版本 | 以 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>` 为准（本文不硬编码） |
 > | 现行细节权威源 | 代码 / [`README.md`](../README.md) / [`CHANGELOG.md`](../CHANGELOG.md) / [`dev-log.md`](dev-log.md) / [`plugin-development-guide.md`](plugin-development-guide.md) |
 >
@@ -37,7 +37,7 @@
 - **技术栈**：C# + WPF + .NET 8（`net8.0-windows`）。
 - **项目分层（4+1）**：`DesktopPet.Core`（契约）/ `DesktopPet.Runtime`（插件运行时）/ `DesktopPet.Sdk`（插件基类）/ `DesktopPet.App`（WPF 宿主 → `Neko.exe`）；插件源码在 `builtins/`，运行时产物在 `plugins/<id>/`。
 - **两个目录（v0.1.98 起，别再混）**：**程序根**（exe 所在目录）= 只读随包内容（`plugins/`、`neko-assets/`、`builtins.lock.json`）；**数据根** = **唯一可写**的用户数据位置，默认 **`%AppData%\Neko`**（程序根存在 `portable.flag` 时改用程序根 `data/`；环境变量 `NEKO_DATA_DIR` 可覆盖）。旧版 exe 同级 `data/` 的内容会在首次运行时被复制过来。实现与迁移见 `src/DesktopPet.App/Core/Paths.cs`。
-- **当前版本能力**：9 个宠物状态动画、18 个内置插件（dogfooding）、径向菜单（每页 8 槽 + 分页 + 顺序/显隐/上限可配）、键鼠映射窗、气泡对话、皮肤系统（`neko-assets/<id>/skin.json` 零改码发现）、自动更新（Gitee 检查→提示→打开下载页）。
+- **当前版本能力**：9 个宠物状态动画、18 个内置插件（dogfooding）、径向菜单（每页 8 槽 + 分页 + 顺序/显隐/上限可配）、键鼠映射窗、气泡对话、皮肤系统（`neko-assets/<id>/skin.json` 零改码发现）、更新检查（GitHub 优先、Gitee 回退→提示→打开下载页）。
 - **完整目录结构**：见 [`README.md`](../README.md)。
 
 ---
@@ -55,11 +55,11 @@
 - **环境要求低**：不引入额外 SDK / 复杂工具链
 - **仅桌面端**：无需考虑跨平台
 
-### 2.3 三条不可妥协的工程原则（依然适用）
+### 2.3 工程原则与当前边界
 
 1. **Dogfooding（吃自己狗粮）**：所有内置功能必须以插件形式实现，与第三方插件走**完全相同**的加载路径。某个内置功能做不成插件 = API 有洞，补 API 绝不开后门。
 2. **Core API 版本化从第一天开始**：插件 manifest 声明 `ApiVersion`，宿主做兼容层。**公开发布后只增不改**。
-3. **插件崩溃与宿主隔离**：watchdog + 超时熔断是必做项。任一插件抛异常或死循环，宿主必须存活并提示「插件 X 已崩溃」。
+3. **插件故障隔离是演进目标**：当前 DLL 插件在宿主进程执行，异常处理与 ALC 卸载不能保证从死循环、原生崩溃中恢复，也不构成安全沙箱。安全模式可在重启后跳过插件；进程隔离和受限通信列入后续路线，见 `roadmap.md`。
 
 ---
 
@@ -76,7 +76,9 @@
 | 内存 | 工作集 50–80 MB（立项目标）；现状 ~177 MB（自包含形态，见 §7） |
 | 启动 | 冷启动 < 500 ms（立项目标）；现状 ~668 ms |
 
-### 3.2 与原 Tauri 方案的差异（决策翻转记录）
+### 3.2 与原 Tauri 方案的差异（历史决策，非公开分发安全承诺）
+
+下列取舍基于早期自用假设。公开分发后的当前执行边界以根目录 SECURITY.md 为准。
 
 最初评估 Tauri 2（看中 WASM 沙箱），确认分发范围只是「自用 + 朋友」后，**沙箱的决定性理由消失** → 改用 C# + WPF。
 

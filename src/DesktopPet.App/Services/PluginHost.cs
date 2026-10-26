@@ -12,6 +12,7 @@ namespace DesktopPet.App.Services;
 public sealed class PluginHost : IDisposable
 {
     private readonly PluginLoader _loader;
+    public bool SafeMode { get; }
     private readonly HashSet<string> _disabled = new(StringComparer.OrdinalIgnoreCase);   // v0.1.46：改 HashSet（之前 IReadOnlySet）——运行时增删支持启用/禁用
     private readonly IReadOnlySet<string> _deferredIds;   // v0.1.34：延迟加载清单（联网/重资源）
     private readonly Version _hostVersion;
@@ -86,9 +87,10 @@ public sealed class PluginHost : IDisposable
         IPetApi petApi,
         UIApiImpl uiApi,                // 收紧类型：需要 PushScope
         ICapabilityApi capability,
-        IReadOnlySet<string>? deferredIds = null)  // v0.1.34：可选；null = 全部立即加载（向后兼容）
+        IReadOnlySet<string>? deferredIds = null, bool safeMode = false)  // v0.1.34：可选；null = 全部立即加载（向后兼容）
     {
         // v0.1.82：接线内置插件信任清单（见 LoadBuiltinTrust 注释）。
+        SafeMode = safeMode;
         _loader = new PluginLoader(pluginsRoot, LoadBuiltinTrust());
         _deferredIds = deferredIds ?? (IReadOnlySet<string>)new HashSet<string>(0);
         _hostVersion = hostVersion;
@@ -103,6 +105,7 @@ public sealed class PluginHost : IDisposable
     /// <summary>向后兼容：一次加载全部（LoaderTest 用）。生产代码改用 LoadCore + LoadDeferred</summary>
     public void LoadAll()
     {
+        if (SafeMode) return;
         ObjectDisposedException.ThrowIf(_disposed, this);
         var loaded = _loader.LoadAll(ExcludedIds(), out var errors);
         foreach (var error in errors) RecordError(error.dir, error.error);
@@ -112,6 +115,7 @@ public sealed class PluginHost : IDisposable
     /// <summary>v0.1.34：加载核心插件（不在 deferredIds 里的）并立即 OnLoad。冷启动时调用。</summary>
     public void LoadCore()
     {
+        if (SafeMode) return;
         ObjectDisposedException.ThrowIf(_disposed, this);
         var loaded = _loader.LoadCore(ExcludedIds(), _deferredIds, out var errors);
         foreach (var error in errors) RecordError(error.dir, error.error);
@@ -121,6 +125,7 @@ public sealed class PluginHost : IDisposable
     /// <summary>v0.1.34：加载延迟插件（ID 在 deferredIds 里的）并 OnLoad。主窗口显示后 Background 异步调用。</summary>
     public void LoadDeferred()
     {
+        if (SafeMode) return;
         ObjectDisposedException.ThrowIf(_disposed, this);
         var loaded = _loader.LoadDeferred(ExcludedIds(), _deferredIds, out var errors);
         foreach (var error in errors) RecordError(error.dir, error.error);
@@ -206,6 +211,7 @@ public sealed class PluginHost : IDisposable
     /// <summary>v0.1.46：运行时启用插件（从 plugins dir 重新加载 + OnLoad + 撤销 disabled 标记）。返回是否成功。</summary>
     public bool EnablePlugin(string id)
     {
+        if (SafeMode) return false;
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(id) || id != System.IO.Path.GetFileName(id) || id is "." or "..") return false;
         if (_plugins.Any(p => string.Equals(p.Manifest.Id, id, StringComparison.OrdinalIgnoreCase)))

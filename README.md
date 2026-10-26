@@ -4,6 +4,8 @@
 > 仓库：[GitHub](https://github.com/gddgssdfg/neko) · [Gitee](https://gitee.com/gddgssdfg/neko)
 > 当前版本：见 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件不硬编码版本号，避免漂移；一致性由 `tools/check_version.py` 守护）。
 
+开发路线见 [长期规划](docs/roadmap.md)。安静模式、找回猫咪、偏好备份和安全启动见 [常驻与恢复](docs/recovery.md)。
+
 ## 目录结构
 
 ```
