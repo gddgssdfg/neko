@@ -27,7 +27,7 @@ internal static partial class Program
             var renderer = new PetRenderer(atlas);
             var animator = Field<FrameAnimator>(renderer, "_animator");
             renderer.Play(PetState.Sleep); renderer.Play(PetState.Work);
-            Require(renderer.IsTransitioning && animator.State!.Name == "sit" && !animator.Loop, "wake bridge not selected");
+            Require(renderer.IsTransitioning && animator.State!.Name == "wake_work" && !animator.Loop, "dedicated wake bridge not selected");
             renderer.Play(PetState.Work); renderer.Tick(TimeSpan.FromSeconds(1.1));
             Require(!renderer.IsTransitioning && animator.State!.Name == "work" && animator.Loop, "transition did not arrive at work");
             renderer.Play(PetState.Sleep); renderer.Play(PetState.Idle); renderer.Play(PetState.Drag);
@@ -39,6 +39,29 @@ internal static partial class Program
             Require(!renderer.IsTransitioning && animator.State!.Name == "pet" && Field<double>(renderer, "_breathOffset") == 0, "skin reload retained old motion");
             renderer.Play(PetState.Walk, loop: false); renderer.Tick(TimeSpan.FromSeconds(2));
             Require(animator.IsComplete && animator.State!.Name == "walk", "one shot was overridden by transition logic");
+        });
+        Check("dedicated pose endings match their neutral destination and remain interruptible", () =>
+        {
+            var atlas = SpriteAtlas.LoadSkin(Paths.Assets, "pixel");
+            foreach (var item in new[] { ("sleep_enter", PetState.Sleep), ("wake_idle", PetState.Idle), ("wake_work", PetState.Work), ("pet_end_idle", PetState.Idle), ("pet_end_work", PetState.Work) })
+            {
+                var end = new PetRenderer(atlas) { Scale = 1 };
+                var animation = Field<FrameAnimator>(end, "_animator");
+                animation.Loop = false; animation.SetState(atlas.States[item.Item1]);
+                end.Tick(TimeSpan.FromSeconds(.29)); // keep blink timers out of endpoint comparison
+                animation.Tick(TimeSpan.FromSeconds(2));
+                var target = new PetRenderer(atlas) { Scale = 1 }; target.Play(item.Item2);
+                Require(Pixels(RenderAnimationFrame(end)).SequenceEqual(Pixels(RenderAnimationFrame(target))), "endpoint changed appearance: " + item.Item1);
+            }
+            var renderer = new PetRenderer(atlas); var animator = Field<FrameAnimator>(renderer, "_animator");
+            renderer.Play(PetState.Sit); renderer.Play(PetState.Sleep);
+            Require(renderer.IsTransitioning && animator.State!.Name == "sleep_enter", "sleep did not fold down");
+            renderer.Play(PetState.Pet); renderer.Play(PetState.Work);
+            Require(renderer.IsTransitioning && animator.State!.Name == "pet_end_work", "pet did not ease back to work");
+            renderer.Play(PetState.Drag); renderer.Tick(TimeSpan.FromSeconds(1));
+            Require(!renderer.IsTransitioning && animator.State!.Name == "drag", "pet ending blocked a drag");
+            renderer.Play(PetState.Pet); renderer.Play(PetState.Idle); renderer.Play(PetState.Pet);
+            Require(!renderer.IsTransitioning && animator.State!.Name == "pet", "a new pet could not interrupt the old ending");
         });
         Check("skin stride follows frame rate, scale and mood; old skins keep legacy motion", () =>
         {
@@ -130,7 +153,7 @@ internal static partial class Program
         {
             var renderer = new PetRenderer(SpriteAtlas.LoadSkin(Paths.Assets, skin)) { Scale = 6 };
             var encoder = new System.Windows.Media.Imaging.GifBitmapEncoder();
-            renderer.Play(PetState.Sleep);
+            renderer.Play(PetState.Sit); renderer.Play(PetState.Sleep);
             for (int i = 0; i < 80; i++)
             {
                 if (i == 10) renderer.Play(PetState.Work);
@@ -142,7 +165,7 @@ internal static partial class Program
                 using (var dc = visual.RenderOpen())
                 {
                     dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(35, 32, 29)), null, new Rect(0, 0, 280, 256));
-                    var label = i < 10 ? "Sleep" : i < 25 ? "Wake > Work" : i < 50 ? "Typing > Settle" : i < 57 ? "Pet" : "Back to Work";
+                    var label = i < 10 ? (renderer.IsTransitioning ? "Settle > Sleep" : "Sleep") : i < 25 ? "Wake > Work" : i < 50 ? "Typing > Settle" : i < 57 ? "Pet" : "Back to Work";
                     dc.DrawText(new System.Windows.Media.FormattedText(label, System.Globalization.CultureInfo.InvariantCulture,
                         FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 16, System.Windows.Media.Brushes.Wheat, 1), new Point(16, 12));
                     dc.PushTransform(new System.Windows.Media.TranslateTransform(44, 48)); renderer.Draw(dc); dc.Pop();

@@ -311,6 +311,57 @@ def st_sleep(f):
     return c.out()
 
 
+def resting_frame(state, frame=0):
+    """Flatten a canonical endpoint, including its exact registered eye anchor."""
+    return composed_frame(STATE_FUNCTIONS[state](frame), {k: fn() for k, fn in EYE_LAYERS.items()}, state, frame)
+
+
+def transition_pose(head_y, body_y, body_rx, body_ry, eyes="half", tail=0, work=False):
+    c = Cv()
+    curled_tail(c, tail)
+    c.ell(14, body_y, body_rx, body_ry, C_FUR_M)
+    c.ell(14, body_y, 4, max(2, body_ry-1), C_WHITE)
+    paw(c, 7 if work else 8, 28)
+    paw(c, 19 if work else 15, 28)
+    cat_head(c, "open", HEAD_CX, head_y)
+    layer = {"half": eyes_half, "open": eyes_open, "pet": eyes_pet, "closed": eyes_blink}[eyes]()
+    c.im.alpha_composite(layer, (0, head_y-HEAD_CY))
+    return c.out()
+
+
+def st_sleep_enter(f):
+    # Feet remain planted while the torso folds and the eyes close.
+    if f == 0: return resting_frame("sit")
+    if f == 3: return st_sleep(0)
+    return transition_pose([12, 14, 17, 20][f], 25, 9, 3, "half" if f == 1 else "closed", tail=f)
+
+
+def st_wake_idle(f):
+    if f == 0: return st_sleep(0)
+    if f == 3: return resting_frame("idle")
+    return transition_pose([20, 17, 14, 11][f], 25 if f == 1 else 24, 9 if f == 1 else 8, 3 if f == 1 else 4,
+                           "half" if f == 1 else "open", tail=0)
+
+
+def st_wake_work(f):
+    if f == 0: return st_sleep(0)
+    if f == 3: return resting_frame("work")
+    return transition_pose([20, 17, 14, 12][f], 25 if f == 1 else 24, 9, 3 if f == 1 else 4,
+                           "half" if f == 1 else "open", tail=0, work=True)
+
+
+def st_pet_end_idle(f):
+    if f == 0: return resting_frame("pet", 3)
+    if f == 3: return resting_frame("idle")
+    return transition_pose(11, 24 if f == 1 else 23, 8, 5, "pet" if f == 1 else "half", tail=0)
+
+
+def st_pet_end_work(f):
+    if f == 0: return resting_frame("pet", 3)
+    if f == 3: return resting_frame("work")
+    return transition_pose(11 if f == 1 else 12, 24, 9, 4, "pet" if f == 1 else "half", tail=0, work=True)
+
+
 def eyes_open():
     c=Cv()
     for x in (8,16):
@@ -441,6 +492,8 @@ STATE_FUNCTIONS = {
     "idle": st_idle, "walk": st_walk, "sit": st_sit, "sleep": st_sleep,
     "pet": st_pet, "drag": st_drag, "fall": st_fall, "climb": st_climb,
     "work": st_work, "land": st_land,
+    "sleep_enter": st_sleep_enter, "wake_idle": st_wake_idle, "wake_work": st_wake_work,
+    "pet_end_idle": st_pet_end_idle, "pet_end_work": st_pet_end_work,
 }
 STATES = [(state["name"], STATE_FUNCTIONS[state["name"]], state["fps"], state.get("eyeLayer"))
           for state in META["states"]]
@@ -525,7 +578,7 @@ def make_gif(sheets, eye_imgs):
         delay = max(int(1000 / fps), 40) if fps else 500
         imgs = sheets[name][0]
         eye_key = STATE_EYE[name]
-        for _ in range(1 if name == "land" else 2):
+        for _ in range(2 if name in {"idle", "walk", "sit", "sleep", "pet", "drag", "fall", "climb", "work"} else 1):
             for index, im in enumerate(imgs):
                 bg = Image.new("RGBA", (S, S), (0xE8, 0xE6, 0xE1, 255))
                 composed = composed_frame(im, eye_imgs, name, index)

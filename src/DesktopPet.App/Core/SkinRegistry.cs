@@ -342,7 +342,7 @@ public static class SkinRegistry
                     var from = GetString(route, "from")?.ToLowerInvariant();
                     var to = GetString(route, "to")?.ToLowerInvariant();
                     var via = GetString(route, "via")?.ToLowerInvariant();
-                    if (from is null || to is null || via is null || !mainStates.Contains(from) || !mainStates.Contains(to) || from == to ||
+                    if (from is null || to is null || via is null || (!mainStates.Contains(from) && from != "pet") || !mainStates.Contains(to) || from == to ||
                         !states.Any(s => string.Equals(s.Name, from, StringComparison.OrdinalIgnoreCase)) || !states.Any(s => string.Equals(s.Name, to, StringComparison.OrdinalIgnoreCase)) || !states.Any(s => string.Equals(s.Name, via, StringComparison.OrdinalIgnoreCase) && s.Fps > 0) ||
                         transitions.Any(t => t.From == from && t.To == to)) throw new FormatException("过渡需引用已声明的状态和正帧率中间动作，且不能重复或拦截直接交互");
                     transitions.Add(new SkinTransition(from, to, via));

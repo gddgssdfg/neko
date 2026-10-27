@@ -831,7 +831,7 @@ internal static class Program
         });
 
         // ---- v0.1.74 第 23 项：皮肤目录可扩展（SkinRegistry 扫目录 + skin.json 驱动）----
-        Check("v0.1.74：皮肤（skin.json 扫目录发现；pixel/soft 元数据与旧硬编码一致）", () =>
+        Check("皮肤元数据：保留原动作契约并加载五组专用过渡帧", () =>
         {
             // 1) 至少扫到 pixel + soft
             var skins = SkinRegistry.Scan(Paths.Assets);
@@ -850,6 +850,8 @@ internal static class Program
                 ("sleep", 0, null), ("pet", 10, "eyes_pet"), ("drag", 6, "eyes_scared"),
                 ("fall", 12, "eyes_scared"), ("climb", 4, "eyes_open"), ("work", 2, "eyes_open"),
                 ("land", 12, "eyes_open"),
+                ("sleep_enter", 8, null), ("wake_idle", 10, null), ("wake_work", 10, null),
+                ("pet_end_idle", 12, null), ("pet_end_work", 12, null),
             };
             if (pixel.States.Count != expectedPixel.Length)
                 throw new Exception($"pixel states 应 {expectedPixel.Length} 个，实际 {pixel.States.Count}");

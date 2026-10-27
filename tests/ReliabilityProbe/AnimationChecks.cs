@@ -169,7 +169,8 @@ internal static partial class Program
         {
             var renderer = new PetRenderer(atlas) { Scale = 4 };
             if (state.Name == "land") renderer.PlayLanding();
-            else renderer.Play(Enum.Parse<PetState>(state.Name, ignoreCase: true));
+            else if (Enum.TryParse<PetState>(state.Name, ignoreCase: true, out var main)) renderer.Play(main);
+            else Field<FrameAnimator>(renderer, "_animator").SetState(state, restart: true);
             for (var frame = 0; frame < state.Frames.Length; frame++)
             {
                 var bitmap = RenderAnimationFrame(renderer);

@@ -10,6 +10,27 @@ from PIL import Image, ImageDraw
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import gen_skin_previews as previews
 from ai_sheet_to_skin import pixelize
+import generate_sprites as sprites
+
+
+class TransitionSpriteTests(unittest.TestCase):
+    def test_transition_frames_keep_pixel_palette_and_canvas_margins(self):
+        palette = {value for key, value in vars(sprites).items() if key.startswith("C_")}
+        for name in ("sleep_enter", "wake_idle", "wake_work", "pet_end_idle", "pet_end_work"):
+            frames = [sprites.STATE_FUNCTIONS[name](i) for i in range(4)]
+            self.assertGreaterEqual(len({f.tobytes() for f in frames}), 3, name)
+            for frame in frames:
+                self.assertEqual(frame.size, (32, 32))
+                self.assertTrue({value for _, value in frame.getchannel("A").getcolors(1024)}.issubset({0, 255}))
+                self.assertTrue({color for _, color in frame.getcolors(1024) if color[3]}.issubset(palette))
+                left, top, right, bottom = frame.getchannel("A").getbbox()
+                self.assertGreaterEqual(min(left, top), 1, name)
+                self.assertLessEqual(max(right, bottom), 31, name)
+
+    def test_dedicated_transition_endings_equal_canonical_poses(self):
+        for name, target in [("sleep_enter", "sleep"), ("wake_idle", "idle"), ("wake_work", "work"),
+                             ("pet_end_idle", "idle"), ("pet_end_work", "work")]:
+            self.assertEqual(sprites.STATE_FUNCTIONS[name](3).tobytes(), sprites.resting_frame(target).tobytes(), name)
 
 
 class PreviewTests(unittest.TestCase):
