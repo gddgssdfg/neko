@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Input;
+using DesktopPet.App.Core;
 using DesktopPet.App.Renderer;
 
 namespace DesktopPet.App.Windows;
@@ -16,6 +18,16 @@ public sealed class SkinPreviewSurface : FrameworkElement
     public SpriteState State => _animator.State!;
     public double Playback { get => _animator.Playback; set => _animator.Playback = value; }
     public event Action? FrameChanged;
+    public Func<string, int, SkinEyeOffset>? OffsetProvider { get; set; }
+    public bool AnchorEditingEnabled { get; set; }
+    public bool IsAnchorDragging => _anchorDragging;
+    private bool _anchorDragging;
+    private Point _dragStart;
+    private SkinEyeOffset _dragInitial, _dragPreview;
+    public event Action<SkinEyeOffset>? AnchorDragged;
+    public SkinEyeOffset CurrentEyeOffset => _anchorDragging ? _dragPreview
+        : OffsetProvider?.Invoke(State.Name, FrameIndex)
+            ?? (State.EyeOffsets.Count > FrameIndex ? State.EyeOffsets[FrameIndex] : default);
     private static readonly Brush Checker = MakeChecker();
 
     public SkinPreviewSurface(SpriteAtlas atlas)
@@ -23,21 +35,23 @@ public sealed class SkinPreviewSurface : FrameworkElement
         _atlas = atlas;
         foreach (var key in atlas.States.Values.Select(s => s.EyeLayer).OfType<string>().Distinct())
             if (atlas.GetEye(key) is { } eye) _eyeBounds[key] = SpriteAtlas.AlphaBBox(eye);
-        MinHeight = 240;
+        MinHeight = 240; Focusable = true;
         SelectState("idle");
         RenderOptions.SetBitmapScalingMode(this, atlas.PixelArt ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
     }
 
     public void SelectState(string name)
     {
+        CancelAnchorDrag();
         _animator.SetState(_atlas.States[name], restart: true);
         InvalidateVisual(); FrameChanged?.Invoke();
     }
 
-    public void StepFrame(int delta)
+    public void StepFrame(int delta) => SelectFrame((FrameIndex + delta % State.Frames.Length + State.Frames.Length) % State.Frames.Length);
+    public void SelectFrame(int frame)
     {
-        Playing = false;
-        _animator.SeekFrame((FrameIndex + delta % State.Frames.Length + State.Frames.Length) % State.Frames.Length);
+        CancelAnchorDrag(); Playing = false;
+        _animator.SeekFrame(frame);
         InvalidateVisual(); FrameChanged?.Invoke();
     }
 
@@ -52,14 +66,13 @@ public sealed class SkinPreviewSurface : FrameworkElement
         var viewport = new Rect(0, 0, ActualWidth, ActualHeight);
         dc.DrawRectangle(Checker, null, viewport);
         var bitmap = State.Frames[FrameIndex].Bitmap;
-        var zoom = Math.Max(0, Math.Min((ActualWidth - 32) / bitmap.PixelWidth, (ActualHeight - 32) / bitmap.PixelHeight));
+        var (origin, zoom) = PreviewTransform();
         if (zoom <= 0) return;
-        var origin = new Point((ActualWidth - bitmap.PixelWidth * zoom) / 2, (ActualHeight - bitmap.PixelHeight * zoom) / 2);
         dc.PushClip(new RectangleGeometry(viewport));
         dc.PushTransform(new TranslateTransform(origin.X, origin.Y));
         dc.PushTransform(new ScaleTransform(zoom, zoom));
         dc.DrawImage(bitmap, new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
-        var offset = State.EyeOffsets.Count > FrameIndex ? State.EyeOffsets[FrameIndex] : default;
+        var offset = CurrentEyeOffset;
         if (State.EyeLayer is { } key && _atlas.GetEye(key) is { } eye)
         {
             dc.DrawImage(eye, new Rect(offset.X, offset.Y, eye.PixelWidth, eye.PixelHeight));
@@ -74,6 +87,80 @@ public sealed class SkinPreviewSurface : FrameworkElement
         }
         if (ShowGuides) dc.DrawRectangle(null, new Pen(Brushes.OrangeRed, 1 / zoom), new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
         dc.Pop(); dc.Pop(); dc.Pop();
+    }
+
+    private (Point Origin, double Zoom) PreviewTransform()
+    {
+        var bitmap = State.Frames[FrameIndex].Bitmap;
+        var zoom = Math.Max(0, Math.Min((ActualWidth - 32) / bitmap.PixelWidth, (ActualHeight - 32) / bitmap.PixelHeight));
+        return (new Point((ActualWidth - bitmap.PixelWidth * zoom) / 2, (ActualHeight - bitmap.PixelHeight * zoom) / 2), zoom);
+    }
+
+    // Public gesture methods also let regression probes exercise source-pixel/DPI mapping without native input injection.
+    public bool BeginAnchorDrag(Point position)
+    {
+        if (_anchorDragging || !AnchorEditingEnabled || State.EyeLayer is not { } key || !_eyeBounds.TryGetValue(key, out var box) || box.IsEmpty) return false;
+        var (origin, zoom) = PreviewTransform();
+        if (zoom <= 0) return false;
+        var offset = CurrentEyeOffset;
+        var hit = new Rect(origin.X + (box.X + offset.X) * zoom, origin.Y + (box.Y + offset.Y) * zoom, box.Width * zoom, box.Height * zoom);
+        hit.Inflate(4, 4);
+        if (!hit.Contains(position)) return false;
+        Playing = false; _dragStart = position; _dragInitial = _dragPreview = offset; _anchorDragging = true;
+        FrameChanged?.Invoke(); return true;
+    }
+    public void MoveAnchorDrag(Point position)
+    {
+        if (!_anchorDragging) return;
+        var (_, zoom) = PreviewTransform(); if (zoom <= 0) return;
+        var bitmap = State.Frames[FrameIndex].Bitmap;
+        _dragPreview = new SkinEyeOffset(
+            Math.Clamp(_dragInitial.X + Math.Round((position.X - _dragStart.X) / zoom), -bitmap.PixelWidth, bitmap.PixelWidth),
+            Math.Clamp(_dragInitial.Y + Math.Round((position.Y - _dragStart.Y) / zoom), -bitmap.PixelHeight, bitmap.PixelHeight));
+        InvalidateVisual(); FrameChanged?.Invoke();
+    }
+    public void EndAnchorDrag()
+    {
+        if (!_anchorDragging) return;
+        var offset = _dragPreview; _anchorDragging = false;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+        AnchorDragged?.Invoke(offset); InvalidateVisual(); FrameChanged?.Invoke();
+    }
+    public void CancelAnchorDrag()
+    {
+        var wasDragging = _anchorDragging;
+        _anchorDragging = false;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+        InvalidateVisual();
+        if (wasDragging) FrameChanged?.Invoke();
+    }
+    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        if (!BeginAnchorDrag(e.GetPosition(this))) return;
+        Focus();
+        if (!CaptureMouse()) CancelAnchorDrag();
+        e.Handled = true;
+    }
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (_anchorDragging) { MoveAnchorDrag(e.GetPosition(this)); e.Handled = true; }
+    }
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_anchorDragging) { EndAnchorDrag(); e.Handled = true; }
+    }
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Escape && _anchorDragging) { CancelAnchorDrag(); e.Handled = true; }
+    }
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        CancelAnchorDrag(); FrameChanged?.Invoke();
     }
 
     private static Brush MakeChecker()

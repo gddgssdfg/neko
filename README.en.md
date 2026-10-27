@@ -15,7 +15,7 @@
 | Focus and breaks | A Pomodoro timer supports pause, resume, and manually started breaks. Locking or suspending the computer pauses the timer; resume it manually when you return. |
 | Everyday organization | Keep a to-do list and notes. Start a focus session from an unfinished task; finishing the timer does not automatically mark the task complete. |
 | A quieter desktop | Switch between work and relaxed modes, enable quiet mode, recover an off-screen cat, and back up appearance and interaction preferences. |
-| Customization and creation | Import skins and plugins. Use the skin workbench to play animations, inspect individual frames and eye-layer anchors, validate assets, and export skin packages. |
+| Customization and creation | Import skins and plugins. Use the skin workbench to play animations, inspect individual frames, edit eye-layer anchors with backup before saving, validate assets, and export skin packages. |
 
 The project includes 18 built-in plugins, covering focus, tasks, notes, weather, system information, and other tools. Manage them as needed. Clipboard recording and automatic update checks are unchecked by default during first-run setup.
 
@@ -64,7 +64,7 @@ Most detailed guides below are currently in Chinese.
 - [Plugin development](docs/plugin-development-guide.md) · [Plugin starter](templates/plugin-skeleton) · [Architecture](docs/architecture.md)
 - [Roadmap](docs/roadmap.md) · [Release process](docs/release-sop.md)
 
-Neko is under active development, with a focus on character animation, unobtrusive work companionship, and creator tools. The skin workbench currently supports previews and packaging; anchor editing and chained runtime-transition previews remain planned work.
+Neko is under active development, with a focus on character animation, unobtrusive work companionship, and creator tools. The skin workbench supports previews, anchor editing, backups before saving, and packaging; eye-socket editing and chained runtime-transition previews remain planned work.
 
 ## Licensing
 

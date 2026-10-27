@@ -1,4 +1,6 @@
 using System.IO;
+using System.Globalization;
+using DesktopPet.App.Core;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -11,6 +13,13 @@ public sealed class SkinWorkbenchWindow : Window
 {
     private string _source;
     private SkinReview _review;
+    private SkinAnchorEditor _editor;
+    private readonly TextBox _anchorX = new() { Width = 72, Margin = new Thickness(6, 0, 12, 0) },
+        _anchorY = new() { Width = 72, Margin = new Thickness(6, 0, 12, 0) };
+    private readonly CheckBox _editAnchors = new() { Content = "编辑眼层锚点（拖动蓝框）" };
+    private readonly Button _applyAnchor = PluginUi.Button("应用坐标"), _undo = PluginUi.Button("撤销"),
+        _redo = PluginUi.Button("重做"), _restore = PluginUi.Button("还原本帧");
+    private Button _save = null!, _export = null!;
     private SkinPreviewSurface _surface = null!;
     private readonly Border _preview = new() { Height = 300, Margin = new Thickness(0, 12, 0, 12) };
     private readonly ComboBox _states = new() { MinWidth = 170, Margin = new Thickness(0, 0, 12, 0) };
@@ -24,7 +33,7 @@ public sealed class SkinWorkbenchWindow : Window
 
     public SkinWorkbenchWindow(string source)
     {
-        _review = SkinReview.Open(source); _source = Path.GetFullPath(source);
+        _editor = new SkinAnchorEditor(source); _review = _editor.Review; _source = Path.GetFullPath(source);
         Title = "Neko 皮肤工作台"; Width = 760; Height = 790; MinWidth = 480; MinHeight = 460;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         NekoDesign.Apply(this);
@@ -38,12 +47,13 @@ public sealed class SkinWorkbenchWindow : Window
         }
         ActionButton("选择其他目录", PickFolder);
         ActionButton("重新校验", () => Reload(_source));
-        ActionButton("导出皮肤包", Export);
+        _save = ActionButton("保存锚点", () => SaveEdits());
+        _export = ActionButton("导出皮肤包", Export);
         _status.TextWrapping = TextWrapping.Wrap;
         footer.Children.Add(actions); footer.Children.Add(_status);
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         var content = new StackPanel();
-        content.Children.Add(NekoDesign.ToolHeader("把每一个动作看清楚", "源素材预览 · 不改动正在使用的猫与原始文件"));
+        content.Children.Add(NekoDesign.ToolHeader("把每一个动作看清楚", "源素材预览 · 修改先留在草稿，保存后写回清单"));
         _details.TextWrapping = TextWrapping.Wrap; _details.Margin = new Thickness(0, 12, 0, 12); content.Children.Add(_details);
         var controls = new WrapPanel();
         controls.Children.Add(_states); controls.Children.Add(_play);
@@ -63,13 +73,34 @@ public sealed class SkinWorkbenchWindow : Window
         speed.SelectionChanged += (_, _) => { _speed = new[] { .5, 1, 2 }[speed.SelectedIndex]; _surface.Playback = _speed; };
         options.Children.Add(speed);
         content.Children.Add(options);
+        var editing = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
+        editing.Children.Add(_editAnchors);
+        var coordinates = new WrapPanel { Margin = new Thickness(0, 10, 0, 8) };
+        coordinates.Children.Add(PluginUi.Text("X")); coordinates.Children.Add(_anchorX);
+        coordinates.Children.Add(PluginUi.Text("Y")); coordinates.Children.Add(_anchorY); coordinates.Children.Add(_applyAnchor);
+        editing.Children.Add(coordinates);
+        var history = new WrapPanel();
+        foreach (var button in new[] { _undo, _redo, _restore }) { button.Margin = new Thickness(0, 0, 10, 0); history.Children.Add(button); }
+        editing.Children.Add(history); content.Children.Add(editing);
+        _editAnchors.Checked += (_, _) => { _surface.Playing = false; UpdateFrame(); };
+        _editAnchors.Unchecked += (_, _) => { _surface.CancelAnchorDrag(); UpdateFrame(); };
+        _applyAnchor.Click += (_, _) =>
+        {
+            if (!double.TryParse(_anchorX.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var x)
+                || !double.TryParse(_anchorY.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var y))
+            { _status.Text = "坐标须为数字，小数使用英文句点。"; return; }
+            ApplyAnchor(new SkinEyeOffset(x, y));
+        };
+        _undo.Click += (_, _) => RevealEdit(_editor.Undo());
+        _redo.Click += (_, _) => RevealEdit(_editor.Redo());
+        _restore.Click += (_, _) => { _editor.RestoreFrame(_surface.State.Name, _surface.FrameIndex); RefreshDraft(); };
         var hint = PluginUi.Text("红框为源画幅，蓝色为眼层原点及可用包围盒。这里按清单循环身体帧与眼层，不模拟随机眨眼、眼神跟随、呼吸或自动过渡；附加过渡帧可在动作列表单独检查。", sub: true);
         hint.TextWrapping = TextWrapping.Wrap; hint.Margin = new Thickness(0, 0, 0, 16); content.Children.Add(hint);
         _report.TextWrapping = TextWrapping.Wrap; content.Children.Add(_report);
         root.Children.Add(new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         Content = root;
         _states.SelectionChanged += (_, _) => { if (_states.SelectedItem is string name) { _surface.SelectState(name); UpdateFrame(); } };
-        ApplyReview(_review);
+        ApplyReview(_editor);
         _timer.Tick += (_, _) =>
         {
             var now = Environment.TickCount64;
@@ -77,7 +108,8 @@ public sealed class SkinWorkbenchWindow : Window
             _lastTick = now;
         };
         IsVisibleChanged += (_, _) => UpdateTimer(); StateChanged += (_, _) => UpdateTimer();
-        Closed += (_, _) => _timer.Stop();
+        Closing += (_, e) => { if (!ConfirmLeave()) e.Cancel = true; };
+        Closed += (_, _) => { _surface.CancelAnchorDrag(); _timer.Stop(); };
     }
 
     private void SetGuides(bool enabled) { _guides = enabled; _surface.ShowGuides = enabled; _surface.InvalidateVisual(); }
@@ -89,14 +121,15 @@ public sealed class SkinWorkbenchWindow : Window
         }
         else _timer.Stop();
     }
-    private void ApplyReview(SkinReview review)
+    private void ApplyReview(SkinAnchorEditor editor)
     {
+        var review = editor.Review;
         var selected = _states.SelectedItem as string;
         var playing = _surface?.Playing ?? true;
-        if (_surface is not null) _surface.FrameChanged -= UpdateFrame;
-        _review = review;
-        _surface = new SkinPreviewSurface(review.Atlas) { ShowGuides = _guides, Playback = _speed, Playing = playing };
-        _surface.FrameChanged += UpdateFrame; _preview.Child = _surface;
+        if (_surface is not null) { _surface.CancelAnchorDrag(); _surface.FrameChanged -= UpdateFrame; _surface.AnchorDragged -= ApplyAnchor; }
+        _editor = editor; _review = review;
+        _surface = new SkinPreviewSurface(review.Atlas) { ShowGuides = _guides, Playback = _speed, Playing = playing, OffsetProvider = editor.GetOffset };
+        _surface.FrameChanged += UpdateFrame; _surface.AnchorDragged += ApplyAnchor; _preview.Child = _surface;
         _states.ItemsSource = review.Info.States.Select(s => s.Name).ToArray();
         _states.SelectedItem = selected is not null && review.Atlas.States.ContainsKey(selected) ? selected : "idle";
         _details.Text = $"{review.Info.DisplayName} · {review.Info.Id} · {review.Info.FrameWidth}×{review.Info.FrameHeight} · 每动作 {review.Info.Frames} 帧\n{_source}";
@@ -107,17 +140,64 @@ public sealed class SkinWorkbenchWindow : Window
     private void UpdateFrame()
     {
         var state = _surface.State; var index = _surface.FrameIndex;
-        var offset = state.EyeOffsets.Count > index ? state.EyeOffsets[index] : default;
+        var offset = _surface.CurrentEyeOffset;
         _frame.Text = $"{state.Name} · 帧 {index + 1}/{state.Frames.Length} · {state.Fps:0.##} fps · 眼层 {state.EyeLayer ?? "无"} · 锚点 ({offset.X:0.##}, {offset.Y:0.##}) 源像素";
         _play.Content = _surface.Playing ? "暂停" : "播放";
+        var editable = _editor.CanEdit(state.Name) && _editAnchors.IsChecked == true;
+        _surface.AnchorEditingEnabled = editable;
+        _anchorX.Text = offset.X.ToString("0.###", CultureInfo.InvariantCulture);
+        _anchorY.Text = offset.Y.ToString("0.###", CultureInfo.InvariantCulture);
+        _anchorX.IsEnabled = _anchorY.IsEnabled = _applyAnchor.IsEnabled = editable && !_surface.Playing && !_surface.IsAnchorDragging;
+        _restore.IsEnabled = editable && !_surface.IsAnchorDragging;
+        _undo.IsEnabled = _editor.CanUndo && !_surface.IsAnchorDragging;
+        _redo.IsEnabled = _editor.CanRedo && !_surface.IsAnchorDragging;
+        _save.IsEnabled = _editor.IsDirty && !_surface.IsAnchorDragging;
+        _export.IsEnabled = !_editor.IsDirty && !_surface.IsAnchorDragging;
+        _states.IsEnabled = _play.IsEnabled = !_surface.IsAnchorDragging;
+        Title = "Neko 皮肤工作台" + (_editor.IsDirty ? " · 未保存" : "");
         UpdateTimer();
+    }
+    private void RevealEdit((string State, int Frame)? location)
+    {
+        if (location is { } point) { _states.SelectedItem = point.State; _surface.SelectFrame(point.Frame); }
+        RefreshDraft();
+    }
+    private void ApplyAnchor(SkinEyeOffset offset)
+    {
+        try { _surface.Playing = false; _editor.SetOffset(_surface.State.Name, _surface.FrameIndex, offset); RefreshDraft(); }
+        catch (Exception ex) { _status.Text = "未修改锚点：" + ex.Message; UpdateFrame(); }
+    }
+    private void RefreshDraft()
+    {
+        _surface.Playing = false;
+        _surface.InvalidateVisual(); UpdateFrame();
+        _status.Text = _editor.IsDirty ? "有未保存的锚点修改；保存前会备份原清单。" : "锚点与已保存内容一致。";
+    }
+    private bool SaveEdits()
+    {
+        try
+        {
+            var backup = _editor.Save(Path.Combine(Paths.Data, "host", "skin-backups"));
+            RefreshDraft();
+            _status.Text = backup is null ? "没有需要保存的修改。" : "已保存锚点。原清单备份：" + backup + "。使用中的猫可在外观页刷新皮肤。";
+            return true;
+        }
+        catch (Exception ex) { _status.Text = "保存未完成，草稿仍保留：" + ex.Message; return false; }
+    }
+    private bool ConfirmLeave()
+    {
+        _surface.CancelAnchorDrag();
+        if (!_editor.IsDirty) return true;
+        var choice = MessageBox.Show(this, "存在未保存的锚点修改，是否保存？\n是：保存后继续；否：放弃草稿；取消：留在工作台。", "锚点草稿", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+        return choice == MessageBoxResult.No || choice == MessageBoxResult.Yes && SaveEdits();
     }
     private void Reload(string source)
     {
         try
         {
-            var review = SkinReview.Open(source); // 失败时保留原来已加载的预览。
-            _source = Path.GetFullPath(source); ApplyReview(review);
+            if (!ConfirmLeave()) return;
+            var editor = new SkinAnchorEditor(source); // 失败时保留原来已加载的预览和草稿。
+            _source = Path.GetFullPath(source); ApplyReview(editor);
             _status.Text = "已从磁盘重新校验并加载。";
         }
         catch (Exception ex) { _status.Text = "校验失败，保留上一份预览：" + ex.Message; }
@@ -129,6 +209,7 @@ public sealed class SkinWorkbenchWindow : Window
     }
     private void Export()
     {
+        if (_editor.IsDirty) { _status.Text = "请先保存锚点，再导出包含修改的皮肤包。"; return; }
         var picker = new Microsoft.Win32.SaveFileDialog { Title = "导出皮肤包（使用新文件名）", Filter = "皮肤包 (*.zip)|*.zip", FileName = _review.Info.Id + ".zip", OverwritePrompt = false };
         if (picker.ShowDialog(this) != true) return;
         try
