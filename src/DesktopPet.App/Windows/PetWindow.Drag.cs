@@ -24,7 +24,7 @@ public sealed partial class PetWindow : Window
         if (_petRemainingMs <= 0) return;
         if (_stateMachine.Revision != _petRevision || _stateMachine.Current != PetState.Pet) { _petRemainingMs = 0; return; }
         _petRemainingMs -= delta.TotalMilliseconds;
-        if (_petRemainingMs <= 0) _stateMachine.Play(_config.AppMode == "work" ? PetState.Work : PetState.Idle);
+        if (_petRemainingMs <= 0) _stateMachine.Play(CompanionRestPose);
     }
     /// <summary>v0.2.4：摸到下半身（爪/尾）时的"瞪一眼"时长。</summary>
     private const int LowerPetEyeFlashMs = 350;
@@ -124,7 +124,7 @@ public sealed partial class PetWindow : Window
         try
         {
             if (_stateMachine.Current is PetState.Sleep or PetState.Sit)
-                _stateMachine.Play(_config.AppMode == "work" ? PetState.Work : PetState.Idle);
+                _stateMachine.Play(CompanionRestPose);
             else _stateMachine.NoteInteraction();
             _renderer.FlashEyes(300);
             _renderer.SetTypingActive(TimeSpan.FromSeconds(1));   // v0.1.47：保持打字活跃 1s

@@ -44,7 +44,12 @@ public sealed class TodoListPlugin : PluginBase
     private void OpenTodo()
     {
         var list = Load();
-        new TodoWindow(list, save: Save, system: Capability.System).Show();
+        new TodoWindow(list, save: Save, system: Capability.System, focusTask: title =>
+        {
+            var request = new FocusTaskRequest(title);
+            Capability.Events.Emit(CompanionEvents.FocusTaskRequested, request);
+            return request.Message;
+        }).Show();
     }
 
     private void Save(List<TodoItem> list)

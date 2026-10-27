@@ -31,6 +31,7 @@ internal static partial class Program
         RunReleaseReadyChecks(root);
         RunResidencyChecks(root);
         RunCharacterChecks(root);
+        RunFocusChecks();
         Check("scheduler does not run a task scheduled forty days in the future", () =>
         {
             using var scheduler = new SchedulerImpl();

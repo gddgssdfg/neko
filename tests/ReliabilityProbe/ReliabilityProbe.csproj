@@ -8,6 +8,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../builtins/DesktopPet.Builtin.Pomodoro/DesktopPet.Builtin.Pomodoro.csproj" />
     <ProjectReference Include="../PluginLifecycleFixture/PluginLifecycleFixture.csproj" />
     <ProjectReference Include="../../builtins/DesktopPet.Builtin.SystemInfo/DesktopPet.Builtin.SystemInfo.csproj" />
     <ProjectReference Include="../../builtins/DesktopPet.Builtin.Weather/DesktopPet.Builtin.Weather.csproj" />

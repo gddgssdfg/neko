@@ -10,7 +10,7 @@ public sealed partial class PetWindow
 {
     private HwndSource? _residencySource;
     private DispatcherTimer? _displayRecovery;
-    private bool _sessionLocked, _systemSuspended, _onBattery;
+    private bool _sessionLocked, _systemSuspended, _onBattery, _sessionUnavailable;
     private long _lastNoticeMs = long.MinValue;
     public bool NotificationsSuppressed => _config.QuietMode || _sessionLocked || _systemSuspended || _gameFullscreenActive || !IsVisible;
     private bool MotionSuspended => _sessionLocked || _systemSuspended || !IsVisible;
@@ -67,6 +67,12 @@ public sealed partial class PetWindow
 
     private void ApplySessionState()
     {
+        var unavailable = _sessionLocked || _systemSuspended;
+        if (unavailable != _sessionUnavailable)
+        {
+            _sessionUnavailable = unavailable;
+            _eventBus.Emit(unavailable ? DesktopPet.Core.PetEvents.AppSleep : DesktopPet.Core.PetEvents.AppWake);
+        }
         _lastTickMs = Environment.TickCount64;
         if (_sessionLocked || _systemSuspended)
         {

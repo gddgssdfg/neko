@@ -22,7 +22,7 @@ public sealed class TodoWindow : Window
     private readonly ListBox _listBox;
     private readonly TextBox _input;
 
-    public TodoWindow(List<TodoItem> items, Action<List<TodoItem>> save, ISystem system)
+    public TodoWindow(List<TodoItem> items, Action<List<TodoItem>> save, ISystem system, Func<string, string>? focusTask = null)
     {
         _items = items;
         _save = save;
@@ -49,6 +49,22 @@ public sealed class TodoWindow : Window
             BorderBrush = CardBorder,
             BorderThickness = new Thickness(1),
         };
+
+        var focusBar = new StackPanel { Margin = new Thickness(0, 12, 0, 12) };
+        var focus = PluginUi.Button("专注选中待办");
+        focus.IsEnabled = focusTask is not null;
+        var focusStatus = PluginUi.Text("选中一条未完成的待办，开始专注。", sub: true);
+        focusStatus.TextWrapping = TextWrapping.Wrap;
+        focusStatus.Margin = new Thickness(0, 8, 0, 0);
+        focus.Click += (_, _) =>
+        {
+            var index = _listBox.SelectedIndex;
+            focusStatus.Text = index < 0 || index >= _items.Count ? "请先选中一条待办。"
+                : _items[index].Done ? "这条待办已经完成，请选择未完成的事项。"
+                : focusTask?.Invoke(_items[index].Text) ?? "番茄钟暂不可用。";
+        };
+        focusBar.Children.Add(focus); focusBar.Children.Add(focusStatus);
+        DockPanel.SetDock(focusBar, Dock.Top); root.Children.Add(focusBar);
 
         // 底部：删除选中 + 输入添加
         var bottom = new Grid { Margin = new Thickness(0, 14, 0, 0) };

@@ -5,62 +5,40 @@ using DesktopPet.Sdk;
 
 namespace DesktopPet.Builtin.Pomodoro;
 
-/// <summary>
-/// 番茄钟设置页：工作时长选择（5/15/25/45 分钟），持久化到 Storage（workMinutes）。
-/// v0.1.63：改用 PluginUi 深色按钮；修复"storage 值不在候选项时无预选"的问题。
-/// </summary>
-public sealed class PomodoroSettingsPage : ISettingsPage
+public sealed class PomodoroSettingsPage(IPluginStorage storage, Action? changed = null) : ISettingsPage
 {
-    private readonly IPluginStorage _storage;
-    private const string WorkKey = "workMinutes";
-    private const int DefaultMinutes = 25;
-    private static readonly int[] Presets = [5, 15, 25, 45];
-
-    public PomodoroSettingsPage(IPluginStorage storage) => _storage = storage;
-
     public string Id => "com.lantern.pomodoro";
     public string Title => "com.lantern.pomodoro";
-
     public object BuildContent()
     {
-        var current = _storage.Contains(WorkKey) ? _storage.Get<int>(WorkKey) : DefaultMinutes;
-
         var stack = new StackPanel { Margin = new Thickness(8) };
-
-        var caption = PluginUi.Text("工作时长（分钟）", sub: true);
-        caption.Margin = new Thickness(0, 0, 0, 8);
-        stack.Children.Add(caption);
-
-        // v0.1.63 fix：候选项 = 预设 ∪ {当前值}（当前值不在预设里也保证有预选）
-        var options = Presets.Contains(current) ? Presets.ToArray() : Presets.Append(current).OrderBy(x => x).ToArray();
-
-        var combo = new ComboBox { Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var c in options)
+        ComboBox Duration(string label, string key, int fallback, int max, int[] presets)
         {
-            var item = new ComboBoxItem { Content = $"{c} 分钟" };
-            if (c == current) item.IsSelected = true;
-            combo.Items.Add(item);
+            stack.Children.Add(PluginUi.Text(label, sub: true));
+            var current = Math.Clamp(storage.Contains(key) ? storage.Get<int>(key) : fallback, 1, max);
+            var combo = new ComboBox { Width = 140, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 16) };
+            foreach (var value in presets.Append(current).Distinct().Order())
+                combo.Items.Add(new ComboBoxItem { Content = $"{value} 分钟", Tag = value, IsSelected = value == current });
+            stack.Children.Add(combo);
+            return combo;
         }
-
-        var hint = PluginUi.Text("下次启动番茄钟时生效（径向菜单文案会同步）", sub: true);
-        hint.FontSize = 11;
-        hint.Margin = new Thickness(0, 8, 0, 0);
-
-        var saveBtn = PluginUi.Button("保存");
-        saveBtn.Margin = new Thickness(0, 8, 0, 0);
-        saveBtn.Click += (_, _) =>
+        var work = Duration("专注时长", "workMinutes", 25, 120, [5, 15, 25, 45]);
+        var rest = Duration("休息时长", "restMinutes", 5, 30, [1, 3, 5, 10, 15]);
+        stack.Children.Add(PluginUi.Text("保存后从下一阶段开始生效；不会改变正在运行的计时。", sub: true));
+        var save = PluginUi.Button("保存");
+        save.Margin = new Thickness(0, 12, 0, 0);
+        save.Click += (_, _) =>
         {
-            if (combo.SelectedItem is ComboBoxItem sel && sel.Content is string txt)
+            try
             {
-                var minutes = int.Parse(txt.Split(' ')[0]);
-                _storage.Set(WorkKey, minutes);
-                PluginUi.ShowStatus(stack, $"已保存：{minutes} 分钟");
+                storage.Set("workMinutes", (int)((ComboBoxItem)work.SelectedItem).Tag);
+                storage.Set("restMinutes", (int)((ComboBoxItem)rest.SelectedItem).Tag);
+                changed?.Invoke();
+                PluginUi.ShowStatus(stack, "已保存");
             }
+            catch { PluginUi.ShowStatus(stack, "保存失败，请重试。"); }
         };
-
-        stack.Children.Add(combo);
-        stack.Children.Add(hint);
-        stack.Children.Add(saveBtn);
+        stack.Children.Add(save);
         return stack;
     }
 }

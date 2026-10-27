@@ -29,6 +29,7 @@ public sealed partial class PetWindow : Window
         _stateMachine.CurrentWalkSpeed = _renderer.WalkSpeed;
         _stateMachine.Tick(delta);
         UpdatePetReaction(delta);
+        SyncFocusPose();
 
         // ---- v0.1.91：走路真位移（Walk 状态按状态机方向/速度匀速平移窗口；替代"原地踏步"）----
         UpdateWalk(delta);

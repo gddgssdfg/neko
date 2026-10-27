@@ -19,13 +19,15 @@ public sealed class ChatScheduler
     private readonly string _catName;
     private readonly string _ownerTitle;
     private readonly Random _rng = new();
+    private readonly Func<bool>? _focusManaged;
     private DispatcherTimer? _timer;
     private DateTime _nextChat = DateTime.Now;
     private DateTime _lastRestReminder = DateTime.MinValue;
 
-    public ChatScheduler(Action<string, int> say, ActivityTracker activity, string affectionScoreFile, int restMinutes, string catName, string ownerTitle)
+    public ChatScheduler(Action<string, int> say, ActivityTracker activity, string affectionScoreFile, int restMinutes, string catName, string ownerTitle, Func<bool>? focusManaged = null)
     {
         _say = say;
+        _focusManaged = focusManaged;
         _activity = activity;
         _affectionFile = affectionScoreFile;
         _restMinutes = Math.Max(15, restMinutes);
@@ -46,6 +48,7 @@ public sealed class ChatScheduler
 
     private void OnTick()
     {
+        if (_focusManaged?.Invoke() == true) return;
         int level = ReadAffectionLevel();
         var now = DateTime.Now;
 

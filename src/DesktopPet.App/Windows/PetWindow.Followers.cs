@@ -93,7 +93,7 @@ public sealed partial class PetWindow : Window
             ShowBubble, _activity,
             System.IO.Path.Combine(Paths.Data, "plugins", "com.lantern.affection", "score.json"),
             _config.ChatRestMinutes,
-            _config.CatName, _config.OwnerTitle);   // v0.1.41：注入称呼/猫名到台词模板
+            _config.CatName, _config.OwnerTitle, () => FocusManaged);   // v0.1.41：注入称呼/猫名到台词模板
         _chatScheduler.Start();
     }
 

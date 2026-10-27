@@ -182,6 +182,7 @@ public sealed partial class PetWindow : Window
 
         // 事件总线（宿主广播，插件订阅）
         _eventBus = new EventBusImpl();
+        InitializeFocusCompanion();
 
         // UI 注册（径向菜单槽位）
         _uiApi = new UIApiImpl(_ => null);
@@ -430,6 +431,7 @@ public sealed partial class PetWindow : Window
     {
         if (_isDisposed) return;
         _isDisposed = true;
+        _removeFocusSubscription?.Invoke();
         DisposeResidency();
         _loopTimer.Stop();
         _gameTimer.Stop();
