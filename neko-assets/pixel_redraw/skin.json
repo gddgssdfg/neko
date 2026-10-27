@@ -55,5 +55,29 @@
       "fps": 2,
       "eyeLayer": null
     }
+  ],
+  "motion": {
+    "gazeMaxX": 0.55,
+    "gazeMaxY": 0.3,
+    "blinkMinSeconds": 2.5,
+    "blinkMaxSeconds": 6.5,
+    "typingBlinkMinSeconds": 1.8,
+    "typingBlinkMaxSeconds": 3,
+    "typingBob": 0.18,
+    "typingBobPeriodSeconds": 1.6,
+    "walkStride": 8
+  },
+  "transitions": [
+    {
+      "from": "sleep",
+      "to": "idle",
+      "via": "sit"
+    },
+    {
+      "from": "sleep",
+      "to": "work",
+      "via": "sit"
+    }
   ]
+
 }

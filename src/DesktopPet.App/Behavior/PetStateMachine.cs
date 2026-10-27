@@ -56,7 +56,9 @@ public sealed class PetStateMachine
     private TimeSpan _nextWalkIn = TimeSpan.FromSeconds(45);        // 距下次走动的倒计时（ctor 里再随机化）
 
     /// <summary>当前行走的水平速度（px/s，含方向符号）；非 Walk 状态恒为 0。宿主按此 ×dt 平移窗口。</summary>
-    public double WalkVelocityX => Current == PetState.Walk ? _walkDirection * WalkSpeed : 0.0;
+    public double CurrentWalkSpeed { get; set; } = WalkSpeed;
+    public long Revision { get; private set; }
+    public double WalkVelocityX => Current == PetState.Walk ? _walkDirection * CurrentWalkSpeed : 0.0;
 
     /// <summary>
     /// 闲时走动开关（可热改）。
@@ -178,6 +180,7 @@ public sealed class PetStateMachine
         // 初始 Current 就是 Idle，若此处跳过，渲染器永远收不到首次 Play，
         // _animator.State 恒为 null → 什么都不画（窗口一片黑）。
         Current = next;
+        Revision++;
         _ = _api.PlayAnimationAsync(next, new AnimationOptions { Loop = true });
     }
 }

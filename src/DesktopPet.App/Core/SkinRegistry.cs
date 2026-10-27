@@ -40,6 +40,8 @@ public readonly record struct SkinEyeOffset(double X, double Y);
 /// </summary>
 public sealed class SkinInfo
 {
+    public SkinMotion? Motion { get; init; }
+    public IReadOnlyList<SkinTransition> Transitions { get; init; } = Array.Empty<SkinTransition>();
     /// <summary>皮肤 id（= 目录名，用于持久化到 AppConfig.Skin）。</summary>
     public required string Id { get; init; }
 
@@ -329,6 +331,24 @@ public static class SkinRegistry
             }
             if (states.Count == 0) return null;   // 没有可用状态的皮肤不可用
 
+            var transitions = new List<SkinTransition>();
+            if (root.TryGetProperty("transitions", out var routes))
+            {
+                if (routes.ValueKind != JsonValueKind.Array || routes.GetArrayLength() > 32) throw new FormatException("transitions 必须为至多 32 项的数组");
+                var mainStates = new HashSet<string>(new[] { "idle", "sit", "sleep", "work" }, StringComparer.OrdinalIgnoreCase);
+                foreach (var route in routes.EnumerateArray())
+                {
+                    if (route.ValueKind != JsonValueKind.Object) throw new FormatException("transition 必须为对象");
+                    var from = GetString(route, "from")?.ToLowerInvariant();
+                    var to = GetString(route, "to")?.ToLowerInvariant();
+                    var via = GetString(route, "via")?.ToLowerInvariant();
+                    if (from is null || to is null || via is null || !mainStates.Contains(from) || !mainStates.Contains(to) || from == to ||
+                        !states.Any(s => string.Equals(s.Name, from, StringComparison.OrdinalIgnoreCase)) || !states.Any(s => string.Equals(s.Name, to, StringComparison.OrdinalIgnoreCase)) || !states.Any(s => string.Equals(s.Name, via, StringComparison.OrdinalIgnoreCase) && s.Fps > 0) ||
+                        transitions.Any(t => t.From == from && t.To == to)) throw new FormatException("过渡需引用已声明的状态和正帧率中间动作，且不能重复或拦截直接交互");
+                    transitions.Add(new SkinTransition(from, to, via));
+                }
+            }
+
             return new SkinInfo
             {
                 Id = id!,
@@ -343,6 +363,7 @@ public static class SkinRegistry
                 EyeLayers = eyeLayers,
                 States = states,
                 RecommendedScale = recommendedScale,
+                Motion = SkinMotion.Parse(root), Transitions = transitions,
             };
         }
         catch (Exception ex)

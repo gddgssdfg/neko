@@ -5,6 +5,7 @@
 > 当前版本：见 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件不硬编码版本号，避免漂移；一致性由 `tools/check_version.py` 守护）。
 
 开发路线见 [长期规划](docs/roadmap.md)。安静模式、找回猫咪、偏好备份和安全启动见 [常驻与恢复](docs/recovery.md)。
+皮肤作者可查看 [动作参数与过渡](docs/skin-motion.md)，调整眨眼、起伏、眼神和步幅，并定义可中断的唤醒动作。
 
 ## 目录结构
 

@@ -17,6 +17,13 @@ public sealed class PetRenderer
     private readonly Random _rng = new();
     private bool _landing;
     private bool _walkFacingRight;
+    private SpriteState? _transitionTarget;
+    private bool _transitionLoop;
+    private double _typingWeight;
+    public bool IsTransitioning => _transitionTarget is not null;
+    public double WalkSpeed => _atlas.Motion?.WalkStride is double stride && _atlas.States.TryGetValue("walk", out var walk)
+        ? stride * Scale * walk.Fps / Math.Max(1, walk.Frames.Length) * _moodIntensity
+        : Behavior.PetStateMachine.WalkSpeed;
 
     // 眼球偏移（眼神追踪）
     private Vector _eyeOffset;
@@ -51,6 +58,7 @@ public sealed class PetRenderer
     /// <summary>v0.1.57：眨眼 3 步序列 open → half(80ms) → closed(60ms) → open；总 ~150ms（与原 100ms 持平/略长，Phase 内平滑）
     /// HasTransientVisual 揭示"瞬时活动"——宿主据此保持主循环高频 tick（位移/拖拽/打字外加 blink/flash/speech）。</summary>
     public bool HasTransientVisual =>
+        IsTransitioning || _typingWeight > .005 ||
         _landing ||
         _blinkPhase != BlinkPhase.Open ||
         _clockMs < _typingUntilMs ||
@@ -78,7 +86,7 @@ public sealed class PetRenderer
     {
         _atlas = atlas;
         // 首次眨眼安排在启动后 2~6s（_clockMs 从 0 起）
-        _nextBlinkAtMs = 2000 + _rng.NextDouble() * 4000;
+        ScheduleNextBlink(6);
     }
 
     /// <summary>v0.1.48：热切换皮肤（运行时换 atlas）。清 _animator 缓存强制下帧从新 atlas 拉帧。</summary>
@@ -87,6 +95,10 @@ public sealed class PetRenderer
         _atlas = atlas;
         _socketBrushCache.Clear();
         _landing = false;
+        _transitionTarget = null;
+        _typingWeight = 0; _typingUntilMs = 0; _flashEyesUntilMs = 0; _breathOffset = 0;
+        _blinkPhase = BlinkPhase.Open;
+        ScheduleNextBlink(6);
         _animator.SetState(null);
         RenderInvalidated?.Invoke();
     }
@@ -96,11 +108,22 @@ public sealed class PetRenderer
 
     public void Play(PetState state, bool loop = true)
     {
-        _landing = false;
         var name = state.ToString().ToLowerInvariant();
+        if (string.Equals(_transitionTarget?.Name, name, StringComparison.OrdinalIgnoreCase) && _transitionLoop == loop) return;
+        _landing = false;
+        var target = _atlas.States.GetValueOrDefault(name);
+        var route = _atlas.Transitions.FirstOrDefault(t => string.Equals(t.From, _animator.State?.Name, StringComparison.OrdinalIgnoreCase) && t.To == name);
+        _transitionTarget = null;
+        if (loop && target is not null && route is not null && _atlas.States.TryGetValue(route.Via, out var bridge))
+        {
+            _transitionTarget = target; _transitionLoop = loop;
+            _animator.Loop = false;
+            _animator.SetState(bridge, restart: true);
+            RenderInvalidated?.Invoke(); return;
+        }
         var restart = !loop || _animator.IsComplete || _animator.Loop != loop;
         _animator.Loop = loop;
-        _animator.SetState(_atlas.States.GetValueOrDefault(name), restart);
+        _animator.SetState(target, restart);
         RenderInvalidated?.Invoke();
     }
 
@@ -108,6 +131,7 @@ public sealed class PetRenderer
     public void PlayLanding()
     {
         if (!_atlas.States.TryGetValue("land", out var state)) return;
+        _transitionTarget = null;
         _landing = true;
         _animator.Loop = false;
         _animator.SetState(state, restart: true);
@@ -149,6 +173,13 @@ public sealed class PetRenderer
 
         _animator.Playback = _moodIntensity;
         var changed = _animator.Tick(delta);
+        if (_transitionTarget is { } destination && _animator.IsComplete)
+        {
+            _transitionTarget = null;
+            _animator.Loop = _transitionLoop;
+            _animator.SetState(destination, restart: true);
+            changed = true;
+        }
         if (_landing && _animator.IsComplete)
         {
             Play(PetState.Idle);
@@ -158,7 +189,18 @@ public sealed class PetRenderer
         // v0.1.47：打字活跃检测 → 眨眼更频繁 + 身体呼吸晃动（看键盘效果在 Draw 里）
         bool typing = _clockMs < _typingUntilMs;
         double blinkMax = typing ? 1.6 : 6.0;   // 眨眼间隔上限：打字 1.6s / 闲置 6s（间隔分布见 ScheduleNextBlink）
-        if (typing)
+        var previousBreath = _breathOffset;
+        var motion = _atlas.Motion;
+        if (motion is not null)
+        {
+            bool canBob = _animator.State?.Name is "idle" or "work";
+            if (!canBob) _typingWeight = 0;
+            var desired = typing && canBob ? 1d : 0d;
+            _typingWeight += (desired - _typingWeight) * (1 - Math.Exp(-Math.Max(0, delta.TotalSeconds) / .18));
+            if (_typingWeight < .005) _typingWeight = 0;
+            _breathOffset = Math.Sin(_clockMs / 1000 * Math.Tau / motion.TypingBobPeriodSeconds) * motion.TypingBob * Scale * _typingWeight;
+        }
+        else if (typing)
         {
             // sin 呼吸：幅度 1.5px，周期约 1.4s；身体随打字轻微起伏（用 _clockMs 秒做相位，行为等价）
             _breathOffset = Math.Sin(_clockMs / 1000.0 * 4.5) * 1.5;
@@ -167,6 +209,7 @@ public sealed class PetRenderer
         {
             _breathOffset = 0;
         }
+        changed |= Math.Abs(previousBreath - _breathOffset) > .01;
 
         // v0.1.58(任务5)：眨眼 3 步序列，按"绝对截止时间 + 真实时钟"推进。
         // 每 tick 先把真实 elapsed 累进 _clockMs（等价单调毫秒钟），再与锚定 _blinkStartMs 的
@@ -222,6 +265,12 @@ public sealed class PetRenderer
         _blinkPhase = BlinkPhase.Open;
         var lo = Math.Min(2.0, blinkMax);
         var hi = Math.Max(2.0, blinkMax);
+        if (_atlas.Motion is { } motion)
+        {
+            bool typing = _clockMs < _typingUntilMs;
+            lo = typing ? motion.TypingBlinkMinSeconds : motion.BlinkMinSeconds;
+            hi = typing ? motion.TypingBlinkMaxSeconds : motion.BlinkMaxSeconds;
+        }
         _nextBlinkAtMs = _clockMs + (lo + _rng.NextDouble() * (hi - lo)) * 1000.0;
     }
 
@@ -398,7 +447,7 @@ public sealed class PetRenderer
             return default;
         double k = _atlas.SourcePixelsPerLogical;
         var safe = _atlas.GetEyeSafeShift(eyeKey);
-        double maxX = 0.65 * k, maxY = 0.35 * k;
+        double maxX = (_atlas.Motion?.GazeMaxX ?? .65) * k, maxY = (_atlas.Motion?.GazeMaxY ?? .35) * k;
         if (safe.X > 0 || safe.Y > 0) { maxX = Math.Min(maxX, safe.X); maxY = Math.Min(maxY, safe.Y); }
         double x = Math.Clamp(_eyeOffset.X*k, -maxX, maxX);
         double y = Math.Clamp((_eyeOffset.Y+eyeDownLogical)*k, -maxY, maxY);

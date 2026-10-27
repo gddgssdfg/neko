@@ -26,7 +26,9 @@ public sealed partial class PetWindow : Window
         _lastTickMs = nowMs;
         var delta = TimeSpan.FromMilliseconds(deltaMs);
 
+        _stateMachine.CurrentWalkSpeed = _renderer.WalkSpeed;
         _stateMachine.Tick(delta);
+        UpdatePetReaction(delta);
 
         // ---- v0.1.91：走路真位移（Walk 状态按状态机方向/速度匀速平移窗口；替代"原地踏步"）----
         UpdateWalk(delta);
@@ -73,7 +75,7 @@ public sealed partial class PetWindow : Window
     /// </summary>
     private void UpdateWalk(TimeSpan delta)
     {
-        var vx = _stateMachine.WalkVelocityX;   // px/s，含方向；非 Walk 时为 0
+        var vx = _renderer.IsTransitioning ? 0 : _stateMachine.WalkVelocityX;
         _renderer.SetWalkDirection(vx);
         if (vx == 0)
         {

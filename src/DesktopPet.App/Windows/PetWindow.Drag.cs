@@ -16,6 +16,16 @@ namespace DesktopPet.App.Windows;
 
 public sealed partial class PetWindow : Window
 {
+    private double _petRemainingMs;
+    private long _petRevision;
+
+    private void UpdatePetReaction(TimeSpan delta)
+    {
+        if (_petRemainingMs <= 0) return;
+        if (_stateMachine.Revision != _petRevision || _stateMachine.Current != PetState.Pet) { _petRemainingMs = 0; return; }
+        _petRemainingMs -= delta.TotalMilliseconds;
+        if (_petRemainingMs <= 0) _stateMachine.Play(_config.AppMode == "work" ? PetState.Work : PetState.Idle);
+    }
     /// <summary>v0.2.4：摸到下半身（爪/尾）时的"瞪一眼"时长。</summary>
     private const int LowerPetEyeFlashMs = 350;
 
@@ -113,6 +123,9 @@ public sealed partial class PetWindow : Window
         if (!_config.KeyboardReactionsEnabled) return;
         try
         {
+            if (_stateMachine.Current is PetState.Sleep or PetState.Sit)
+                _stateMachine.Play(_config.AppMode == "work" ? PetState.Work : PetState.Idle);
+            else _stateMachine.NoteInteraction();
             _renderer.FlashEyes(300);
             _renderer.SetTypingActive(TimeSpan.FromSeconds(1));   // v0.1.47：保持打字活跃 1s
             RequestActiveLoop();                                  // v0.1.57：闲置 → 活动立即唤醒一次主循环
@@ -157,13 +170,8 @@ public sealed partial class PetWindow : Window
         }
 
         // 抚摸动画结束后回到待机
-        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(PetAnimationMs) };
-        t.Tick += (_, _) =>
-        {
-            t.Stop();
-            _stateMachine.Play(DesktopPet.Core.PetState.Idle);
-        };
-        t.Start();
+        _petRemainingMs = PetAnimationMs;
+        _petRevision = _stateMachine.Revision;
     }
 
     /// <summary>v0.1.59(⑧) / v0.2.4：冒爱心粒子（<paramref name="min"/>~<paramref name="max"/> 颗）。</summary>

@@ -39,6 +39,8 @@ public sealed class SpriteState
 
 public sealed class SpriteAtlas
 {
+    public SkinMotion? Motion { get; private set; }
+    public IReadOnlyList<SkinTransition> Transitions { get; private set; } = Array.Empty<SkinTransition>();
     /// <summary>绘制尺寸（逻辑单位）。皮肤源位图可大于此值，由 WPF 在 Draw 时自动缩放。</summary>
     public const int FrameW = 32;
     public const int FrameH = 32;
@@ -146,7 +148,7 @@ public sealed class SpriteAtlas
 
     private static SpriteAtlas LoadFromInfo(SkinInfo info, string skinDir)
     {
-        var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale, PixelArt = info.PixelArt };
+        var atlas = new SpriteAtlas { Skin = info.Id, RecommendedScale = info.RecommendedScale, PixelArt = info.PixelArt, Motion = info.Motion, Transitions = info.Transitions };
 
         foreach (var state in info.States)
         {

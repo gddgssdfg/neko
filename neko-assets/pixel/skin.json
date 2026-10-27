@@ -27,5 +27,29 @@
      "eyeOffsets": [{"x": 0, "y": 1}, {"x": 0, "y": 2}, {"x": 0, "y": 1}, {"x": 0, "y": 2}]},
     {"name": "land", "fps": 12, "eyeLayer": "eyes_open",
      "eyeOffsets": [{"x": 0, "y": 2}, {"x": 0, "y": 1}, {"x": 0, "y": -1}, {"x": 0, "y": 0}]}
+  ],
+  "motion": {
+    "gazeMaxX": 0.55,
+    "gazeMaxY": 0.3,
+    "blinkMinSeconds": 2.5,
+    "blinkMaxSeconds": 6.5,
+    "typingBlinkMinSeconds": 1.8,
+    "typingBlinkMaxSeconds": 3,
+    "typingBob": 0.18,
+    "typingBobPeriodSeconds": 1.6,
+    "walkStride": 10
+  },
+  "transitions": [
+    {
+      "from": "sleep",
+      "to": "idle",
+      "via": "sit"
+    },
+    {
+      "from": "sleep",
+      "to": "work",
+      "via": "sit"
+    }
   ]
+
 }
