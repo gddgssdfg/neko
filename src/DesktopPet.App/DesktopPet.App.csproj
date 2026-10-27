@@ -11,8 +11,8 @@
     <AssemblyName>Neko</AssemblyName>
 
     <!-- 版本号（语义化版本，每次改动同步更新 CHANGELOG.md） -->
-    <Version>0.5.0</Version>
-    <ApplicationIcon>..\..\neko-assets\tray.ico</ApplicationIcon>
+    <Version>0.5.1</Version>
+    <ApplicationIcon>..\..\neko-assets\app.ico</ApplicationIcon>
 
     <!-- 发布配置（v0.1.60：回自包含——用户零前置，双击即用；v0.1.57 曾被误改为 false 且无留痕）
          ⚠️ EnableCompressionInSingleFile 必须为 false：v0.1.60 实测对照——
@@ -60,6 +60,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="..\..\neko-assets\app.ico" Link="Branding\App.ico" />
 
     <ProjectReference Include="..\DesktopPet.Core\DesktopPet.Core.csproj" />
     <ProjectReference Include="..\DesktopPet.Runtime\DesktopPet.Runtime.csproj" />

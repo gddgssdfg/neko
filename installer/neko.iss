@@ -36,7 +36,7 @@ OutputBaseFilename=NekoSetup-{#MyAppVersion}
 ; ultra64 压缩最高（单文件 170MB 压到 ~80MB），慢但是一次性
 Compression=lzma2/ultra64
 SolidCompression=yes
-SetupIconFile=..\neko-assets\tray.ico
+SetupIconFile=..\neko-assets\app.ico
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ArchitecturesAllowed=x64compatible

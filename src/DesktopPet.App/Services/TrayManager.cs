@@ -182,12 +182,16 @@ public sealed class TrayManager : IDisposable
     /// </summary>
     public void OpenSettingsForDev(string? section = null) => OpenSettings(section);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
     private static System.Drawing.Icon LoadIcon(string path)
     {
         try
         {
             using var stream = File.OpenRead(path);
-            return new System.Drawing.Icon(stream);
+            using var icon = new System.Drawing.Icon(stream, new System.Drawing.Size(Math.Max(16, GetSystemMetrics(49)), Math.Max(16, GetSystemMetrics(50))));
+            return (System.Drawing.Icon)icon.Clone();
         }
         catch
         {

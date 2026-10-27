@@ -14,6 +14,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent,
+            new RoutedEventHandler((_, args) => { if (args.OriginalSource is Window window) BrandIcons.Apply(window); }));
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // A settings-initiated restart waits for plugin/data flushes in the old process.

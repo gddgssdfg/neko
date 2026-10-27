@@ -11,6 +11,23 @@ internal static partial class Program
 {
     private static void RunResidencyChecks(string root)
     {
+        Check("brand icon is embedded, deployed and keeps explicit window icons intact", () =>
+        {
+            var window = new Window();
+            try
+            {
+                BrandIcons.Apply(window);
+                Require(window.Icon is System.Windows.Media.Imaging.BitmapFrame { IsFrozen: true }, "embedded icon could not be decoded");
+                var original = window.Icon; BrandIcons.Apply(window);
+                Require(ReferenceEquals(original, window.Icon), "explicit window icon was replaced");
+                Require(File.ReadAllBytes(Path.Combine(Paths.Assets, "app.ico")).SequenceEqual(File.ReadAllBytes(Path.Combine(Paths.Assets, "tray.ico"))), "shell icons differ");
+                var load = typeof(TrayManager).GetMethod("LoadIcon", BindingFlags.Static | BindingFlags.NonPublic)!;
+                using var icon = (System.Drawing.Icon)load.Invoke(null, [Path.Combine(Paths.Assets, "tray.ico")])!;
+                using var bitmap = icon.ToBitmap();
+                Require(bitmap.Width >= 16 && bitmap.Width <= 64, "tray did not choose a small icon frame");
+            }
+            finally { window.Close(); }
+        });
         Check("preferences export excludes extension secrets and import preserves machine choices", () =>
         {
             var current = new AppConfig { StartWithWindows = true, DisabledPlugins = ["test.disabled"], Scale = 2, CatName = "Before",

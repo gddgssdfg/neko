@@ -6,6 +6,7 @@ heat 在 WiX 7 被移除、WiX 4 build 只收单源，所以一步到位生成�
 import os
 import sys
 import uuid
+from xml.sax.saxutils import quoteattr
 
 NS = uuid.UUID("a1b2c3d4-e5f6-7890-1234-567890abcdef")
 
@@ -69,6 +70,9 @@ def main():
     L.append('           UpgradeCode="A1B2C3D4-E5F6-7890-1234-567890ABCDEF" Scope="perUser">')
     L.append('    <MajorUpgrade DowngradeErrorMessage="已安装更高版本，无法降级。" />')
     L.append('    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />')
+    icon_path = os.path.join(src, 'neko-assets', 'app.ico')
+    L.append(f'    <Icon Id="NekoIcon.ico" SourceFile={quoteattr(icon_path)} />')
+    L.append('    <Property Id="ARPPRODUCTICON" Value="NekoIcon.ico" />')
     L.append('')
     L.append('    <!-- 注意：WiX 4 的 StandardDirectory/Component/Feature 必须放 Package 内（不是 Fragment！） -->')
     L.append('    <!-- 目录布局：%LOCALAPPDATA%\\Neko（文件主体）+ 桌面 + 开始菜单 -->')
@@ -110,14 +114,14 @@ def main():
     L.append('    <!-- 桌面快捷方式 -->')
     L.append('    <Component Id="CmpDesktopShortcut" Directory="DesktopFolder" Guid="A1B2C3D4-E5F6-7890-1234-567890ABD001">')
     L.append('      <Shortcut Id="DesktopShortcut" Name="Neko 桌宠" Description="Neko 桌宠"')
-    L.append('                Target="[INSTALLFOLDER]Neko.exe" WorkingDirectory="INSTALLFOLDER" />')
+    L.append('                Target="[INSTALLFOLDER]Neko.exe" WorkingDirectory="INSTALLFOLDER" Icon="NekoIcon.ico" IconIndex="0" />')
     L.append('      <RemoveFolder Id="RemoveDesktopShortcut" Directory="DesktopFolder" On="uninstall" />')
     L.append('      <RegistryValue Root="HKCU" Key="Software\\Neko" Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />')
     L.append('    </Component>')
     L.append('    <!-- 开始菜单快捷方式 -->')
     L.append('    <Component Id="CmpStartMenuShortcut" Directory="NekoProgramMenu" Guid="A1B2C3D4-E5F6-7890-1234-567890ABD002">')
     L.append('      <Shortcut Id="StartMenuShortcut" Name="Neko 桌宠" Description="Neko 桌宠"')
-    L.append('                Target="[INSTALLFOLDER]Neko.exe" WorkingDirectory="INSTALLFOLDER" />')
+    L.append('                Target="[INSTALLFOLDER]Neko.exe" WorkingDirectory="INSTALLFOLDER" Icon="NekoIcon.ico" IconIndex="0" />')
     L.append('      <RemoveFolder Id="RemoveStartMenuDir" Directory="NekoProgramMenu" On="uninstall" />')
     L.append('      <RegistryValue Root="HKCU" Key="Software\\Neko" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />')
     L.append('    </Component>')
