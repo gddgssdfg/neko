@@ -61,6 +61,33 @@ public static class ExtensionInstaller
     public static SpriteAtlas InspectSkin(string source)
     { CheckFiles(source, SkinFiles); return SpriteAtlas.InspectFolder(source); }
 
+    /// <summary>从重新校验的私有副本打包；目标必须是新文件，不覆盖已有包或源素材。</summary>
+    public static void ExportSkin(string source, string destination, string expectedId)
+    {
+        var input = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var output = Path.GetFullPath(destination);
+        if (!output.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) throw new IOException("请选择 .zip 文件。");
+        if (output.StartsWith(input + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("请将皮肤包保存到源素材目录之外。");
+        if (File.Exists(output) || Directory.Exists(output)) throw new IOException("目标已存在，请使用新文件名；不会覆盖原文件。");
+        var parent = Path.GetDirectoryName(output)!;
+        var stage = Path.Combine(parent, ".neko-skin-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(stage);
+        try
+        {
+            var id = Install(source, stage, false, expectedId);
+            var zip = Path.Combine(stage, "package.zip");
+            System.IO.Compression.ZipFile.CreateFromDirectory(Path.Combine(stage, id), zip,
+                System.IO.Compression.CompressionLevel.Optimal, includeBaseDirectory: true);
+            File.Move(zip, output, overwrite: false);
+        }
+        finally
+        {
+            if (string.Equals(Path.GetDirectoryName(stage), parent, StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(stage)) Directory.Delete(stage, true);
+        }
+    }
+
     public static string Install(string source, string destinationRoot, bool plugin, string? expectedId = null)
     {
         var id = plugin ? InspectPlugin(source).Id : InspectSkin(source).Skin;

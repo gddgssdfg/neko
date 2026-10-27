@@ -33,7 +33,7 @@ public sealed partial class SettingsWindow
                 details = $"{info.Id} · {info.FrameWidth}×{info.FrameHeight} · 每动作 {info.Frames} 帧\n已校验 {info.States.Count} 组动作与帧尺寸。\n\n安装不会覆盖已有皮肤；安装后可在外观列表选择。";
                 picture = ExtensionInstaller.SkinPreview(atlas);
             }
-            var preview = new ExtensionPreviewWindow(title, details, picture, plugin ? "安装并保持停用" : "安装皮肤") { Owner = this };
+            var preview = new ExtensionPreviewWindow(title, details, picture, plugin ? "安装并保持停用" : "安装皮肤", plugin ? null : source) { Owner = this };
             if (preview.ShowDialog() != true) return;
             if (plugin)
             {
@@ -60,7 +60,7 @@ public sealed partial class SettingsWindow
 
 public sealed class ExtensionPreviewWindow : Window
 {
-    public ExtensionPreviewWindow(string title, string details, ImageSource? picture, string confirm)
+    public ExtensionPreviewWindow(string title, string details, ImageSource? picture, string confirm, string? skinDirectory = null)
     {
         Title = "预览与安装"; Width = 520; Height = 580; MinWidth = 380; MinHeight = 380;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; NekoDesign.Apply(this);
@@ -71,6 +71,17 @@ public sealed class ExtensionPreviewWindow : Window
         buttons.Children.Add(cancel); buttons.Children.Add(install); DockPanel.SetDock(buttons, Dock.Bottom); root.Children.Add(buttons);
         var content = new StackPanel();
         content.Children.Add(NekoDesign.ToolHeader(title, "确认内容后再安装"));
+        if (skinDirectory is not null)
+        {
+            var inspect = PluginUi.Button("检查全部动作");
+            inspect.Margin = new Thickness(0, 12, 0, 0);
+            inspect.Click += (_, _) =>
+            {
+                try { new SkinWorkbenchWindow(skinDirectory) { Owner = this }.ShowDialog(); }
+                catch (Exception ex) { MessageBox.Show(this, "无法检查皮肤：" + ex.Message); }
+            };
+            content.Children.Add(inspect);
+        }
         if (picture is not null)
         {
             var image = new Image { Source = picture, Width = 160, Height = 160, Margin = new Thickness(0,12,0,18) };

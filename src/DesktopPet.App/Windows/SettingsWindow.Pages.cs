@@ -108,6 +108,15 @@ public sealed partial class SettingsWindow : Window
             refreshScaleCard();
         }));
         stack.Children.Add(BuildButtonCard("导入皮肤", "先预览并检查帧尺寸与动作，再安装；不会覆盖已有皮肤。", "选择皮肤目录", () => ImportExtension(false)));
+        stack.Children.Add(BuildButtonCard("皮肤工作台", "逐帧查看动作、眼层锚点与校验提示；也可打开外部目录并打包。", "打开工作台", () =>
+        {
+            try
+            {
+                var skin = SkinRegistry.Scan(Paths.Assets).FirstOrDefault(s => s.Id == _config.Skin);
+                new SkinWorkbenchWindow(skin?.Directory ?? System.IO.Path.Combine(Paths.Assets, SkinRegistry.DefaultSkinId)) { Owner = this }.ShowDialog();
+            }
+            catch (Exception ex) { MessageBox.Show(this, "无法打开皮肤工作台：" + ex.Message); }
+        }));
         stack.Children.Add(BuildButtonCard("恢复默认外观", "切回内置像素橘猫，不删除自定义皮肤。", "恢复默认", () => { _pet.SetSkin(SkinRegistry.DefaultSkinId); Save(); RebuildSection("pet"); }));
         stack.Children.Add(BuildButtonCard(
             "刷新皮肤", "新增或替换素材后重新扫描，并重新加载当前皮肤，无需重启。",

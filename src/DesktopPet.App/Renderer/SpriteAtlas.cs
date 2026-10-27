@@ -322,7 +322,7 @@ public sealed class SpriteAtlas
     }
 
     /// <summary>v0.1.89：源位图 alpha&gt;16 的包围盒（源像素）。全透明 / 空图返回 (0,0,0,0)。</summary>
-    private static Int32Rect AlphaBBox(BitmapSource src)
+    internal static Int32Rect AlphaBBox(BitmapSource src)
     {
         int w = src.PixelWidth, h = src.PixelHeight;
         if (w <= 0 || h <= 0) return new Int32Rect(0, 0, 0, 0);

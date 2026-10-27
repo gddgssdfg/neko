@@ -32,6 +32,15 @@ public sealed class FrameAnimator
         IsComplete = false;
     }
 
+    /// <summary>作者逐帧检查：定位后清除累计时间，从所选帧继续播放。</summary>
+    public void SeekFrame(int frame)
+    {
+        if (_state is null || _state.Frames.Length == 0) return;
+        _frame = Math.Clamp(frame, 0, _state.Frames.Length - 1);
+        _accumulator = 0;
+        IsComplete = false;
+    }
+
     /// <summary>推进一帧。delta 秒。返回是否需要重绘。</summary>
     public bool Tick(TimeSpan delta)
     {

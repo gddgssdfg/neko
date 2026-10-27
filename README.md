@@ -6,7 +6,7 @@
 
 开发路线见 [长期规划](docs/roadmap.md)。安静模式、找回猫咪、偏好备份和安全启动见 [常驻与恢复](docs/recovery.md)。
 专注计时、暂停、待办联动和休息流程见 [专注陪伴](docs/focus-companion.md)。
-皮肤作者可查看 [动作参数与过渡](docs/skin-motion.md)，调整眨眼、起伏、眼神和步幅，并定义可中断的唤醒动作。
+皮肤作者可使用 [皮肤工作台](docs/skin-workbench.md) 检查和打包素材，并查看 [动作参数与过渡](docs/skin-motion.md)，调整眨眼、起伏、眼神和步幅，并定义可中断的唤醒动作。
 
 ## 目录结构
 

@@ -54,7 +54,7 @@ public sealed class SkinInfo
     /// <summary>帧组织方式。</summary>
     public SkinLayout Layout { get; init; } = SkinLayout.Sheet;
 
-    /// <summary>单帧绘制尺寸（逻辑单位，WPF 会按需缩放实际位图）。</summary>
+    /// <summary>源素材单帧像素尺寸；宿主逻辑画幅仍为 32×32。</summary>
     public int FrameWidth { get; init; } = 32;
 
     /// <inheritdoc cref="FrameWidth"/>
