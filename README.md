@@ -1,245 +1,75 @@
-# Neko 桌宠程序
+# Neko · 像素橘猫桌面伙伴
 
-> Windows 10 轻量像素桌宠，C# + WPF + .NET 8，VS 2022 开发。
-> 仓库：[GitHub](https://github.com/gddgssdfg/neko) · [Gitee](https://gitee.com/gddgssdfg/neko)
-> 当前版本：见 `src/DesktopPet.App/DesktopPet.App.csproj` 的 `<Version>`（本文件不硬编码版本号，避免漂移；一致性由 `tools/check_version.py` 守护）。
+[English](README.en.md) · [GitHub](https://github.com/gddgssdfg/neko) · [Gitee](https://gitee.com/gddgssdfg/neko)
 
-开发路线见 [长期规划](docs/roadmap.md)。安静模式、找回猫咪、偏好备份和安全启动见 [常驻与恢复](docs/recovery.md)。
-专注计时、暂停、待办联动和休息流程见 [专注陪伴](docs/focus-companion.md)。
-皮肤作者可使用 [皮肤工作台](docs/skin-workbench.md) 检查和打包素材，并查看 [动作参数与过渡](docs/skin-motion.md)，调整眨眼、起伏、眼神和步幅，并定义可中断的唤醒动作。
+**Neko 是一款面向 Windows 10/11 的桌面宠物与工作陪伴软件。** 一只可互动的像素橘猫常驻桌面，陪你打字、处理待办、专注工作和适时休息；也支持更换皮肤、接入插件和制作自己的外观。
 
-## 目录结构
+*Neko is an interactive pixel orange cat for Windows, with focus timers, to-do lists, keyboard and mouse feedback, custom skins, and plugins.*
 
-```
-neko/
-├── src/                      # 主解决方案（VS 2022 打开 src/DesktopPet.sln）
-│   ├── DesktopPet.sln
-│   ├── DesktopPet.Core/      # 接口契约（net8.0，插件唯一可依赖的层）
-│   ├── DesktopPet.Runtime/   # 插件加载 / 清单解析 / 权限与信任通道（net8.0）
-│   ├── DesktopPet.Sdk/       # 插件基类 PluginBase / 深色控件工厂 PluginUi（net8.0-windows）
-│   └── DesktopPet.App/       # WPF 宿主 → Neko.exe
-├── builtins/                 # 18 个内置插件源码（编译后自动部署到 plugins/，与第三方同构）
-├── samples/
-│   └── SamplePlugin/         # 示例插件（dogfooding 验证）
-├── tests/
-│   ├── LoaderTest/           # 无 UI 插件加载链路测试（发布形态 / ALC 卸载 / 信任通道）
-│   ├── UiProbe/              # UI 层防回归探针（窗口尺寸 / 径向菜单 / 皮肤契约…）
-│   └── PluginSmoke/          # 真加载全部插件冒烟（OnLoad→空闲→OnUnload→ALC 回收/CPU/内存）
-├── neko-assets/              # 素材：皮肤 <id>/（skin.json + 帧 PNG + thumb.png）、icons/、mirror/、ui/、tray.ico
-├── plugins/                  # 运行时插件目录（用户可增删；构建产物，不入库）
-│   ├── README.md
-│   ├── _template/plugin.toml
-│   └── com.lantern.*/        # 内置插件部署产物（仅 dll + plugin.toml）
-├── installer/                # 打包：build_setup.py(WiX) / gen_setup_wxs.py / neko.iss(Inno，遗留)
-├── tools/                    # 素材生成与体检脚本（generate_sprites.py / build_skin_v2.py /
-│                             #   gen_skin_previews.py / analyze_assets.py / find_grid.py /
-│                             #   check_version.py / check_i18n.py …）
-├── docs/                     # 设计与开发文档（见文末「文档」）
-├── publish/                  # 发布产物（.gitignore 忽略）
-├── CHANGELOG.md              # 版本记录（改版本时必须同步）
-└── README.md
-```
+![Neko 像素橘猫](neko-assets/pixel/thumb.png)
 
-## 版本控制（v0.1.60 起）
+## 可以用它做什么
 
-本项目**已启用本地 git**（此前无版本控制，导致两起无留痕回退无法追溯：托盘图标被换回、`SelfContained` 被改 false）。
+| 场景 | 软件提供的功能 |
+| --- | --- |
+| 桌面陪伴 | 抚摸、拖动、眼神跟随、动作切换和贴边互动，让猫陪在桌面一角。 |
+| 打字与鼠标反馈 | 显示键鼠面板，实时反馈按键与鼠标活动；猫和键盘大小可分别调整。 |
+| 专注与休息 | 番茄钟支持暂停、继续和手动休息计时；锁屏或休眠时暂停，回来手动继续。 |
+| 整理小事 | 用待办清单和便签记录事项；选中未完成待办即可发起专注，完成计时不会自动勾选任务。 |
+| 按自己的节奏使用 | 可切换工作/摸鱼模式、开启安静模式、找回屏幕外的猫，并备份外观和互动偏好。 |
+| 定制与创作 | 导入皮肤与插件；在皮肤工作台中播放、逐帧检查动作与眼层锚点，校验后导出皮肤包。 |
 
-```bash
-# 查看改动（每次改动后先跑这个，能立刻发现非预期修改）
-git status --short
-git diff --stat
+项目包含 18 个内置插件，覆盖专注、待办、便签、天气、系统信息等工具。可按需管理；剪贴板记录与自动更新检查在首次引导中默认不勾选。
 
-# 提交（格式：<版本号>: <主题>，与 csproj 版本同步）
-# 🔴 一律走 heredoc（-F -），不要用 -m "双引号"：多行不好写，且引号会被 shell 吃掉
-git commit -F - <<'MSG'
-v0.2.0: 一句话主题
+## 开始使用
 
-- 改动点 1
-- 改动点 2
-MSG
+**系统：Windows 10/11，x64。** 主程序使用 C#、WPF 与 .NET 8；目前不支持 macOS/Linux。
 
-# 回滚单个文件到上次提交
-git checkout -- <文件路径>
-```
+1. 查看 [GitHub Releases](https://github.com/gddgssdfg/neko/releases) 是否有公开发布的安装包或便携包。源码更新可能早于安装包；若暂无公开包，可按下方说明构建。
+2. 启动 Neko，完成首次引导；名字和称呼可以使用默认值。
+3. 右键猫咪打开功能菜单，通过托盘进入设置；拖动猫咪调整位置。
+4. 从菜单打开专注计时或待办清单；在「设置 → 外观」更换皮肤、调整大小或打开皮肤工作台。
 
-**设计要点**：`.gitignore` 排除了 `publish/`(4.1G)、`bin/`+`obj/`、`installer/*.msi`(375M)、`data/`、`.env`（含 API Key），以及 **`plugins/com.lantern.*/`（插件部署产物）**。
-只跟踪源码 + 素材 + 手写文档 + 生成脚本。
+专注进度仅保留在本次运行中；关闭计时面板后继续计时，退出程序或禁用番茄钟插件会清除当前进度。皮肤 ZIP 需先解压，再选择包含 `skin.json` 的目录导入。
 
-⚠️ **`plugins/` 下的插件目录不入库**——它们是各内置插件 `DeployToPlugins` target 的构建产物；插件 dll 属**非确定性构建**（源码不变、重建也会内容微变），入库会持续刷 diff 噪音。
-**clone 后需先构建**才会有插件：`dotnet build src/DesktopPet.sln`（sln 含全部内置插件，构建即自动部署到 `plugins/`）。手写的 `plugins/README.md` 与 `plugins/_template/` 仍入库。
+## 隐私与扩展
 
-⚠️ **素材改动肉眼难以分辨**（PNG/ICO 是二进制）——`git diff --stat` 会显示 `Bin N -> M bytes`，这是发现"图标被意外替换"最有效的手段。
+- 桌宠动画、专注和本地工具可以离线使用，不要求 Neko 账号；没有广告或向作者发送的使用遥测。
+- 全局键鼠监听用于热键、动画、键鼠反馈和本地活跃时长提醒，不保存原始按键内容或鼠标轨迹，不上传这些输入数据。
+- 剪贴板记录需主动开启；开启后内容保存在本机，可暂停、清空并设置过期清理。
+- 天气、网页搜索、AI 咨询及自动更新等功能会按各自触发条件联网，详见 [隐私说明](PRIVACY.md)。
+- DLL 插件能执行本机代码，当前不是安全沙箱。只安装可信来源的插件；导入后保持停用，由用户手动开启。
 
-## 常用命令
+用户数据默认保存在 `%AppData%\Neko`；便携包使用程序目录下的 `data/`。实际位置可在「设置 → 关于 → 数据目录」查看。[安全说明与漏洞反馈](SECURITY.md)
 
-```bash
-# 构建主解决方案（含全部内置插件；构建即自动部署到 plugins/）
-dotnet build src/DesktopPet.sln -c Debug
+## 从源码运行
 
-# ⚠️ tests/ 不在 sln 内，必须各自单独构建/运行（否则会跑到陈旧二进制）
-dotnet run --project tests/LoaderTest/LoaderTest.csproj -c Debug    # 插件加载链路（无 UI）
-dotnet run --project tests/UiProbe/UiProbe.csproj -c Debug          # UI 防回归探针（会短暂弹宠物窗口）
-dotnet run --project tests/PluginSmoke/PluginSmoke.csproj -c Debug  # 真加载全部插件冒烟
-
-# 版本号一致性检查（csproj ↔ CHANGELOG ↔ git tag）
-python tools/check_version.py
-
-# 素材编译与离线检查需要 Pillow
-python -m pip install -r tools/requirements-art.txt
-python tests/test_skin_tools.py
-
-# 重新生成素材
-python tools/generate_sprites.py
-python tools/gen_skin_previews.py     # 换皮肤素材后必须重跑（生成 thumb.png）
-```
-
-> 本机（Windows + Git Bash）若直接 `dotnet` 因环境变量报错，改用包装脚本：
-> `bash /c/Users/Lantern/neko-dotnet-env.sh <dotnet 子命令> ...`
-
-## 运行
-
-- **VS 2022**：打开 `G:\lantetn-li\neko\src\DesktopPet.sln`，**设 `DesktopPet.App` 为启动项目**，F5
-  - ⚠️ 启动项目若停在 `DesktopPet.Core`（类库，只产 .dll）会报「不是有效的 Win32 应用程序」
-- **命令行**：`G:\lantetn-li\neko\src\DesktopPet.App\bin\Debug\net8.0-windows\Neko.exe`
-
-## 两种运行模式（v0.1.39 / v0.1.48）
-
-可在「设置 → 输入 → 应用模式」或托盘右键「工作模式」切换，互斥：
-
-| 模式 | 行为 |
-|---|---|
-| **摸鱼模式**（slack） | 收起键盘映射窗；猫滑到**最近的屏幕边缘挂住**（Climb）。可选「摸鱼时吸附屏幕边缘」关闭。**该模式下鼠标走远也不会自动脱离**，只有拖拽才会把猫拉下来。 |
-| **工作模式**（work） | 猫伏在键盘映射窗前"干活"（参照 BongoCat）；键盘映射窗打开、高亮你按下的键。 |
-
-## 交互速查
-
-| 操作 | 效果 |
-|---|---|
-| 左键快击 | 抚摸（播 Pet 动画，广播 `pet:petted`） |
-| 左键拖拽 | 抓起 / 甩出（落体 + 触底反弹，已修 DPI 坐标不跟手）|
-| 右键 / 径向菜单热键（默认 `Ctrl+Alt+N`）| 呼出径向菜单（**真环形挖洞**，猫在中心完全可见可点；每页最多 8 槽，超出可翻页）|
-| 拖到屏幕边缘 | 贴边悬挂（**非摸鱼模式**下，鼠标远离吸附点 40px 脱离回落）|
-| 打字 / 点击 | 猫短暂瞪眼回应（v0.1.40 键鼠反应 + v0.1.47 点击互动；在「猫咪 → 行为」可关）|
-
-## 托盘菜单（v0.1.30 起瘦身，只留常用项）
-
-托盘图标右键：**设置 / 暂停动画（就地切成"开始动画"）/ 工作模式（勾选，联动应用模式）/ 显示·隐藏猫咪 / 插件…（仅当有插件注册托盘项时出现）/ 关于 Neko vX / 退出**。
-
-> 开机自启、鼠标穿透、缩放、透明度等**不在托盘**——都在设置窗口里（这符合"托盘只留常用"的既定取舍）。
-
-## 设置窗口（v0.1.31 起重做为 sidebar 卡片式；当前 **6 个 section**）
-
-左侧固定 sidebar，右侧按 section 渲染卡片。**section 列表**（源码 `SettingsWindow.cs`）：
-
-| Section | 职责 | 主要卡片 |
-|---|---|---|
-| **通用** general | 全局开关与外观语言 | 常规：**开机自启动**（写 HKCU Run）；游戏模式：互斥三选「关闭 / 全屏时藏猫 / 全屏时鼠标穿透」；外观与语言：**界面主题**（深色/浅色）、**界面语言**（中文/English，即时生效）|
-| **猫咪** pet | 猫本身的外观与行为 | 外观：**缩放倍率**（1.0–8.0，步进 0.2，显示 `Nx (32·N px)`）、**窗口透明度**（0.2–1.0）、**外观风格（皮肤选择器：一行一套皮肤 + 缩略图，读 `neko-assets/*/skin.json`）**、打开皮肤目录、**猫的名字**、**猫怎么称呼你**；行为：**键鼠反应**、**气泡对话**、**鼠标穿透**、回到默认位置 |
-| **输入** input | 应用模式与快捷键 | 应用模式：互斥「摸鱼模式 / 工作模式」；摸鱼时吸附屏幕边缘；**键盘朝向**（朝我/朝猫=镜像）；快捷键：**径向菜单热键**、**显示·隐藏猫咪（老板键）**、透明度 ±10%、缩放 ±20%、回到默认位置（**附加热键自 v0.1.33 起热更新，改完无需重启**）|
-| **径向菜单** radial | 径向菜单的槽位治理（v0.1.71 新增）| 显示数量：最多显示槽位数（0 = 不限）；**插件顺序与显隐**：逐个槽位 ▲▼ 调序 + 显隐开关（标注「超出上限 / 已隐藏」）；重置：恢复默认 |
-| **插件** plugin | 插件管理（每插件一张卡片）| 名称 + 版本 + **启用/禁用开关**（热启用/禁用，立即 OnLoad/OnUnload）+ 作者 + 描述 + **加载错误**（红色行）+ 插件自带的 `ISettingsPage` 自定义设置页（v0.1.44 起卡片式）|
-| **关于** about | 版本与更新 | 版本号（读程序集）；**自动检查更新**（首启选择，开启后每天启动检查一次）；快捷键速查 |
-
-> ⚠️ **皮肤选择器（v0.1.82）**：外观列表已从旧的 WrapPanel 标签改为「一行一个皮肤 + 48px 预览缩略图」；缩略图来自 `neko-assets/<id>/thumb.png`（缺失显示占位，不影响选择）。切换皮肤时若作者声明了 `recommendedScale`，宿主会自动套用推荐缩放（并把「缩放倍率」卡片同步刷新）。
->
-> ⚠️ **懒加载**：为压冷启动，宿主只立即加载"核心插件"；联网/重资源类插件（如天气/一言/单词卡/截图/运势/整点报时）在主窗口显示后**后台异步加载**（`PluginHost.LoadCore` / `LoadDeferred`）。插件页展示的是**当前已加载**的插件。
-
-## 🔒 隐私与安全
-
-### Neko 会记录我的键盘/鼠标输入吗？
-
-**不会。** Neko 的全局键盘/鼠标监听（低级钩子）只用于三件事：**全局热键**、**键鼠映射窗实时高亮**、**打字/点击时的小反应动画**——所有输入只在内存中即时处理，**不记录按键内容、不写入文件、不上传网络、不注入其他进程、不模拟输入**。其中反应类功能可在设置页关闭。
-
-- 桌宠动画与本地工具可离线使用。开启自动检查更新时，主程序每天启动后会向 Gitee 查询一次版本（可在「设置 → 关于」关闭）；天气插件在用户查询时访问 Open-Meteo，AI 咨询在发送消息时访问 DeepSeek，搜索由默认浏览器打开百度。详见 `PRIVACY.md`。
-- 用户数据（配置 / 好感度 / 插件私有数据 / 日志）默认保存在 **`%AppData%\Neko`**（v0.1.98 起；
-  之前是 exe 同级的 `data/`）。想要绿色便携形态，就在程序根放一个 `portable.flag` 文件，数据即改回程序根 `data/`。
-  **删除该目录即清除全部用户数据。** 找不到时打开 **设置 → 关于 → 数据目录**，点「打开目录」直达。
-- 无账号、无遥测、无统计、无广告。
-
-详见 [PRIVACY.md](PRIVACY.md)（隐私说明）与 [SECURITY.md](SECURITY.md)（安全说明与漏洞上报）。
-
-## 文档
-
-**插件开发**
-- `docs/plugin-development-guide.md` — 📘 **插件开发标准文档（可执行，v0.1.83）**：§0 给 AI 的最简清单 / 5 分钟上手 /
-  契约全签名 / `plugin.toml` 与权限表 / 生命周期铁律 / **⚠️ 线程规则** / 存储 / UI 注册 / 调试 / **踩坑清单** /
-  附录（权限·事件速查 / 一致性核对 / 维护约定 / API 版本历史）
-- `templates/plugin-skeleton/` — 可直接复制的最小插件骨架（**勿加入 sln**）
-- `plugins/README.md` — 插件目录约定、数据存放、启用禁用（部署者视角）
-
-**皮肤开发**
-- `docs/skin-development-guide.md` — 🎨 **皮肤开发标准文档（可执行，v0.1.83）**：`skin.json` 字段表 /
-  **`fps` 语义** / 9 状态 / 帧图布局 / 眼球层 / `thumb.png` / 素材管线工具 / CSProj 白名单 / AI 生图要点 /
-  常见错误速查 / 附录：自绘素材规格（调色板 · Aseprite 导出 · 质检清单）
-
-**项目**
-- `CHANGELOG.md` — 版本记录（改版本时同步更新）
-- `docs/dev-log.md` — **开发日志**：开发过程、踩过的坑、决策依据（文末附 2026-09-11 项目审计存档）
-- `docs/architecture.md` — 🏛 **架构文档**：分层 / 技术选型 / Core API / 宿主内核要点 / 资源红线 / 径向菜单设计 / 立项决策与差异校准
-- `docs/release-sop.md` — 🚀 **发布 SOP**：版本/文档同步 → 构建与测试闸门 → 发布形态 → 打包 → 清场 checklist
-- `docs/ai-asset-prompts.md` — AI 素材生成提示词
-
----
-
-## 许可证（License）
-
-本项目采用 **代码与素材分离** 的双许可：
-
-| 范围 | 许可 | 允许商用 |
-|---|---|---|
-| **源代码** —— `src/` `builtins/` `tools/` `tests/` `samples/` `templates/` 及全部 `.md` `.toml` `.json` 文本 | **MIT** | ✅ 允许 |
-| **美术素材** —— `neko-assets/` 下全部图像、图标、截图等 | **CC BY-NC 4.0** | ❌ **不允许**（商用需另行授权） |
-
-- MIT 全文 → [`LICENSE`](LICENSE)
-- 素材许可、署名要求与商用授权 → [`LICENSE-ASSETS`](LICENSE-ASSETS)
-
-> ⚠️ **要商用请注意**：代码部分（MIT）可直接商用；
-> 但**随附的美术素材不能商用**——请替换为自绘素材，或联系作者取得授权。
-
-### 第三方依赖
-
-| 依赖 | 许可 | 用途 |
-|---|---|---|
-| [Hardcodet.NotifyIcon.Wpf](https://github.com/hardcodet/wpf-notifyicon) | CPOL 1.02 | 托盘图标 |
-| [Tomlyn](https://github.com/xoofx/Tomlyn) | BSD-2-Clause | `plugin.toml` 解析 |
-| [lunar-csharp](https://github.com/6tail/lunar-csharp) | MIT | 农历 / 八字换算 |
-| `System.Drawing.Common` · `System.Security.Cryptography.ProtectedData` | MIT | .NET 官方库 |
-
-### 免责声明
-
-「Neko」是**个人学习项目**，与任何公司或组织无关，按「原样」提供、不附带任何担保。
-隐私说明见 [`PRIVACY.md`](PRIVACY.md)，安全问题反馈见 [`SECURITY.md`](SECURITY.md)。
-
-
-## GitHub / Gitee 同步维护
-
-两个仓库使用同一个 `master` 分支和版本标签。`origin` 指向 Gitee，`github` 指向 GitHub：
+需要 Windows、.NET 8 SDK 和 Python 3。使用 PowerShell 在仓库根目录执行：
 
 ```powershell
-git remote add github https://github.com/gddgssdfg/neko.git
-python tools/sync_remotes.py
+git clone https://github.com/gddgssdfg/neko.git
+cd neko
+$env:PythonExe = (Get-Command python).Source
+dotnet run --project src/DesktopPet.App/DesktopPet.App.csproj -c Debug
 ```
 
-只需首次添加尚不存在的远端。同步脚本先检查两个远端的推送条件，再依次推送当前提交及标签，不强推、不保存令牌；网络中断时可能只有一端成功，排除问题后重新运行即可。建议固定一个本地工作副本提交，避免两端分别修改同一分支。两端 Release、下载附件、Issue、权限设置不随 Git 推送自动同步。
+构建会生成并部署内置插件。使用 Gitee 时可替换克隆地址，需要具有该仓库的访问权限。完整构建、测试、素材工具和打包方法见 [开发与维护](docs/development.md)。当前源码版本以 [项目文件](src/DesktopPet.App/DesktopPet.App.csproj) 为准，变更见 [CHANGELOG](CHANGELOG.md)。
 
-2026-10-24 公开准备时，历史中的已撤回角色皮肤已清理；旧克隆请重新克隆或在备份本地改动后按维护者说明同步，不要把旧历史再次推回。更新检查优先使用公开 GitHub Release，失败时尝试 Gitee。
+## 文档与开发方向
 
+- [专注与待办联动](docs/focus-companion.md) · [常驻、安静模式与恢复](docs/recovery.md)
+- [皮肤工作台](docs/skin-workbench.md) · [皮肤制作](docs/skin-development-guide.md) · [动作参数与过渡](docs/skin-motion.md)
+- [插件开发](docs/plugin-development-guide.md) · [插件骨架](templates/plugin-skeleton) · [架构](docs/architecture.md)
+- [长期路线](docs/roadmap.md) · [发布流程](docs/release-sop.md)
 
-## 自动检查与出包
+Neko 仍在持续开发中。当前重点是角色动作、低打扰工作陪伴和创作者工具；皮肤工作台已支持预览与打包，锚点编辑和运行时过渡串联预览仍在后续计划中。
 
-新安装可在首次启动选择是否显示键鼠面板、是否自动检查更新，以及是否记录剪贴板。名字和称呼可使用默认值；剪贴板记录和自动更新在引导中默认不勾选。剪贴板窗口/插件设置支持暂停、清空和过期清理。
+## 许可
 
-外观页可选择皮肤目录，预览并检查动作/帧图后安装，或恢复默认橘猫。插件页可预览插件声明的能力后导入，导入后保持停用；确认来源可信再开启。导入不覆盖同名包，更新已有扩展前请备份并移走旧包。
+| 内容 | 许可 |
+| --- | --- |
+| 源代码与项目文本 | [MIT](LICENSE)，允许商业使用。 |
+| 本项目有权授权且未另行声明的美术素材 | [CC BY-NC 4.0](LICENSE-ASSETS)，须署名，仅限非商业使用；商业用途需另行授权或替换素材。 |
+| 第三方依赖与单独声明的内容 | 遵循各自许可，见 [第三方声明](THIRD-PARTY-NOTICES.txt)。 |
 
-GitHub 的 master / PR 会运行 Windows 回归；版本标签及手动运行还会出包。标签构建在测试通过后创建 **Release 草稿**，包含 MSI、便携 ZIP 和 `SHA256SUMS.txt`，维护者审核附件后再公开。草稿/预发布不触发客户端正式更新。
-
-本地出包：安装 .NET 8、Pillow 和 WiX 4.0.5 后，设置 `PythonExe` 为实际 Python 路径，再执行：
-
-```powershell
-python tools/ci.py
-python tools/package_release.py
-```
-
-产物在 `publish/release/v<版本>/artifacts/`。脚本不覆盖既有出包目录；重复验证可用 `--output` 指定新目录。安装版使用 AppData；便携 ZIP 内含 `portable.flag`。下载后可用 PowerShell `Get-FileHash -Algorithm SHA256 <文件>` 与校验文件比较。
-
-第三方依赖的实际许可见 `THIRD-PARTY-NOTICES.txt`；托盘库 1.1.0 为 CPOL 1.02，Tomlyn 0.18.0 为 BSD-2-Clause，不适用本项目自身的 MIT 授权。发布脚本固定已核验的 .NET 8.0.32 运行时补丁，并附带对应运行时许可。
+这是一个个人开发项目，按原样提供。GitHub 与 Gitee 同步维护源码；发行附件、Issue 和仓库权限分别管理。
