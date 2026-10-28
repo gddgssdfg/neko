@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Input;
 using DesktopPet.App.Core;
 using DesktopPet.App.Renderer;
@@ -28,6 +29,49 @@ public sealed class SkinPreviewSurface : FrameworkElement
     public SkinEyeOffset CurrentEyeOffset => _anchorDragging ? _dragPreview
         : OffsetProvider?.Invoke(State.Name, FrameIndex)
             ?? (State.EyeOffsets.Count > FrameIndex ? State.EyeOffsets[FrameIndex] : default);
+    private bool _gazePreviewEnabled, _showUnclippedGaze;
+    private Vector _gazeDirection;
+    public bool GazePreviewEnabled { get => _gazePreviewEnabled; set { if (_gazePreviewEnabled == value) return; _gazePreviewEnabled = value; InvalidateVisual(); } }
+    public Vector GazeDirection { get => _gazeDirection; set { if (_gazeDirection == value) return; _gazeDirection = value; InvalidateVisual(); } }
+    public bool ShowUnclippedGaze { get => _showUnclippedGaze; set { if (_showUnclippedGaze == value) return; _showUnclippedGaze = value; InvalidateVisual(); } }
+    private readonly Dictionary<string, ImageBrush?> _socketMasks = new();
+    private BitmapSource? _gazeRaster;
+    private (string State, string Key, SkinEyeOffset Anchor, Vector Gaze, bool Ghost)? _gazeRasterKey;
+    private int _gazeRasterPadding;
+    public bool CanPreviewGaze => State.EyeLayer is { } key && _atlas.GetEye(key) is { } eye
+        && eye.PixelWidth == State.Frames[0].Bitmap.PixelWidth && eye.PixelHeight == State.Frames[0].Bitmap.PixelHeight;
+    public Vector GazeLimits => CanPreviewGaze ? ToSourceFrame(EyeGazeMath.SourceLimits(_atlas, State.Name, State.EyeLayer!)) : default;
+    public Vector GazeOffset => GazePreviewEnabled && CanPreviewGaze
+        ? ToSourceFrame(EyeGazeMath.SourceOffset(_atlas, State.Name, State.EyeLayer!, EyeGazeMath.InputOffset(GazeDirection))) : default;
+    private Vector ToSourceFrame(Vector value)
+    {
+        // The runtime has a square 32-DIP canvas, even for non-square source frames.
+        var frame = State.Frames[0].Bitmap;
+        return new Vector(value.X, value.Y * frame.PixelHeight / frame.PixelWidth);
+    }
+    public bool HasSocketMask => CanPreviewGaze && SocketMask() is not null;
+    public bool GazeOutsideFrame
+    {
+        get
+        {
+            if (!CanPreviewGaze || !_eyeBounds.TryGetValue(State.EyeLayer!, out var box) || box.IsEmpty) return false;
+            var anchor = CurrentEyeOffset; var gaze = GazeOffset; var bitmap = State.Frames[0].Bitmap;
+            return box.X + anchor.X + gaze.X < 0 || box.Y + anchor.Y + gaze.Y < 0
+                || box.X + box.Width + anchor.X + gaze.X > bitmap.PixelWidth
+                || box.Y + box.Height + anchor.Y + gaze.Y > bitmap.PixelHeight;
+        }
+    }
+    private ImageBrush? SocketMask()
+    {
+        var key = State.EyeLayer!;
+        if (!_socketMasks.TryGetValue(key, out var mask))
+        {
+            var bitmap = State.Frames[0].Bitmap;
+            mask = EyeGazeMath.SocketBrush(_atlas, key, key, new Size(bitmap.PixelWidth, bitmap.PixelHeight));
+            _socketMasks[key] = mask;
+        }
+        return mask;
+    }
     private static readonly Brush Checker = MakeChecker();
 
     public SkinPreviewSurface(SpriteAtlas atlas)
@@ -75,18 +119,101 @@ public sealed class SkinPreviewSurface : FrameworkElement
         var offset = CurrentEyeOffset;
         if (State.EyeLayer is { } key && _atlas.GetEye(key) is { } eye)
         {
-            dc.DrawImage(eye, new Rect(offset.X, offset.Y, eye.PixelWidth, eye.PixelHeight));
-            if (ShowGuides)
+            if (GazePreviewEnabled && CanPreviewGaze)
             {
-                var pen = new Pen(Brushes.DodgerBlue, 1 / zoom);
-                if (_eyeBounds.TryGetValue(key, out var box) && !box.IsEmpty)
-                    dc.DrawRectangle(null, pen, new Rect(box.X + offset.X, box.Y + offset.Y, box.Width, box.Height));
-                dc.DrawLine(pen, new Point(offset.X - 3 / zoom, offset.Y), new Point(offset.X + 3 / zoom, offset.Y));
-                dc.DrawLine(pen, new Point(offset.X, offset.Y - 3 / zoom), new Point(offset.X, offset.Y + 3 / zoom));
+                var image = GazeRaster(key, eye, offset);
+                if (image is not null)
+                    dc.DrawImage(image, new Rect(-_gazeRasterPadding, -_gazeRasterPadding, image.PixelWidth, image.PixelHeight));
+                else
+                {
+                    var layer = new DrawingGroup();
+                    RenderOptions.SetBitmapScalingMode(layer, BitmapScalingMode.LowQuality);
+                    using (var drawing = layer.Open()) DrawEyePixels(drawing, key, eye, offset);
+                    dc.DrawDrawing(layer);
+                }
+                DrawEyeGuides(dc, key, eye, offset, zoom);
             }
+            else DrawEyeLayer(dc, key, eye, offset, zoom);
         }
         if (ShowGuides) dc.DrawRectangle(null, new Pen(Brushes.OrangeRed, 1 / zoom), new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight));
         dc.Pop(); dc.Pop(); dc.Pop();
+    }
+
+    private void DrawEyeLayer(DrawingContext dc, string key, BitmapSource eye, SkinEyeOffset offset, double zoom)
+    {
+        DrawEyePixels(dc, key, eye, offset);
+        DrawEyeGuides(dc, key, eye, offset, zoom);
+    }
+
+    private BitmapSource? GazeRaster(string key, BitmapSource eye, SkinEyeOffset anchor)
+    {
+        var gaze = GazeOffset;
+        var cacheKey = (State.Name, key, anchor, gaze, ShowUnclippedGaze);
+        if (_gazeRasterKey == cacheKey) return _gazeRaster;
+        _gazeRasterKey = cacheKey; _gazeRaster = null;
+        var padding = (int)Math.Ceiling(Math.Max(Math.Abs(anchor.X + gaze.X), Math.Abs(anchor.Y + gaze.Y))) + 3;
+        var width = (long)eye.PixelWidth + 2L * padding; var height = (long)eye.PixelHeight + 2L * padding;
+        // Bound the additional raster allocation; large assets retain the direct drawing path.
+        if (width > 16384 || height > 16384 || width * height > 4_000_000) return null;
+        var visual = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(visual, BitmapScalingMode.LowQuality);
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.PushTransform(new TranslateTransform(padding, padding));
+            DrawEyePixels(drawing, key, eye, anchor); drawing.Pop();
+        }
+        var bitmap = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual); bitmap.Freeze(); _gazeRasterPadding = padding; _gazeRaster = bitmap;
+        return bitmap;
+    }
+
+    private void DrawEyePixels(DrawingContext dc, string key, BitmapSource eye, SkinEyeOffset offset)
+    {
+        var gaze = GazeOffset;
+        var mask = GazePreviewEnabled && CanPreviewGaze ? SocketMask() : null;
+        dc.PushTransform(new TranslateTransform(offset.X, offset.Y));
+        var eyeRect = new Rect(gaze.X, gaze.Y, eye.PixelWidth, eye.PixelHeight);
+        if (mask is not null && ShowUnclippedGaze)
+        { dc.PushOpacity(.3); dc.DrawImage(eye, eyeRect); dc.Pop(); }
+        var clip = GazePreviewEnabled && CanPreviewGaze
+            ? EyeGazeMath.ClipRect(_atlas, eye, key, gaze, new Size(eye.PixelWidth, eye.PixelHeight)) : null;
+        if (clip is not null) dc.PushClip(new RectangleGeometry(clip.Value));
+        if (mask is not null) dc.PushOpacityMask(mask);
+        dc.DrawImage(eye, eyeRect);
+        if (mask is not null) dc.Pop();
+        if (clip is not null) dc.Pop();
+        dc.Pop();
+    }
+
+    private void DrawEyeGuides(DrawingContext dc, string key, BitmapSource eye, SkinEyeOffset offset, double zoom)
+    {
+        var gaze = GazeOffset; var mask = GazePreviewEnabled && CanPreviewGaze ? SocketMask() : null;
+        dc.PushTransform(new TranslateTransform(offset.X, offset.Y));
+        if (ShowGuides && GazePreviewEnabled && CanPreviewGaze)
+        {
+            if (mask is not null)
+            {
+                dc.PushOpacityMask(mask);
+                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(65, 25, 175, 105)), null,
+                    new Rect(0, 0, eye.PixelWidth, eye.PixelHeight));
+                dc.Pop();
+            }
+            if (_eyeBounds.TryGetValue(key, out var pupil) && !pupil.IsEmpty)
+            {
+                var limits = GazeLimits;
+                dc.DrawEllipse(null, new Pen(Brushes.DarkOrange, 1 / zoom),
+                    new Point(pupil.X + pupil.Width / 2d, pupil.Y + pupil.Height / 2d), limits.X, limits.Y);
+            }
+        }
+        dc.Pop();
+        if (ShowGuides)
+        {
+            var pen = new Pen(Brushes.DodgerBlue, 1 / zoom);
+            if (_eyeBounds.TryGetValue(key, out var box) && !box.IsEmpty)
+                dc.DrawRectangle(null, pen, new Rect(box.X + offset.X + gaze.X, box.Y + offset.Y + gaze.Y, box.Width, box.Height));
+            dc.DrawLine(pen, new Point(offset.X - 3 / zoom, offset.Y), new Point(offset.X + 3 / zoom, offset.Y));
+            dc.DrawLine(pen, new Point(offset.X, offset.Y - 3 / zoom), new Point(offset.X, offset.Y + 3 / zoom));
+        }
     }
 
     private (Point Origin, double Zoom) PreviewTransform()
@@ -99,7 +226,7 @@ public sealed class SkinPreviewSurface : FrameworkElement
     // Public gesture methods also let regression probes exercise source-pixel/DPI mapping without native input injection.
     public bool BeginAnchorDrag(Point position)
     {
-        if (_anchorDragging || !AnchorEditingEnabled || State.EyeLayer is not { } key || !_eyeBounds.TryGetValue(key, out var box) || box.IsEmpty) return false;
+        if (_anchorDragging || GazePreviewEnabled || !AnchorEditingEnabled || State.EyeLayer is not { } key || !_eyeBounds.TryGetValue(key, out var box) || box.IsEmpty) return false;
         var (origin, zoom) = PreviewTransform();
         if (zoom <= 0) return false;
         var offset = CurrentEyeOffset;

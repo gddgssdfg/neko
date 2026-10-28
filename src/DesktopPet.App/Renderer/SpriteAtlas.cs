@@ -223,12 +223,12 @@ public sealed class SpriteAtlas
         // 而皮肤源图尺寸差异极大（pixel 32 宽 / cat_hd 256 宽）→ 同一个逻辑偏移落到源图上
         // 会被放大 frameWidth/32 倍（高清皮 = ±16 源px），而瞳孔几乎填满眼白（只差 3~5px）
         // → 瞳孔甩出眼眶。灯灯实机反馈「高清版眼睛超出眼眶，看着太恐怖」即此。
-        // 门控：只对**新管线皮肤**生效（它们才有 `{key}_closed`）—— 内置像素皮等旧皮肤**完全保持原行为**。
+        // 门控：只对**新管线皮肤**生效（它们才有 `{key}_closed`）—— 内置像素皮等旧皮肤不生成素材限位数据，仍由渲染器施加保守限幅。
         atlas.SourcePixelsPerLogical = Math.Max(1.0, info.FrameWidth / (double)FrameW);
         foreach (var eye in info.EyeLayers)
         {
             if (!atlas._eyes.TryGetValue(eye, out var pupil)) continue;
-            if (!atlas._eyes.TryGetValue(eye + "_closed", out var socket)) continue;   // 旧皮肤（无闭合层）→ 不限制、不裁剪
+            if (!atlas._eyes.TryGetValue(eye + "_closed", out var socket)) continue;   // 旧皮肤无闭合层 → 不生成素材限位数据；渲染器仍施加保守限幅，但无 alpha 裁剪
             var safe = ComputeEyeSafeShift(pupil);
             if (safe is null) continue;
             atlas._eyeSafeShift[eye] = safe.Value;

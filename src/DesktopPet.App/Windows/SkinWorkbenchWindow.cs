@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using DesktopPet.App.Services;
+using DesktopPet.App.Renderer;
 using DesktopPet.Sdk;
 
 namespace DesktopPet.App.Windows;
@@ -16,11 +17,21 @@ public sealed class SkinWorkbenchWindow : Window
     private SkinAnchorEditor _editor;
     private readonly TextBox _anchorX = new() { Width = 72, Margin = new Thickness(6, 0, 12, 0) },
         _anchorY = new() { Width = 72, Margin = new Thickness(6, 0, 12, 0) };
+    private readonly CheckBox _gazePreview = new() { Content = "模拟视线（不写入皮肤）" },
+        _unclippedGaze = new() { Content = "对比裁剪前眼层（半透明）", Margin = new Thickness(0, 10, 0, 0) };
+    private readonly Expander _gazePanel = new() { Margin = new Thickness(0, 0, 0, 16) };
+    private readonly TextBlock _gazeInfo = PluginUi.Text("", sub: true);
+    private readonly List<Button> _gazeButtons = [];
+    private Vector _gazeDirection;
     private readonly CheckBox _editAnchors = new() { Content = "编辑眼层锚点（拖动蓝框）" };
     private readonly Button _applyAnchor = PluginUi.Button("应用坐标"), _undo = PluginUi.Button("撤销"),
         _redo = PluginUi.Button("重做"), _restore = PluginUi.Button("还原本帧");
     private Button _save = null!, _export = null!;
     private SkinPreviewSurface _surface = null!;
+    private readonly Grid _previewLayout = new();
+    private readonly Border _previewBody = new();
+    private readonly System.Windows.Controls.Primitives.UniformGrid _gazeDirections = new()
+        { Rows = 3, Columns = 3, Width = 144, Height = 120, Margin = new Thickness(12, 0, 0, 0), Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border _preview = new() { Height = 300, Margin = new Thickness(0, 12, 0, 12) };
     private readonly ComboBox _states = new() { MinWidth = 170, Margin = new Thickness(0, 0, 12, 0) };
     private readonly Button _play = PluginUi.Button("暂停");
@@ -63,6 +74,11 @@ public sealed class SkinWorkbenchWindow : Window
         previous.Click += (_, _) => _surface.StepFrame(-1); next.Click += (_, _) => _surface.StepFrame(1);
         controls.Children.Add(previous); controls.Children.Add(next);
         content.Children.Add(controls);
+        _previewLayout.ColumnDefinitions.Add(new ColumnDefinition());
+        _previewLayout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _previewLayout.Children.Add(_previewBody);
+        Grid.SetColumn(_gazeDirections, 1); _previewLayout.Children.Add(_gazeDirections);
+        _preview.Child = _previewLayout;
         content.Children.Add(_preview);
         _frame.TextWrapping = TextWrapping.Wrap; content.Children.Add(_frame);
         var options = new WrapPanel { Margin = new Thickness(0, 12, 0, 12) };
@@ -73,6 +89,25 @@ public sealed class SkinWorkbenchWindow : Window
         speed.SelectionChanged += (_, _) => { _speed = new[] { .5, 1, 2 }[speed.SelectedIndex]; _surface.Playback = _speed; };
         options.Children.Add(speed);
         content.Children.Add(options);
+        _gazePanel.Header = PluginUi.Text("眼神位移与遮罩检查");
+        var gazeContent = new StackPanel { Margin = new Thickness(0, 10, 0, 10) };
+        gazeContent.Children.Add(_gazePreview); gazeContent.Children.Add(_unclippedGaze);
+        var labels = new[] { "↖", "↑", "↗", "←", "居中", "→", "↙", "↓", "↘" };
+        for (int i = 0; i < labels.Length; i++)
+        {
+            var direction = new Vector(i % 3 - 1, i / 3 - 1);
+            var button = PluginUi.Button(labels[i]); button.Tag = direction;
+            button.Padding = new Thickness(0, 4, 0, 4);
+            button.Margin = new Thickness(0, 0, 4, 4);
+            button.ToolTip = $"视线方向 ({direction.X}, {direction.Y})";
+            button.Click += (_, _) => { _gazeDirection = direction; _surface.GazeDirection = direction; _surface.InvalidateVisual(); UpdateFrame(); };
+            _gazeButtons.Add(button); _gazeDirections.Children.Add(button);
+        }
+        _gazeInfo.TextWrapping = TextWrapping.Wrap; gazeContent.Children.Add(_gazeInfo);
+        _gazePanel.Content = gazeContent; content.Children.Add(_gazePanel);
+        _gazePreview.Checked += (_, _) => { _surface.CancelAnchorDrag(); _editAnchors.IsChecked = false; _surface.Playing = false; UpdateFrame(); };
+        _gazePreview.Unchecked += (_, _) => UpdateFrame();
+        _unclippedGaze.Checked += (_, _) => UpdateFrame(); _unclippedGaze.Unchecked += (_, _) => UpdateFrame();
         var editing = new StackPanel { Margin = new Thickness(0, 0, 0, 16) };
         editing.Children.Add(_editAnchors);
         var coordinates = new WrapPanel { Margin = new Thickness(0, 10, 0, 8) };
@@ -94,7 +129,7 @@ public sealed class SkinWorkbenchWindow : Window
         _undo.Click += (_, _) => RevealEdit(_editor.Undo());
         _redo.Click += (_, _) => RevealEdit(_editor.Redo());
         _restore.Click += (_, _) => { _editor.RestoreFrame(_surface.State.Name, _surface.FrameIndex); RefreshDraft(); };
-        var hint = PluginUi.Text("红框为源画幅，蓝色为眼层原点及可用包围盒。这里按清单循环身体帧与眼层，不模拟随机眨眼、眼神跟随、呼吸或自动过渡；附加过渡帧可在动作列表单独检查。", sub: true);
+        var hint = PluginUi.Text("红框为源画幅，蓝色为眼层原点及可用包围盒。这里按清单循环身体帧与眼层；视线可在检查面板模拟，不叠加随机眨眼、呼吸或自动过渡；附加过渡帧可在动作列表单独检查。", sub: true);
         hint.TextWrapping = TextWrapping.Wrap; hint.Margin = new Thickness(0, 0, 0, 16); content.Children.Add(hint);
         _report.TextWrapping = TextWrapping.Wrap; content.Children.Add(_report);
         root.Children.Add(new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
@@ -129,7 +164,7 @@ public sealed class SkinWorkbenchWindow : Window
         if (_surface is not null) { _surface.CancelAnchorDrag(); _surface.FrameChanged -= UpdateFrame; _surface.AnchorDragged -= ApplyAnchor; }
         _editor = editor; _review = review;
         _surface = new SkinPreviewSurface(review.Atlas) { ShowGuides = _guides, Playback = _speed, Playing = playing, OffsetProvider = editor.GetOffset };
-        _surface.FrameChanged += UpdateFrame; _surface.AnchorDragged += ApplyAnchor; _preview.Child = _surface;
+        _surface.FrameChanged += UpdateFrame; _surface.AnchorDragged += ApplyAnchor; _previewBody.Child = _surface;
         _states.ItemsSource = review.Info.States.Select(s => s.Name).ToArray();
         _states.SelectedItem = selected is not null && review.Atlas.States.ContainsKey(selected) ? selected : "idle";
         _details.Text = $"{review.Info.DisplayName} · {review.Info.Id} · {review.Info.FrameWidth}×{review.Info.FrameHeight} · 每动作 {review.Info.Frames} 帧\n{_source}";
@@ -143,7 +178,23 @@ public sealed class SkinWorkbenchWindow : Window
         var offset = _surface.CurrentEyeOffset;
         _frame.Text = $"{state.Name} · 帧 {index + 1}/{state.Frames.Length} · {state.Fps:0.##} fps · 眼层 {state.EyeLayer ?? "无"} · 锚点 ({offset.X:0.##}, {offset.Y:0.##}) 源像素";
         _play.Content = _surface.Playing ? "暂停" : "播放";
-        var editable = _editor.CanEdit(state.Name) && _editAnchors.IsChecked == true;
+        var inspecting = _gazePreview.IsChecked == true;
+        _surface.GazePreviewEnabled = inspecting;
+        _surface.GazeDirection = _gazeDirection;
+        _surface.ShowUnclippedGaze = _unclippedGaze.IsChecked == true;
+        _editAnchors.IsEnabled = !inspecting;
+        var editable = !inspecting && _editor.CanEdit(state.Name) && _editAnchors.IsChecked == true;
+        foreach (var button in _gazeButtons) button.IsEnabled = inspecting && _surface.CanPreviewGaze;
+        _unclippedGaze.IsEnabled = inspecting && _surface.HasSocketMask;
+        _gazeDirections.Visibility = inspecting ? Visibility.Visible : Visibility.Collapsed;
+        if (inspecting && _surface.CanPreviewGaze)
+        {
+            var gaze = _surface.GazeOffset;
+            _frame.Text += $"\n视线方向 ({_gazeDirection.X}, {_gazeDirection.Y}) · 位移 ({gaze.X:0.###}, {gaze.Y:0.###}) 源像素 · " + (EyeGazeMath.IsFixedExpression(state.Name, state.EyeLayer!) ? "表情固定，不平移"
+                : _surface.HasSocketMask ? "遮罩裁剪已启用" : "无闭合层遮罩，仅限幅，需目视检查");
+        }
+        UpdateGazeInfo();
+        _surface.InvalidateVisual();
         _surface.AnchorEditingEnabled = editable;
         _anchorX.Text = offset.X.ToString("0.###", CultureInfo.InvariantCulture);
         _anchorY.Text = offset.Y.ToString("0.###", CultureInfo.InvariantCulture);
@@ -156,6 +207,20 @@ public sealed class SkinWorkbenchWindow : Window
         _states.IsEnabled = _play.IsEnabled = !_surface.IsAnchorDragging;
         Title = "Neko 皮肤工作台" + (_editor.IsDirty ? " · 未保存" : "");
         UpdateTimer();
+    }
+    private void UpdateGazeInfo()
+    {
+        if (!_surface.GazePreviewEnabled) { _gazeInfo.Text = "勾选后，用九个方向检查静态极限视线；不会修改锚点或素材。"; return; }
+        if (!_surface.CanPreviewGaze) { _gazeInfo.Text = "当前动作没有可用的独立眼层，或眼层尺寸与身体帧不一致，无法模拟。"; return; }
+        var limits = _surface.GazeLimits; var offset = _surface.GazeOffset;
+        var fixedExpression = EyeGazeMath.IsFixedExpression(_surface.State.Name, _surface.State.EyeLayer!);
+        _gazeInfo.Text = $"方向 ({_gazeDirection.X}, {_gazeDirection.Y}) · 实际位移 ({offset.X:0.###}, {offset.Y:0.###}) 源像素\n"
+            + $"橙色椭圆：中心可移动范围，X ±{limits.X:0.###} / Y ±{limits.Y:0.###} 源像素。\n"
+            + (fixedExpression ? "当前为闭眼、半闭或抚摸表情，主程序固定眼层，不随视线移动。\n" : "")
+            + (fixedExpression ? "当前表情不进行视线平移。" : _surface.HasSocketMask ? "绿色区域：主程序使用的闭合层 alpha 遮罩。开启对比可查看裁剪前眼层。"
+                : "缺少可用的闭合层遮罩：只有椭圆限幅，无法自动确认眼眶安全，请逐帧目视检查。")
+            + (_surface.GazeOutsideFrame ? "\n提示：未裁剪眼层的包围盒已超出源画幅，请检查锚点。" : "")
+            + "\n遮罩会随锚点一起移动，不能据此保证眼睛与脸部对齐。预览不叠加打字、眨眼或行走镜像。";
     }
     private void RevealEdit((string State, int Frame)? location)
     {

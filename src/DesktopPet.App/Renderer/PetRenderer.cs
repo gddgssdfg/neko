@@ -391,22 +391,8 @@ public sealed class PetRenderer
         string cacheKey = stateEyeLayer + "@" + Scale.ToString("0.##");
         if (_socketBrushCache.TryGetValue(cacheKey, out var cached)) return cached;
 
-        ImageBrush? brush = null;
-        var socket = _atlas.GetEye(stateEyeLayer + "_closed");
-        if (socket is not null)
-        {
-            // ⚠️ Viewport 必须用**绝对**坐标锚在画幅原点：默认的相对模式会把遮罩跟着被绘制的矩形一起平移，
-            //    那样等于没裁（瞳孔带着遮罩跑）。
-            brush = new ImageBrush(socket)
-            {
-                Stretch = Stretch.Fill,
-                ViewportUnits = BrushMappingMode.Absolute,
-                Viewport = new Rect(0, 0, SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale),
-                AlignmentX = AlignmentX.Left,
-                AlignmentY = AlignmentY.Top,
-            };
-            brush.Freeze();
-        }
+        var brush = EyeGazeMath.SocketBrush(_atlas, stateEyeLayer, currentKey,
+            new Size(SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale));
         _socketBrushCache[cacheKey] = brush;
         return brush;
     }
@@ -419,14 +405,7 @@ public sealed class PetRenderer
     /// </summary>
     private Rect? EyeClipRect(BitmapSource eye, string eyeKey, Vector offset)
     {
-        if (!_atlas.TryGetEyeBBox(eyeKey, out var bb) || bb.Width <= 0 || bb.Height <= 0) return null;
-        double sx = SpriteAtlas.FrameW * Scale / eye.PixelWidth;    // 源像素 → 屏幕像素（X）
-        double sy = SpriteAtlas.FrameH * Scale / eye.PixelHeight;   // 源像素 → 屏幕像素（Y）
-        var r = new Rect(
-            offset.X + bb.X * sx, offset.Y + bb.Y * sy,
-            bb.Width * sx, bb.Height * sy);
-        r.Inflate(2, 2);   // 余量：覆盖重采样/抗锯齿在边缘向外扩散的 1~2px
-        return r;
+        return EyeGazeMath.ClipRect(_atlas, eye, eyeKey, offset, new Size(SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale));
     }
 
     /// <summary>按顺序返回第一个**实际存在**的眼球层 key（全都不存在则 null）。
@@ -441,30 +420,16 @@ public sealed class PetRenderer
     /// <summary>Bound gaze relative to the head. Missing socket data must never mean unlimited movement.</summary>
     private Vector ScreenEyeOffset(string eyeKey, double eyeDownLogical)
     {
-        // Eyelids and smiling eyes are facial expressions, not sliding pupils.
-        if (eyeKey is "eyes_blink" or "eyes_pet" || eyeKey.EndsWith("_closed", StringComparison.OrdinalIgnoreCase)
-            || eyeKey.EndsWith("_half", StringComparison.OrdinalIgnoreCase) || _animator.State?.Name == "pet")
-            return default;
-        double k = _atlas.SourcePixelsPerLogical;
-        var safe = _atlas.GetEyeSafeShift(eyeKey);
-        double maxX = (_atlas.Motion?.GazeMaxX ?? .65) * k, maxY = (_atlas.Motion?.GazeMaxY ?? .35) * k;
-        if (safe.X > 0 || safe.Y > 0) { maxX = Math.Min(maxX, safe.X); maxY = Math.Min(maxY, safe.Y); }
-        double x = Math.Clamp(_eyeOffset.X*k, -maxX, maxX);
-        double y = Math.Clamp((_eyeOffset.Y+eyeDownLogical)*k, -maxY, maxY);
-        // Elliptical travel avoids exaggerated corner/diagonal looks.
-        double radius = Math.Sqrt((maxX > 0 ? x*x/(maxX*maxX) : 0) + (maxY > 0 ? y*y/(maxY*maxY) : 0));
-        if (radius > 1) { x /= radius; y /= radius; }
-        return new Vector(x*Scale/k, y*Scale/k);
+        var source = EyeGazeMath.SourceOffset(_atlas, _animator.State?.Name, eyeKey, _eyeOffset, eyeDownLogical);
+        var k = _atlas.SourcePixelsPerLogical;
+        return new Vector(source.X * Scale / k, source.Y * Scale / k);
     }
 
     /// <summary>眼神追踪：设置眼球偏移（由宿主每帧从鼠标位置计算）。
     /// v0.1.59(⑩)：新增 gain 参数——鼠标路过张望时放大偏移（增益 > 1），默认 1.0 行为不变。</summary>
     public void SetEyeOffset(Vector normalizedDirection, double gain = 1.0)
     {
-        if (!double.IsFinite(normalizedDirection.X) || !double.IsFinite(normalizedDirection.Y)) normalizedDirection = default;
-        if (normalizedDirection.LengthSquared > 1) normalizedDirection.Normalize();
-        gain = double.IsFinite(gain) ? Math.Clamp(gain, 0, 2) : 1;
-        var next = normalizedDirection * 2 * gain; // 基础限幅 ±2px，按 gain 缩放
+        var next = EyeGazeMath.InputOffset(normalizedDirection, gain);
         // v0.1.82：**偏移真的变了才重绘**。
         // 坑：eye offset 只在 Draw 里被读，而重绘原先只由「动画帧推进 / 眨眼相位切换」触发。
         // 静止皮肤（待机/坐/睡的 fps = 0）下动画永不推进 —— 于是眼神追踪会「算了但永远不画」，
