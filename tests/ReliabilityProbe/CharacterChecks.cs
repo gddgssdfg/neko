@@ -149,23 +149,33 @@ internal static partial class Program
     private static void CaptureCharacterPreview(string output)
     {
         Directory.CreateDirectory(output);
-        foreach (var skin in new[] { "pixel", "pixel_redraw" })
+        foreach (var skin in new[] { "pixel", "pixel_redraw", "amber" })
         {
             var renderer = new PetRenderer(SpriteAtlas.LoadSkin(Paths.Assets, skin)) { Scale = 6 };
             var encoder = new System.Windows.Media.Imaging.GifBitmapEncoder();
-            renderer.Play(PetState.Sit); renderer.Play(PetState.Sleep);
+            if (skin == "amber") renderer.Play(PetState.Idle);
+            else { renderer.Play(PetState.Sit); renderer.Play(PetState.Sleep); }
             for (int i = 0; i < 80; i++)
             {
-                if (i == 10) renderer.Play(PetState.Work);
-                if (i >= 25 && i < 45) renderer.SetTypingActive(TimeSpan.FromSeconds(.3));
-                if (i == 50) renderer.Play(PetState.Pet);
-                if (i == 57) renderer.Play(PetState.Work);
+                if (skin == "amber")
+                {
+                    if (i == 45) renderer.Play(PetState.Work);
+                    if (i >= 55 && i < 70) renderer.SetTypingActive(TimeSpan.FromSeconds(.3));
+                }
+                else
+                {
+                    if (i == 10) renderer.Play(PetState.Work);
+                    if (i >= 25 && i < 45) renderer.SetTypingActive(TimeSpan.FromSeconds(.3));
+                    if (i == 50) renderer.Play(PetState.Pet);
+                    if (i == 57) renderer.Play(PetState.Work);
+                }
                 var visual = new System.Windows.Media.DrawingVisual();
-                System.Windows.Media.RenderOptions.SetBitmapScalingMode(visual, System.Windows.Media.BitmapScalingMode.NearestNeighbor);
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(visual, skin == "amber" ? System.Windows.Media.BitmapScalingMode.HighQuality : System.Windows.Media.BitmapScalingMode.NearestNeighbor);
                 using (var dc = visual.RenderOpen())
                 {
                     dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(35, 32, 29)), null, new Rect(0, 0, 280, 256));
                     var label = i < 10 ? (renderer.IsTransitioning ? "Settle > Sleep" : "Sleep") : i < 25 ? "Wake > Work" : i < 50 ? "Typing > Settle" : i < 57 ? "Pet" : "Back to Work";
+                    if (skin == "amber") label = i < 45 ? "Idle > Blink" : i < 55 ? "Work > Rest" : i < 70 ? "Typing" : "Back to Rest";
                     dc.DrawText(new System.Windows.Media.FormattedText(label, System.Globalization.CultureInfo.InvariantCulture,
                         FlowDirection.LeftToRight, new System.Windows.Media.Typeface("Segoe UI"), 16, System.Windows.Media.Brushes.Wheat, 1), new Point(16, 12));
                     dc.PushTransform(new System.Windows.Media.TranslateTransform(44, 48)); renderer.Draw(dc); dc.Pop();

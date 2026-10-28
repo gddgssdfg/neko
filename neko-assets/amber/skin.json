@@ -13,6 +13,7 @@
     {
       "name": "idle",
       "fps": 4,
+      "frameDurations": [1.8, 1.2, 0.14, 1.4],
       "eyeLayer": null
     },
     {
@@ -52,7 +53,9 @@
     },
     {
       "name": "work",
-      "fps": 2,
+      "fps": 7,
+      "typingRestFrame": 1,
+      "blinkFrame": 3,
       "eyeLayer": null
     }
   ],

@@ -49,6 +49,27 @@ public sealed class FrameAnimator
         var fps = _state.Fps * Playback;
         if (!double.IsFinite(fps) || fps <= 0 || delta <= TimeSpan.Zero) return false;
 
+        if (_state.FrameDurations.Count == _state.Frames.Length)
+        {
+            // Keep elapsed time in seconds for uneven holds. Reduce whole cycles before
+            // walking frames so a long suspend never creates an unbounded catch-up loop.
+            _accumulator += delta.TotalSeconds * Playback;
+            if (!double.IsFinite(_accumulator)) { _accumulator = 0; return false; }
+            var previous = _frame;
+            if (Loop) _accumulator %= _state.FrameDurations.Sum();
+            for (var steps = 0; steps < _state.Frames.Length && _accumulator >= _state.FrameDurations[_frame]; steps++)
+            {
+                _accumulator -= _state.FrameDurations[_frame];
+                if (_frame == _state.Frames.Length - 1)
+                {
+                    if (!Loop) { IsComplete = true; _accumulator = 0; break; }
+                    _frame = 0;
+                }
+                else _frame++;
+            }
+            return previous != _frame || IsComplete;
+        }
+
         _accumulator += delta.TotalSeconds * fps;
         // Reduce in floating point before converting: resume after sleep must not overflow int
         // or leave a backlog that keeps spinning through complete cycles on every subsequent tick.

@@ -24,6 +24,12 @@ public sealed class SkinState
     /// <summary>该状态的播放帧率（帧/秒）。</summary>
     public required double Fps { get; init; }
 
+    /// <summary>可选逐帧停留秒数；fps=0 仍保持静止。</summary>
+    public IReadOnlyList<double> FrameDurations { get; init; } = Array.Empty<double>();
+    /// <summary>工作动作无键盘输入时停留的帧；缺省持续循环。</summary>
+    public int? TypingRestFrame { get; init; }
+    public int? BlinkFrame { get; init; }
+
     /// <summary>叠加的眼球层 key（<c>neko_&lt;eyeLayer&gt;.png</c>）；null 表示不叠加（如 sleep，或眼睛已画在身体里）。</summary>
     public string? EyeLayer { get; init; }
 
@@ -302,6 +308,30 @@ public static class SkinRegistry
                     // 引擎侧是支持静止的：FrameAnimator.Tick 里 `if (fps <= 0) return false;`（帧永不推进）。
                     // 这里只拦真正非法的值：负数 / NaN（缺字段时 GetDouble 回落成 0 → 视为静止，偏宽容但有意义）。
                     if (fps < 0 || !double.IsFinite(fps)) throw new FormatException($"状态 '{name}' 的 fps 必须为有限非负数");
+                    var durations = new List<double>();
+                    if (s.TryGetProperty("frameDurations", out var timings))
+                    {
+                        if (timings.ValueKind != JsonValueKind.Array || timings.GetArrayLength() != frames)
+                            throw new FormatException($"状态 '{name}' 的 frameDurations 必须与 frames 数量一致");
+                        foreach (var timing in timings.EnumerateArray())
+                        {
+                            if (timing.ValueKind != JsonValueKind.Number || !timing.TryGetDouble(out var seconds) ||
+                                !double.IsFinite(seconds) || seconds < .02 || seconds > 60)
+                                throw new FormatException("frameDurations 每项必须为 0.02–60 秒");
+                            durations.Add(seconds);
+                        }
+                    }
+                    int? ReadFrame(string key)
+                    {
+                        if (!s.TryGetProperty(key, out var value)) return null;
+                        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var index) || index < 0 || index >= frames)
+                            throw new FormatException($"状态 '{name}' 的 {key} 必须是有效的零起始帧号");
+                        return index;
+                    }
+                    var restFrame = ReadFrame("typingRestFrame");
+                    var blinkFrame = ReadFrame("blinkFrame");
+                    if ((restFrame.HasValue && (name != "work" || fps <= 0)) || (blinkFrame.HasValue && !restFrame.HasValue))
+                        throw new FormatException("typingRestFrame 仅用于正帧率 work 动作；blinkFrame 需要 typingRestFrame");
                     var eye = GetString(s, "eyeLayer");
                     if (!string.IsNullOrWhiteSpace(eye) && !IsAssetName(eye)) throw new FormatException($"非法眼层引用 '{eye}'");
                     var eyeOffsets = new List<SkinEyeOffset>();
@@ -326,7 +356,8 @@ public static class SkinRegistry
                         "right" => SkinFacing.Right,
                         var invalid => throw new FormatException($"状态 '{name}' 的 facing '{invalid}' 无效，应为 left/right/none"),
                     };
-                    states.Add(new SkinState { Name = name!, Fps = fps, EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye, EyeOffsets = eyeOffsets, Facing = facing });
+                    states.Add(new SkinState { Name = name!, Fps = fps, FrameDurations = durations, TypingRestFrame = restFrame, BlinkFrame = blinkFrame,
+                        EyeLayer = string.IsNullOrWhiteSpace(eye) ? null : eye, EyeOffsets = eyeOffsets, Facing = facing });
                 }
             }
             if (states.Count == 0) return null;   // 没有可用状态的皮肤不可用

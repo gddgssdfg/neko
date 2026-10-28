@@ -31,6 +31,9 @@ public sealed class SpriteState
     public required string Name { get; init; }
     public required SpriteFrame[] Frames { get; init; }
     public required double Fps { get; init; }
+    public IReadOnlyList<double> FrameDurations { get; init; } = Array.Empty<double>();
+    public int? TypingRestFrame { get; init; }
+    public int? BlinkFrame { get; init; }
     /// <summary>此状态叠加的眼球层 key（null 表示不叠加，如 sleep 或柔光版——眼睛已画在身体里）</summary>
     public string? EyeLayer { get; init; }
     public IReadOnlyList<SkinEyeOffset> EyeOffsets { get; init; } = Array.Empty<SkinEyeOffset>();
@@ -198,6 +201,7 @@ public sealed class SpriteAtlas
                 {
                     Name = state.Name,
                     Frames = frames,
+                    FrameDurations = state.FrameDurations, TypingRestFrame = state.TypingRestFrame, BlinkFrame = state.BlinkFrame,
                     Fps = state.Fps,
                     EyeLayer = state.EyeLayer,
                     EyeOffsets = state.EyeOffsets,

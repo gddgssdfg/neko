@@ -22,7 +22,8 @@ public sealed class PetRenderer
     private double _typingWeight;
     public bool IsTransitioning => _transitionTarget is not null;
     public double WalkSpeed => _atlas.Motion?.WalkStride is double stride && _atlas.States.TryGetValue("walk", out var walk)
-        ? stride * Scale * walk.Fps / Math.Max(1, walk.Frames.Length) * _moodIntensity
+        ? stride * Scale * (walk.Fps <= 0 ? 0 : walk.FrameDurations.Count == walk.Frames.Length
+            ? 1 / walk.FrameDurations.Sum() : walk.Fps / Math.Max(1, walk.Frames.Length)) * _moodIntensity
         : Behavior.PetStateMachine.WalkSpeed;
 
     // 眼球偏移（眼神追踪）
@@ -124,6 +125,8 @@ public sealed class PetRenderer
         var restart = !loop || _animator.IsComplete || _animator.Loop != loop;
         _animator.Loop = loop;
         _animator.SetState(target, restart);
+        if (loop && target?.TypingRestFrame is int rest && _clockMs >= _typingUntilMs)
+            _animator.SeekFrame(rest);
         RenderInvalidated?.Invoke();
     }
 
@@ -171,7 +174,9 @@ public sealed class PetRenderer
         // v0.1.58(任务5)：单调时钟先行累加真实 elapsed（眨眼/闪眼/打字全部锚定它）
         _clockMs += delta.TotalMilliseconds;
 
-        _animator.Playback = _moodIntensity;
+        bool typing = _clockMs < _typingUntilMs;
+        var inputDriven = _animator.Loop && _animator.State?.TypingRestFrame is not null;
+        _animator.Playback = inputDriven && !typing ? 0 : _moodIntensity;
         var changed = _animator.Tick(delta);
         if (_transitionTarget is { } destination && _animator.IsComplete)
         {
@@ -187,7 +192,6 @@ public sealed class PetRenderer
         }
 
         // v0.1.47：打字活跃检测 → 眨眼更频繁 + 身体呼吸晃动（看键盘效果在 Draw 里）
-        bool typing = _clockMs < _typingUntilMs;
         double blinkMax = typing ? 1.6 : 6.0;   // 眨眼间隔上限：打字 1.6s / 闲置 6s（间隔分布见 ScheduleNextBlink）
         var previousBreath = _breathOffset;
         var motion = _atlas.Motion;
@@ -248,6 +252,13 @@ public sealed class PetRenderer
                 break;
         }
 
+        // Embedded-eye work sheets can rest and blink without pretending to type forever.
+        if (_animator.Loop && !typing && _animator.State is { TypingRestFrame: int resting } work)
+        {
+            var frame = _blinkPhase != BlinkPhase.Open && work.BlinkFrame is int blink ? blink : resting;
+            if (_animator.FrameIndex != frame) { _animator.SeekFrame(frame); changed = true; }
+        }
+
         // 气泡计时
         if (_speechTimer > 0)
         {
@@ -287,7 +298,11 @@ public sealed class PetRenderer
         };
         if (mirror) dc.PushTransform(new MatrixTransform(-1, 0, 0, 1, SpriteAtlas.FrameW * Scale, 0));
 
-        var frame = state.Frames[_animator.FrameIndex];
+        // A dedicated embedded blink must not repeat once per fast typing cycle.
+        // Keep its time slot as a neutral paw-down beat; use the actual blink only at rest.
+        var frameIndex = _animator.Loop && _clockMs < _typingUntilMs && state.BlinkFrame == _animator.FrameIndex
+            && state.TypingRestFrame is int resting ? resting : _animator.FrameIndex;
+        var frame = state.Frames[frameIndex];
         // v0.1.47：身体 Y 偏移（打字时呼吸/晃动感）
         var target = new Rect(0, _breathOffset, SpriteAtlas.FrameW * Scale, SpriteAtlas.FrameH * Scale);
 
@@ -330,7 +345,7 @@ public sealed class PetRenderer
             {
                 // Anchor motion follows the head, while gaze remains relative to that anchor.
                 // Apply the transform to the layer, clipping and socket mask together.
-                var anchor = state.EyeOffsets.Count > _animator.FrameIndex ? state.EyeOffsets[_animator.FrameIndex] : default;
+                var anchor = state.EyeOffsets.Count > frameIndex ? state.EyeOffsets[frameIndex] : default;
                 dc.PushTransform(new TranslateTransform(anchor.X * SpriteAtlas.FrameW * Scale / eye.PixelWidth,
                     _breathOffset + anchor.Y * SpriteAtlas.FrameH * Scale / eye.PixelHeight));
                 // 眼神偏移：眼球层整体平移；v0.1.47 打字时眼球下移（看键盘）

@@ -176,7 +176,9 @@ public sealed class SkinWorkbenchWindow : Window
     {
         var state = _surface.State; var index = _surface.FrameIndex;
         var offset = _surface.CurrentEyeOffset;
-        _frame.Text = $"{state.Name} · 帧 {index + 1}/{state.Frames.Length} · {state.Fps:0.##} fps · 眼层 {state.EyeLayer ?? "无"} · 锚点 ({offset.X:0.##}, {offset.Y:0.##}) 源像素";
+        var timing = state.FrameDurations.Count == state.Frames.Length ? $"本帧停留 {state.FrameDurations[index]:0.##} 秒" : $"{state.Fps:0.##} fps";
+        _frame.Text = $"{state.Name} · 帧 {index + 1}/{state.Frames.Length} · {timing} · 眼层 {state.EyeLayer ?? "无"} · 锚点 ({offset.X:0.##}, {offset.Y:0.##}) 源像素"
+            + (state.TypingRestFrame is int rest ? $"\n主程序跟随键盘输入；无输入停留第 {rest + 1} 帧。这里循环检查全部原画帧。" : "");
         _play.Content = _surface.Playing ? "暂停" : "播放";
         var inspecting = _gazePreview.IsChecked == true;
         _surface.GazePreviewEnabled = inspecting;
