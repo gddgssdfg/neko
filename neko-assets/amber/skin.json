@@ -18,7 +18,8 @@
     },
     {
       "name": "walk",
-      "fps": 8,
+      "fps": 6,
+      "facing": "right",
       "eyeLayer": null
     },
     {
@@ -60,6 +61,7 @@
     }
   ],
   "motion": {
+    "walkStride": 12.5,
     "gazeMaxX": 0.55,
     "gazeMaxY": 0.3,
     "blinkMinSeconds": 2.5,

@@ -45,6 +45,8 @@ v0.6.1 的原始 pixel 皮肤已有五组专用四帧动作：sleep_enter（8fps
 
 验证预览：ReliabilityProbe 设置环境变量 NEKO_CAPTURE_CHARACTER 后，会从真实渲染器导出 pixel、pixel_redraw 与 amber 的动作 GIF，保存在指定目录。预览用于检查姿态和衔接，不能代替默认大小和多 DPI 的实机观感检查。
 
+v0.8.4 起设置 NEKO_CAPTURE_AMBER_WALK 可单独导出琥珀的双向移动 GIF：按真实渲染器的步幅速度在固定地面刻度上往返，不仅是原地播放素材。不会改动用户的皮肤、模式或自动走动开关。
+
 ## 逐帧停留与输入工作帧（v0.8.3）
 
 以下可选字段放在 states 的单个动作对象中，旧皮肤无需修改：

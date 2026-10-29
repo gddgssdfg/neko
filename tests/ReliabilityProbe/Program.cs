@@ -32,6 +32,7 @@ internal static partial class Program
         RunResidencyChecks(root);
         RunCharacterChecks(root);
         RunAmberAnimationChecks(root);
+        RunAmberWalkChecks();
         RunFocusChecks();
         RunSkinWorkbenchChecks(root);
         RunAnchorChecks(root);

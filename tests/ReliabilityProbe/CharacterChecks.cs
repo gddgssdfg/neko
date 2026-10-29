@@ -195,6 +195,12 @@ internal static partial class Program
                 }
                 renderer.Tick(TimeSpan.FromMilliseconds(100));
             }
+            SaveTimedCharacterGif(encoder, Path.Combine(output, skin + "-character.gif"), 80, 10);
+        }
+    }
+
+    private static void SaveTimedCharacterGif(System.Windows.Media.Imaging.GifBitmapEncoder encoder, string path, int frameCount, ushort delay)
+    {
             using var stream = new MemoryStream(); encoder.Save(stream);
             var bytes = stream.ToArray();
             // WIC's GIF encoder drops frame-delay metadata. Fix the container fields without changing pixels.
@@ -215,7 +221,7 @@ internal static partial class Program
                 }
                 else if (bytes[offset] == 0x2c)
                 {
-                    timed.Write(new byte[] { 0x21, 0xf9, 4, 4, 10, 0, 0, 0 }); // full opaque frame, 100ms
+                    timed.Write(new byte[] { 0x21, 0xf9, 4, 4, (byte)delay, (byte)(delay >> 8), 0, 0 });
                     var packed = bytes[offset + 9]; offset += 10;
                     if ((packed & 128) != 0) offset += 3 * (1 << ((packed & 7) + 1));
                     offset++; SkipBlocks();
@@ -223,9 +229,8 @@ internal static partial class Program
                 }
                 else throw new InvalidDataException("Invalid preview GIF structure");
             }
-            Require(images == 80, "preview images missing");
+            Require(images == frameCount, "preview images missing");
             timed.WriteByte(0x3b);
-            File.WriteAllBytes(Path.Combine(output, skin + "-character.gif"), timed.ToArray());
-        }
+            File.WriteAllBytes(path, timed.ToArray());
     }
 }
