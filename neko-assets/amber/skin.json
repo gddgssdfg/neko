@@ -58,7 +58,12 @@
       "typingRestFrame": 1,
       "blinkFrame": 3,
       "eyeLayer": null
-    }
+    },
+    { "name": "sleep_enter", "fps": 8, "eyeLayer": null },
+    { "name": "wake_idle", "fps": 10, "eyeLayer": null },
+    { "name": "wake_work", "fps": 10, "eyeLayer": null },
+    { "name": "pet_end_idle", "fps": 12, "eyeLayer": null },
+    { "name": "pet_end_work", "fps": 12, "eyeLayer": null }
   ],
   "motion": {
     "walkStride": 12.5,
@@ -73,14 +78,29 @@
   },
   "transitions": [
     {
+      "from": "sit",
+      "to": "sleep",
+      "via": "sleep_enter"
+    },
+    {
       "from": "sleep",
       "to": "idle",
-      "via": "sit"
+      "via": "wake_idle"
     },
     {
       "from": "sleep",
       "to": "work",
-      "via": "sit"
+      "via": "wake_work"
+    },
+    {
+      "from": "pet",
+      "to": "idle",
+      "via": "pet_end_idle"
+    },
+    {
+      "from": "pet",
+      "to": "work",
+      "via": "pet_end_work"
     }
   ]
 

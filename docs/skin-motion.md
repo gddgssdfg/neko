@@ -37,7 +37,7 @@ transitions 最多 32 条，不允许重复 from/to；目标只允许 idle/sit/s
 
 via 播放一次后，进入请求的目标状态；重复请求同一目标不会重新开始过渡。用户发出新的动作会取消旧过渡，旧动画完成后不会把新动作抢回。显式 Loop=false 不插入过渡，保持插件单次动画语义。缺少可解码中间动作时运行时直接播放目标；导入检查会拒绝缺图的包。
 
-v0.6.1 的原始 pixel 皮肤已有五组专用四帧动作：sleep_enter（8fps）、wake_idle/wake_work（10fps）、pet_end_idle/pet_end_work（12fps）。新动作将眼睛直接绘入帧内，eyeLayer 为 null；最后一帧与中性目标姿态像素一致。其他皮肤仍沿用已有坐起帧，静态坐姿（fps=0）保持直接切换；没有把 32px 部件强行缩放替换其他画风。
+v0.6.1 的原始 pixel 皮肤已有五组专用四帧动作：sleep_enter（8fps）、wake_idle/wake_work（10fps）、pet_end_idle/pet_end_work（12fps）。新动作将眼睛直接绘入帧内，eyeLayer 为 null；最后一帧与中性目标姿态像素一致。v0.8.5 为琥珀增加同名五组动作，工作目标端点为原 work 的休息帧 1，其余目标端点为对应帧 0。其余皮肤仍沿用已有坐起帧，静态坐姿（fps=0）保持直接切换；没有把 32px 部件强行缩放替换其他画风。
 
 ## 行为保护
 
@@ -46,6 +46,8 @@ v0.6.1 的原始 pixel 皮肤已有五组专用四帧动作：sleep_enter（8fps
 验证预览：ReliabilityProbe 设置环境变量 NEKO_CAPTURE_CHARACTER 后，会从真实渲染器导出 pixel、pixel_redraw 与 amber 的动作 GIF，保存在指定目录。预览用于检查姿态和衔接，不能代替默认大小和多 DPI 的实机观感检查。
 
 v0.8.4 起设置 NEKO_CAPTURE_AMBER_WALK 可单独导出琥珀的双向移动 GIF：按真实渲染器的步幅速度在固定地面刻度上往返，不仅是原地播放素材。不会改动用户的皮肤、模式或自动走动开关。
+
+v0.8.5 起设置 NEKO_CAPTURE_AMBER_TRANSITIONS 可导出琥珀五组过渡的实际渲染 GIF。各片段分别显示来源姿态、请求目标、过渡和目标保持；它是测试导出，不是工作台已经实现了运行时串联预览。
 
 ## 逐帧停留与输入工作帧（v0.8.3）
 

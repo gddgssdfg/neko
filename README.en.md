@@ -28,7 +28,7 @@ The project includes 18 built-in plugins, covering focus, tasks, notes, weather,
 3. Right-click the cat to open its menu, use the system tray to access settings, and drag the cat to reposition it.
 4. Open the focus timer or to-do list from the menu. In Settings → Appearance, change skins, adjust sizes, or open the skin workbench.
 
-Animation and gaze support vary by skin. Amber now has an idle blink, alternating paw taps driven by keyboard and mouse activity, and a walking cycle that faces its travel direction; other actions and skins are being improved gradually.
+Animation and gaze support vary by skin. Amber has an idle blink, alternating paw taps driven by keyboard and mouse activity, a walking cycle that faces its travel direction, and transitions for settling to sleep, waking, and finishing a petting reaction. Other actions and skins are being improved gradually.
 
 Focus progress lasts only for the current app run. Closing the timer panel keeps the timer running; exiting Neko or disabling the Pomodoro plugin discards the current progress. Extract skin ZIP packages before importing the folder containing `skin.json`.
 

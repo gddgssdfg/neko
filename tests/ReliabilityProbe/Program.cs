@@ -33,6 +33,7 @@ internal static partial class Program
         RunCharacterChecks(root);
         RunAmberAnimationChecks(root);
         RunAmberWalkChecks();
+        RunAmberTransitionChecks();
         RunFocusChecks();
         RunSkinWorkbenchChecks(root);
         RunAnchorChecks(root);
@@ -182,11 +183,13 @@ internal static partial class Program
             animator.Tick(TimeSpan.FromSeconds(0.125));
             Require(animator.FrameIndex == 2, "invalid playback poisoned subsequent frames");
         });
-        Check("amber deploys nine complete transparent animated states", () =>
+        Check("Amber deploys all nine base poses and its declared transition artwork", () =>
         {
             var info = SkinRegistry.Scan(Paths.Assets).Single(s => s.Id == "amber");
             var atlas = SpriteAtlas.Load(Paths.Assets, "amber");
-            Require(info.States.Count == 9, "missing poses");
+            Require(new[] { "idle", "walk", "sit", "sleep", "pet", "drag", "fall", "climb", "work" }
+                .All(name => atlas.States.ContainsKey(name)), "missing base poses");
+            Require(atlas.States.Count == info.States.Count, "declared action did not deploy");
             Require(!info.PixelArt && !atlas.PixelArt, "illustrated skin must opt into smooth rendering");
             Require(SkinRegistry.Resolve(Paths.Assets, "pixel").PixelArt, "legacy pixel skin lost nearest-neighbor rendering");
             foreach (var state in info.States)
